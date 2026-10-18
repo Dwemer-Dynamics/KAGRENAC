@@ -1,7 +1,7 @@
-# Builds the example for x64 and x86 (Release) outside the source folder.
+# Builds KagrenacClient for x64 and x86 (Release) outside the source folder.
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\build.ps1 [-BuildRoot <folder>]
 param(
-    [string]$BuildRoot = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\ExampleMod\build")
+    [string]$BuildRoot = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build")
 )
 $ErrorActionPreference = "Stop"
 
@@ -25,5 +25,5 @@ foreach ($arch in @(@{ Name = "x64"; Platform = "x64" }, @{ Name = "x86"; Platfo
     if ($LASTEXITCODE -ne 0) { throw "CMake configure failed for $($arch.Name)" }
     & $cmake --build $dir --config Release
     if ($LASTEXITCODE -ne 0) { throw "Build failed for $($arch.Name)" }
-    Write-Host "Built $dir\Release\example_mod.exe"
+    Write-Host "Built $dir\Release\KagrenacClient.exe"
 }

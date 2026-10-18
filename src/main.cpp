@@ -1,4 +1,4 @@
-// Console "fake game" that talks to the example AI server.
+// Console "fake game" that talks to the KagrenacServer AI server.
 //
 // The main thread plays the role of the game thread: it runs a small tick loop
 // and is the only thread that calls the GameAdapter. Network calls run on worker
@@ -6,14 +6,14 @@
 // should follow the same rule.
 //
 // Usage:
-//   example_mod.exe                       interactive console (/unload and /load simulate the NPC leaving)
-//   example_mod.exe --version             print the client version and exit (no config needed)
-//   example_mod.exe --health              check the server and exit
-//   example_mod.exe --say "Follow me"     send one line and exit
-//   example_mod.exe --listen speech.wav   optional voice: transcribe, send, exit
-//   example_mod.exe --decide "Scout?"     optional: ask which NPC should answer, print it, exit
-//   example_mod.exe --event item_given "The player gave a lantern."   log-only game event, exit
-//   example_mod.exe --react item_given "The player gave a lantern."   the Guide reacts to it, exit
+//   KagrenacClient.exe                       interactive console (/unload and /load simulate the NPC leaving)
+//   KagrenacClient.exe --version             print the client version and exit (no config needed)
+//   KagrenacClient.exe --health              check the server and exit
+//   KagrenacClient.exe --say "Follow me"     send one line and exit
+//   KagrenacClient.exe --listen speech.wav   optional voice: transcribe, send, exit
+//   KagrenacClient.exe --decide "Scout?"     optional: ask which NPC should answer, print it, exit
+//   KagrenacClient.exe --event item_given "The player gave a lantern."   log-only game event, exit
+//   KagrenacClient.exe --react item_given "The player gave a lantern."   the Guide reacts to it, exit
 //   add --config my.json to use another private config file
 
 #include <algorithm>
@@ -602,7 +602,7 @@ int wmain(int argc, wchar_t** argv)
         args.push_back(toUtf8(argv[i]));
     }
     if (args.size() == 1 && args[0] == "--version") {
-        std::cout << "example_mod " << kClientVersion << " (" << kClientBaseline << ", protocol 1)\n";
+        std::cout << "KagrenacClient " << kClientVersion << " (" << kClientBaseline << ", protocol 1)\n";
         return 0;
     }
 

@@ -1,6 +1,6 @@
 # Licence and third-party notices
 
-ExampleMod is Copyright (C) 2026 Dwemer Dynamics and is licensed under the GNU General
+KagrenacClient is Copyright (C) 2026 Dwemer Dynamics and is licensed under the GNU General
 Public License, version 3 only (`GPL-3.0-only`). The full text is in [LICENSE](LICENSE).
 
 The notices below stay with the files they cover. Keep them, unchanged, in any copy or
@@ -10,3 +10,8 @@ project made from this template, including binaries you distribute.
 |---|---|---|
 | Earlier licence of this template | Whole repository | MIT, Copyright (c) 2026 Dwemer Dynamics. Kept verbatim in [LICENSES/Original-MIT.txt](LICENSES/Original-MIT.txt). |
 | JSON for Modern C++ 3.11.2 (nlohmann/json) | `third_party/nlohmann/json.hpp` | MIT, Copyright (c) 2013-2022 Niels Lohmann. Kept verbatim in [third_party/nlohmann/LICENSE.MIT](third_party/nlohmann/LICENSE.MIT). Do not edit `json.hpp`. |
+
+`assets/kagrenac.png` (the README logo) is the project's branding image, supplied for this
+project and used unchanged; KagrenacServer uses the same file as `ui/images/kagrenac.png`.
+No separate licence grant has been specified for it; if you make your own derived mod,
+replace it with your own artwork.

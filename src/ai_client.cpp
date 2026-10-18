@@ -291,7 +291,7 @@ std::string AiClient::health(std::string* note, std::string* info) const
     }
     json reply = json::parse(response.body, nullptr, false);
     if (!reply.is_object() || reply["ok"] != true) {
-        return "unexpected health reply (is server_url the ExampleServer folder?)";
+        return "unexpected health reply (is server_url the KagrenacServer folder?)";
     }
     if (reply["protocol"] != kProtocol) {
         return "server speaks protocol " + reply["protocol"].dump() + ", this client needs " + std::to_string(kProtocol)

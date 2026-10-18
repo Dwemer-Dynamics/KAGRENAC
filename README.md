@@ -1,7 +1,9 @@
-# ExampleMod
+# KagrenacClient
+
+<img src="assets/kagrenac.png" alt="KagrenacClient logo" width="64">
 
 A Windows console "fake game" that talks to
-**[ExampleServer](https://github.com/Dwemer-Dynamics/ExampleServer)**. It shows how a game
+**[KagrenacServer](https://github.com/Dwemer-Dynamics/KagrenacServer)**. It shows how a game
 mod can send what the player says to an NPC, show the reply as a subtitle, and run one
 allowlisted action (`follow_player`), with optional voice.
 
@@ -21,34 +23,37 @@ It is built separately; the DwemerDistro launcher installs only the server.
 
 | Read | For |
 |---|---|
-| [ExampleServer START_HERE.md](https://github.com/Dwemer-Dynamics/ExampleServer/blob/main/START_HERE.md) | **Start here.** Document map, feature status, end-to-end walkthrough, troubleshooting by request ID |
-| [ExampleServer SETUP.md](https://github.com/Dwemer-Dynamics/ExampleServer/blob/main/SETUP.md) | Installing the server, building and pairing this client |
+| [KagrenacServer START_HERE.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/START_HERE.md) | **Start here.** Document map, feature status, end-to-end walkthrough, troubleshooting by request ID |
+| [KagrenacServer SETUP.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md) | Installing the server, building and pairing this client |
 | [PROTOCOL.md](PROTOCOL.md) | The request and reply contract (identical in both repositories) |
-| [AGENT_PLAYBOOK.md](AGENT_PLAYBOOK.md) | Prompt for porting to your engine with a coding agent |
+| [AGENT_PLAYBOOK.md](AGENT_PLAYBOOK.md) | Staged prompt for porting to your engine with a coding agent |
+| [ENGINE_PACK.md](ENGINE_PACK.md) | Blank evidence record for your engine (SDK facts versus verified in engine) |
+| [PORT_RECIPES.md](PORT_RECIPES.md) | One recipe per port stage: lifecycle, dialogue, actions, events, sessions, voice, diagnostics, packaging |
 | [AGENTS.md](AGENTS.md) | Rules for coding agents |
 | This README | Commands, settings, smoke checks and limits |
 
 ## Fast start
 
-1. Install and start ExampleServer first (its
-   [SETUP.md](https://github.com/Dwemer-Dynamics/ExampleServer/blob/main/SETUP.md) covers
+1. Install and start KagrenacServer first (its
+   [SETUP.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md) covers
    both repos).
 2. Clone and build (Visual Studio 2022 with C++ tools):
 
    ```powershell
-   git clone https://github.com/Dwemer-Dynamics/ExampleMod.git
-   cd ExampleMod
+   git clone https://github.com/Dwemer-Dynamics/KagrenacClient.git
+   cd KagrenacClient
    powershell -ExecutionPolicy Bypass -File scripts\build.ps1
    ```
 
    `main` is the stable baseline; `dev` holds development work (`git clone -b dev ...`).
+   For your own mod, start from GitHub's **Use this template** or a fork instead.
 
-   Output goes to `%LOCALAPPDATA%\DwemerDynamics\ExampleMod\build\x64\Release\example_mod.exe` and
-   `...\x86\Release\example_mod.exe`. Change with `-BuildRoot <folder>`.
+   Output goes to `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build\x64\Release\KagrenacClient.exe` and
+   `...\x86\Release\KagrenacClient.exe`. Change with `-BuildRoot <folder>`.
 
-3. Next to `example_mod.exe`, put a `config.json` with the server token (git-ignored).
-   The server's `scripts/pair_client.php` writes one privately (ExampleServer
-   [SETUP.md, "Connect them"](https://github.com/Dwemer-Dynamics/ExampleServer/blob/main/SETUP.md#3-connect-them));
+3. Next to `KagrenacClient.exe`, put a `config.json` with the server token (git-ignored).
+   The server's `scripts/pair_client.php` writes one privately (KagrenacServer
+   [SETUP.md, "Connect them"](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md#3-connect-them));
    copy that file here. Or write it by hand:
 
    ```json
@@ -58,12 +63,12 @@ It is built separately; the DwemerDistro launcher installs only the server.
 4. Run:
 
    ```text
-   example_mod.exe --health
-   example_mod.exe --say "Follow me"
-   example_mod.exe --decide "Scout, is the trail safe?"   (optional NPC selection, prints only)
-   example_mod.exe --event item_given "The player gave a lantern."   (game event, log only)
-   example_mod.exe --react item_given "The player gave a lantern."   (game event the Guide reacts to)
-   example_mod.exe                  (interactive: type lines and the commands below)
+   KagrenacClient.exe --health
+   KagrenacClient.exe --say "Follow me"
+   KagrenacClient.exe --decide "Scout, is the trail safe?"   (optional NPC selection, prints only)
+   KagrenacClient.exe --event item_given "The player gave a lantern."   (game event, log only)
+   KagrenacClient.exe --react item_given "The player gave a lantern."   (game event the Guide reacts to)
+   KagrenacClient.exe                  (interactive: type lines and the commands below)
    ```
 
    Interactive commands: `/cancel`, `/listen <wav>`, `/decide <text>`, `/event <type> <text>`
@@ -91,7 +96,7 @@ with `--config <file>`) overrides any key it sets.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `server_url` | `http://127.0.0.1:19000/ExampleServer` | Where the server is. A launcher install is `http://127.0.0.1:19000/custom-mods/example-server`. 19000 is DwemerDistro's shared custom mods port (`CUSTOM_MODS_PORT`); if it is changed (then `sudo ddistro_custom_mod setup-web`), update this URL too. |
+| `server_url` | `http://127.0.0.1:19000/custom-mods/KagrenacServer` | Where the server is: the manual install route from the server SETUP.md. Pairing writes the route of the install it runs in. A launcher install is `http://127.0.0.1:19000/custom-mods/example-server` (the launcher id stays `example-server` for compatibility). 19000 is DwemerDistro's shared custom mods port (`CUSTOM_MODS_PORT`); if it is changed (then `sudo ddistro_custom_mod setup-web`), update this URL too. |
 | `token` | empty | Required. From the server's `config/config.php`. |
 | `session_id` | `demo-save-1` | Keeps NPC history apart, e.g. one per save game. |
 | `timeout_seconds` | `40` | HTTP timeout per phase (connect, send, waiting for the reply headers, each read), 1-300. WinHTTP checks it coarsely (a 1 second setting fired after about 2-4 seconds in tests), so a call can block longer; any reply that completes after `timeout_seconds` is discarded with an error, never applied. A timed-out turn is never retried. |
@@ -114,26 +119,26 @@ With the server in mock mode:
 
 | Command | Expect |
 |---|---|
-| `example_mod.exe --version` | `example_mod 0.1.0 (baseline-1, protocol 1)`, exit 0; needs no config or token. Change the version only in `project(... VERSION)` in `CMakeLists.txt`. |
-| `example_mod.exe --health` | `Server is ready.`, then `Versions: client 0.1.0, client baseline baseline-1, server 0.1.0, server baseline baseline-1, schema 007_connector_calls, protocol 1.`, exit 0 |
+| `KagrenacClient.exe --version` | `KagrenacClient 0.1.0 (baseline-1, protocol 1)`, exit 0; needs no config or token. Change the version only in `project(... VERSION)` in `CMakeLists.txt`. |
+| `KagrenacClient.exe --health` | `Server is ready.`, then `Versions: client 0.1.0, client baseline baseline-1, server 0.1.0, server baseline baseline-1, schema 007_connector_calls, protocol 1.`, exit 0 |
 | `--event location_entered "The player entered the market."` | `Event location_entered logged by the server (log only; no reply or actions; request evt-...).` |
 | `--react item_given "The player gave a lantern. follow me"` | Guide reply, follow action and result report, like `--say` |
 | `--event dragon_seen "..."` | refused by the client, nothing sent, exit 1 |
 | interactive, mock delay 2+: `follow me`, then `/npc scout` | `Dropped the pending reply for Guide: you turned to another NPC.`, cancel confirmed, `Ignored a stale reply` |
 | interactive, mock delay 2+: `follow me`, then `/session other-save` | dropped and cancelled in the old session; new lines use `other-save` |
 | interactive, mock delay 2+: `follow me`, then `/quit` | `Quitting: dropped the pending reply ...`, then the cancel is confirmed |
-| `example_mod.exe --say "hello"` | `[Guide] Guide heard you say: hello`, then `Trace: turn req-... (ok)` |
-| `example_mod.exe --say "follow me"` | reply, then `npc_guide is now following you (simulated)` and `Result reported to server: follow_player handled (...)` |
+| `KagrenacClient.exe --say "hello"` | `[Guide] Guide heard you say: hello`, then `Trace: turn req-... (ok)` |
+| `KagrenacClient.exe --say "follow me"` | reply, then `npc_guide is now following you (simulated)` and `Result reported to server: follow_player handled (...)` |
 | `--health` against an older server | `Server is ready.`, `server version not reported (older server)` and/or `server baseline not reported (older server)`, and on very old servers a `Note:` that name-only actions still work |
 | interactive, mock delay 2+: `follow me`, then `/unload` | `Dropped the pending reply for Guide: Guide is no longer here.`, then `Ignored a stale reply`; no result report |
 | interactive: `/unload` and `/load` together while waiting | the new instance does not get the old reply |
 | same against a server without `result.php` | reply and action, then `Result reports off: this server has no result.php.` |
 | same with `"allowed_actions": []` | `Rejected action not allowed by this mod: follow_player` |
-| `example_mod.exe --say "dance"` | reply only; the server rejected `dance` |
+| `KagrenacClient.exe --say "dance"` | reply only; the server rejected `dance` |
 | wrong token | `AI unavailable: HTTP 401 unauthorized: ...`, then `Trace: turn req-... (failed)`, exit 1 |
 | server stopped | `AI unavailable: cannot reach ...`, exit 1 |
-| `"hello","/cancel" \| example_mod.exe` with `mock_delay_seconds` 2+ | `Ignored a stale reply` |
-| `example_mod.exe --decide "Scout, is the trail safe?"` | `Decision: npc_guide (baseline, disabled, request dec-...)` |
+| `"hello","/cancel" \| KagrenacClient.exe` with `mock_delay_seconds` 2+ | `Ignored a stale reply` |
+| `KagrenacClient.exe --decide "Scout, is the trail safe?"` | `Decision: npc_guide (baseline, disabled, request dec-...)` |
 | same with server `decision` enabled, provider `mock` | `Decision: npc_scout (provider, matched, request dec-...)` |
 | `--say "what is your profile?"` after assigning `npc_guide` a profile on the server | `My profile is <name>.` |
 
@@ -165,7 +170,7 @@ The console's "handled" means its simulated handler ran, not a real game engine.
 `--decide <text>` and `/decide <text>` send the line with two fictional candidates,
 `npc_guide` (Guide, the baseline) and `npc_scout` (Scout), to the server's `decision.php`
 and print which one it chose and why. It is display only: the client does not switch the
-NPC it talks to and runs no actions. Server settings are in ExampleServer `CONNECTORS.md`.
+NPC it talks to and runs no actions. Server settings are in KagrenacServer [CONNECTORS.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/CONNECTORS.md#npc-selection-decision-optional).
 
 ## Voice examples
 
@@ -174,7 +179,7 @@ voice services running. Start with PocketTTS (audio.cpp) for text-to-speech and 
 (default) for speech-to-text, the recommended DwemerDistro starting choices; faster-whisper
 remains a supported transcription alternative. Existing setups often have them already:
 check each in the DwemerDistro launcher, install it there if missing, and start it before
-enabling or testing. Set them up as described in [CONNECTORS.md](https://github.com/Dwemer-Dynamics/ExampleServer/blob/main/CONNECTORS.md#voice). The client needs
+enabling or testing. Set them up as described in [CONNECTORS.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/CONNECTORS.md#voice). The client needs
 `"voice_enabled": true` only for replies spoken as WAV; `--listen` works without it.
 
 | Command | Expect |
@@ -202,10 +207,10 @@ Then on Windows, with the server in mock mode:
 
 | Command | Expect |
 |---|---|
-| `example_mod.exe --say "Who are you?"` | `[Guide] I am Mira Stonebridge, Market guide. ...` |
-| `example_mod.exe --say "When does the market open?"` | `[Guide] Here is what I know: The market square stalls open at dawn ...` |
-| `example_mod.exe --say "What happened to the mill?"` | a global fact about the old mill |
-| `example_mod.exe --say "Is the north trail safe?"` | echo only: that fact belongs to `npc_scout` |
+| `KagrenacClient.exe --say "Who are you?"` | `[Guide] I am Mira Stonebridge, Market guide. ...` |
+| `KagrenacClient.exe --say "When does the market open?"` | `[Guide] Here is what I know: The market square stalls open at dawn ...` |
+| `KagrenacClient.exe --say "What happened to the mill?"` | a global fact about the old mill |
+| `KagrenacClient.exe --say "Is the north trail safe?"` | echo only: that fact belongs to `npc_scout` |
 
 Edit bios and facts on the dashboard: **Configuration > NPC bios**.
 
@@ -216,7 +221,7 @@ session is answered `409 stale` and dropped.
 
 ```bash
 php scripts/checkpoint.php save    demo-save-1 before-boss
-example_mod.exe --say "remember the dragon"   # on Windows: adds lines after the checkpoint
+KagrenacClient.exe --say "remember the dragon"   # on Windows: adds lines after the checkpoint
 php scripts/checkpoint.php restore demo-save-1 before-boss
 php scripts/checkpoint.php list    demo-save-1
 ```

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents working on this example client, or on a mod copied from it.
+Guidance for coding agents working on KagrenacClient, or on a mod copied from it.
 
 ## Keep it simple
 
@@ -44,6 +44,6 @@ Guidance for coding agents working on this example client, or on a mod copied fr
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1   # x64 and x86, must have no warnings
 ```
 
-Then, with ExampleServer running in mock mode, run the table in README "Smoke checks" for
+Then, with KagrenacServer running in mock mode, run the table in README "Smoke checks" for
 the architectures you changed. Report what ran, and what was not tested (real engine,
 voice services).
