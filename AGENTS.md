@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for coding agents working on this example server, or on a project copied from it.
+Guidance for coding agents working on KagrenacServer, or on a project copied from it.
 
 ## Keep it simple
 

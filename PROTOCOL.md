@@ -1,9 +1,10 @@
 # Protocol, version 1
 
 The game (client) talks to the server over plain HTTP with JSON. This file is the
-contract between ExampleMod and ExampleServer; it is identical in both repos.
+contract between KagrenacClient and KagrenacServer; it is identical in both repos.
 
-- Base URL, default for a DwemerDistro install: `http://127.0.0.1:19000/ExampleServer`
+- Base URL, default for a manual DwemerDistro install: `http://127.0.0.1:19000/custom-mods/KagrenacServer`
+  (a launcher install uses `http://127.0.0.1:19000/custom-mods/example-server`)
 - Every request except `health.php` needs `Authorization: Bearer <token>`.
   The token is in the server's `config/config.php`.
 - Every JSON request and reply has `"protocol": 1`. The server refuses other versions.
@@ -44,8 +45,9 @@ No token. Checks config and database. Never applies migrations or contacts provi
 ```
 
 `expected_schema`, `capabilities`, `baseline` and `server_version` are optional (added within
-version 1); older servers omit them. `server_version` is the server's own release version (set
-in its `lib/version.php`). `baseline` names the example template's feature set for support; it
+version 1); older servers omit them. `service` is the fixed machine identity
+`example-ai-server`, kept stable for compatibility; it does not follow the project name.
+`server_version` is the server's own release version (set in its `lib/version.php`). `baseline` names the template feature set for support; it
 is not the protocol, a schema or a release version. A client that relies on `action_target` or
 `game_event` should check the list. `profiles` and `memory` are server-side features that need
 nothing from the client; `trace` means `speak.php`, `listen.php` and `decision.php` accept the
@@ -355,7 +357,7 @@ server's error log, its Logs page and its Connector calls page.
 
 ```bash
 TOKEN=...   # from config/config.php
-BASE=http://127.0.0.1:19000/ExampleServer
+BASE=http://127.0.0.1:19000/custom-mods/KagrenacServer
 curl -s $BASE/health.php
 curl -s -H "Authorization: Bearer $TOKEN" --data \
   '{"protocol":1,"request_id":"req-curl-0001","session_id":"s1","npc":{"id":"npc_guide","name":"Guide"},"player":{"name":"Traveler"},"text":"follow me"}' \
@@ -367,5 +369,5 @@ curl -s -H "Authorization: Bearer $TOKEN" --data \
 Add optional fields freely. For anything a version-1 client would misread (renamed or removed
 fields, new required fields, new meaning), bump `protocol` in both repos together.
 
-The companion ExampleServer `WAVE_ACTION.md` shows an optional wave extension. It is
+The companion KagrenacServer `WAVE_ACTION.md` shows an optional wave extension. It is
 not enabled by this template; keep both copied contracts identical when extending it.

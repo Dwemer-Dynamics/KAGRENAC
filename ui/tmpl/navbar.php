@@ -5,8 +5,8 @@
             <div class="navbar-content-wrapper">
                 <div class="navbar-center dropdown">
                     <button class="navbar-brand Title btn btn-link p-0 dropdown-toggle" id="brand-toggle" type="button" aria-expanded="false" aria-controls="brand-menu" title="Open menu">
-                        <img src="<?= e($uiBase) ?>/images/question-mark.png" alt="" width="50" height="50">
-                        <span>ExampleServer</span>
+                        <img src="<?= e($uiBase) ?>/images/kagrenac.png" alt="" width="53" height="50">
+                        <span>KagrenacServer</span>
                     </button>
                     <ul class="dropdown-menu brand-menu" id="brand-menu">
                         <?php foreach ($sections as $key => $section): ?>

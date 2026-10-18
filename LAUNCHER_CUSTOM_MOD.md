@@ -1,21 +1,24 @@
 # Installing as a launcher custom mod
 
-`dwemer-mod.json` lets the DwemerDistro launcher install this server for you. In the
+`dwemer-mod.json` lets the DwemerDistro launcher install KagrenacServer for you. In the
 launcher, open **Mods > Custom mods > Add custom mod** and paste:
 
 ```text
-https://github.com/Dwemer-Dynamics/ExampleServer
+https://github.com/Dwemer-Dynamics/KagrenacServer
 ```
 
 The launcher previews the exact commit before installing. The full version 1 contract is
 documented in DwemerDistro Core's `CUSTOM_MODS.md`. The launcher manages this PHP server
-only; the ExampleMod console client is built separately
-([ExampleMod README](https://github.com/Dwemer-Dynamics/ExampleMod/blob/main/README.md)).
+only; the KagrenacClient console client is built separately
+([KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md)).
 
 What the distro does with this manifest:
 
 - Clones the `main` branch to `/var/www/html/custom-mods/example-server`. This is separate
-  from a manual install in `/var/www/html/ExampleServer`.
+  from a manual install in `/var/www/html/custom-mods/KagrenacServer`. The manifest `id`
+  (`example-server`) and the template database name (`example_ai_mod`) are kept from the
+  template's earlier name on purpose: an `id` cannot change after install, so renaming it
+  would orphan existing installs.
 - Creates its own database `custom_example_server`, owned by the existing `dwemer` role.
 - Copies `config/config.example.php` to `config/config.php` only if that file is missing,
   replacing `'CHANGE_ME_TOKEN'` with a random token and `'example_ai_mod'` with
@@ -32,8 +35,10 @@ and official server ports are unchanged. If it is changed, run
 
 It never runs `scripts/install.sh` or `scripts/update.sh`, and never runs repository PHP as
 root. **Update** refuses local edits to tracked files, backs up `config/config.php` and the
-database first, and only fast-forwards. To pair the console client with this install, use
-its URL with `pair_client.php` ([SETUP.md, Connect them](SETUP.md#3-connect-them)).
+database first, and only fast-forwards. To pair the console client with this install, run
+`pair_client.php` from `/var/www/html/custom-mods/example-server`; it writes that install's
+actual route, `.../custom-mods/example-server`, rather than the manual-install default
+([SETUP.md, Connect them](SETUP.md#3-connect-them)).
 
 ## Branches: main and dev
 
@@ -101,9 +106,9 @@ Rules every copy must follow:
 
 ## Icon and banner (optional)
 
-`assets` gives the launcher and the Dashboard pictures for the mod. This example uses
-`ui/images/question-mark.png` (1254 x 1254 PNG, about 350 KB) as both the icon and the
-banner. Your own mod can use any PNG or JPEG banner; about 2:1 is recommended.
+`assets` gives the launcher and the Dashboard pictures for the mod. KagrenacServer uses
+`ui/images/kagrenac.png` (128 x 121 PNG, about 31 KB) as both the icon and the banner. Your
+own mod can use any PNG or JPEG banner; about 2:1 is recommended.
 
 - Commit the image files and the `assets` entry together. Each path is relative to the
   repository root and must point to a tracked `.png`, `.jpg`, or `.jpeg` file. Links,
@@ -118,12 +123,13 @@ banner. Your own mod can use any PNG or JPEG banner; about 2:1 is recommended.
   over 4 MB.
   Older installs and manifests without `assets` keep working.
 
-## Local testing without the public URL (optional)
+## Local testing of unpublished changes (optional)
 
-The launcher accepts only public HTTPS URLs. For an administrator test of unpublished
-changes inside the distro, clone a Git bundle bare and install from it:
+The launcher accepts only public HTTPS URLs such as the one above. For an administrator
+test of changes not yet pushed, clone a Git bundle bare inside the distro and install from
+it:
 
 ```bash
-git clone --bare /path/to/ExampleServer.bundle /path/to/ExampleServer.git
-sudo ddistro_custom_mod install --local-source /path/to/ExampleServer.git
+git clone --bare /path/to/KagrenacServer.bundle /path/to/KagrenacServer.git
+sudo ddistro_custom_mod install --local-source /path/to/KagrenacServer.git
 ```

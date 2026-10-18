@@ -89,10 +89,10 @@ if ($config !== null) {
 }
 // What health.php reports to the game: the protocol, the needed schema and optional features.
 status_check('Server version', 'Ready', SERVER_VERSION . ' (this server release, set in lib/version.php; health.php reports it as server_version).');
-status_check('Baseline', 'Ready', BASELINE_ID . ' (example template baseline, not a release or schema number). Needs migrations '
+status_check('Baseline', 'Ready', BASELINE_ID . ' (KagrenacServer template baseline, not a release or schema number). Needs migrations '
     . implode(', ', SCHEMA_MIGRATIONS) . ', in order.');
 status_check('Protocol', 'Ready', 'Version ' . PROTOCOL_VERSION . '. health.php reports server_version ' . SERVER_VERSION . ', baseline ' . BASELINE_ID . ', expected_schema ' . SCHEMA_VERSION
-    . ' and capabilities: ' . implode(', ', SERVER_CAPABILITIES) . '. Clients check it with example_mod.exe --health.');
+    . ' and capabilities: ' . implode(', ', SERVER_CAPABILITIES) . '. Clients check it with KagrenacClient.exe --health.');
 // Ready only when every required check passed: one Failed row (such as unknown migrations
 // from a newer checkout, or missing backup tools) means setup is needed.
 $failed = array_column(array_filter($checks, fn($item) => $item['status'] === 'Failed'), 'name');
