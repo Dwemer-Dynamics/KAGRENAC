@@ -1,0 +1,96 @@
+// KAGRENAC companion control event (original), appended to the user's decompiled
+// common.emevd JS by build-package.ps1 and compiled with DarkScript3 3.6.3 (/cmd -compile).
+// ELDEN RING EMEDF instructions only; names and argument counts are checked against
+// er-common.emedf.json before the compiler runs.
+// Literals: comparison 0 = equal; backread ON = loaded; death state 0 = alive, 1 = dead.
+// RequestCharacterAICommand(chr, -1, 0) clears the request, as the game's own common events do.
+//
+// One event, started from common event 0, no event flags. Where the event is waiting is the
+// state: idle -> follow -> hold -> attack -> release, one action-button press per step, and
+// release restarts the event at idle. Every wait also watches the companion; while it is
+// unloaded or dead the event issues no call against it, and if it was controlled the event
+// waits until it is loaded and alive, restores its original AI and team, then goes back to
+// idle for a fresh press. Each wait reuses condition groups, so the compiled state of the
+// previous wait is cleared first (EMEDF 2000[3]).
+// Groups: OR_01 companion lost; AND_01 press on the loaded, alive companion; OR_03 attack
+// over (hostile lost or lease elapsed); OR_02 the wait itself; AND_04 hostile guard.
+Event(@E_CONTROL@, Restart, function() {
+    // Idle: vanilla AI untouched, nothing sent to the companion.
+    IfCharacterBackreadStatus(AND_01, @COMPANION@, ON, 0, 1);
+    IfCharacterDeadalive(AND_01, @COMPANION@, 0, 0, 1);
+    IfActionButtonInArea(AND_01, @BUTTON_PARAM@, @COMPANION@);
+    IfConditionGroup(MAIN, PASS, AND_01);
+    // Follow the player.
+    SetCharacterAIId(@COMPANION@, @CONTROL_AI@);
+    SetCharacterTeamType(@COMPANION@, @CONTROL_TEAM@);
+    SetCharacterEventTarget(@COMPANION@, 10000);
+    RequestCharacterAICommand(@COMPANION@, @CMD_FOLLOW@, 0);
+    RequestCharacterAIReplan(@COMPANION@);
+    // One press, one step: no wait below sees the same press.
+    WaitFixedTimeSeconds(1);
+    ClearCompiledConditionGroupState(0);
+    IfCharacterBackreadStatus(OR_01, @COMPANION@, OFF, 0, 1);
+    IfCharacterDeadalive(OR_01, @COMPANION@, 1, 0, 1);
+    IfCharacterBackreadStatus(AND_01, @COMPANION@, ON, 0, 1);
+    IfCharacterDeadalive(AND_01, @COMPANION@, 0, 0, 1);
+    IfActionButtonInArea(AND_01, @BUTTON_PARAM@, @COMPANION@);
+    IfConditionGroup(OR_02, PASS, OR_01);
+    IfConditionGroup(OR_02, PASS, AND_01);
+    IfConditionGroup(MAIN, PASS, OR_02);
+    GotoIfConditionGroupStateCompiled(0, PASS, OR_01);
+    // Hold in place.
+    RequestCharacterAICommand(@COMPANION@, @CMD_HOLD@, 0);
+    RequestCharacterAIReplan(@COMPANION@);
+    WaitFixedTimeSeconds(1);
+    ClearCompiledConditionGroupState(0);
+    IfCharacterBackreadStatus(OR_01, @COMPANION@, OFF, 0, 1);
+    IfCharacterDeadalive(OR_01, @COMPANION@, 1, 0, 1);
+    IfCharacterBackreadStatus(AND_01, @COMPANION@, ON, 0, 1);
+    IfCharacterDeadalive(AND_01, @COMPANION@, 0, 0, 1);
+    IfActionButtonInArea(AND_01, @BUTTON_PARAM@, @COMPANION@);
+    IfConditionGroup(OR_02, PASS, OR_01);
+    IfConditionGroup(OR_02, PASS, AND_01);
+    IfConditionGroup(MAIN, PASS, OR_02);
+    GotoIfConditionGroupStateCompiled(0, PASS, OR_01);
+    // Attack only the configured hostile, only while it is loaded and alive now; otherwise
+    // this press releases (the next step of the cycle) instead.
+    IfCharacterBackreadStatus(AND_04, @HOSTILE@, ON, 0, 1);
+    IfCharacterDeadalive(AND_04, @HOSTILE@, 0, 0, 1);
+    GotoIfConditionGroupStateUncompiled(1, FAIL, AND_04);
+    SetCharacterEventTarget(@COMPANION@, @HOSTILE@);
+    RequestCharacterAICommand(@COMPANION@, @CMD_ATTACK@, 0);
+    RequestCharacterAIReplan(@COMPANION@);
+    WaitFixedTimeSeconds(1);
+    // The lease is this wait's own timeout: a press, the hostile unloading or dying, or
+    // @ATTACK_LEASE@ s all release.
+    ClearCompiledConditionGroupState(0);
+    IfCharacterBackreadStatus(OR_01, @COMPANION@, OFF, 0, 1);
+    IfCharacterDeadalive(OR_01, @COMPANION@, 1, 0, 1);
+    IfCharacterBackreadStatus(OR_03, @HOSTILE@, OFF, 0, 1);
+    IfCharacterDeadalive(OR_03, @HOSTILE@, 1, 0, 1);
+    IfElapsedSeconds(OR_03, @ATTACK_LEASE@);
+    IfCharacterBackreadStatus(AND_01, @COMPANION@, ON, 0, 1);
+    IfCharacterDeadalive(AND_01, @COMPANION@, 0, 0, 1);
+    IfActionButtonInArea(AND_01, @BUTTON_PARAM@, @COMPANION@);
+    IfConditionGroup(OR_02, PASS, OR_01);
+    IfConditionGroup(OR_02, PASS, OR_03);
+    IfConditionGroup(OR_02, PASS, AND_01);
+    IfConditionGroup(MAIN, PASS, OR_02);
+    GotoIfConditionGroupStateCompiled(0, PASS, OR_01);
+    GotoUnconditionally(1);
+    Label0();
+    // Companion lost while controlled: no calls until it is loaded and alive again.
+    ClearCompiledConditionGroupState(0);
+    IfCharacterBackreadStatus(AND_01, @COMPANION@, ON, 0, 1);
+    IfCharacterDeadalive(AND_01, @COMPANION@, 0, 0, 1);
+    IfConditionGroup(MAIN, PASS, AND_01);
+    Label1();
+    // Release: clear the order and target, restore the original AI and team, then idle.
+    RequestCharacterAICommand(@COMPANION@, -1, 0);
+    ClearCharactersAITarget(@COMPANION@);
+    SetCharacterAIId(@COMPANION@, @ORIGINAL_AI@);
+    SetCharacterTeamType(@COMPANION@, @ORIGINAL_TEAM@);
+    RequestCharacterAIReplan(@COMPANION@);
+    WaitFixedTimeSeconds(1);
+    EndUnconditionally(Restart);
+});
