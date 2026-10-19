@@ -1,9 +1,26 @@
-# Elden Ring port: NOT IMPLEMENTED
+# Elden Ring port: diagnostic foundation, not qualified in engine
 
-There is no Elden Ring port in this repository. Nothing here loads into the game, and no
-Elden Ring feature (dialogue, subtitles, follow or any other action, voice, microphone or
-playback) is supported or claimed. No engine SDK, mod loader, game file or third-party
-library is copied here, and none is installed by this repository. No in-game test has run.
+There is no working Elden Ring port. `probe/` holds a native x64 diagnostic DLL (me3
+native) and an offline build inspector. The DLL identifies the exact host file, compares
+the loaded image's PE header identity with that file, fails closed because no build is
+qualified, and logs hold, follow and attack as unsupported because it integrates no game
+backend. The fromsoftware-rs SDK handles the installed file version and has cited
+game-thread task and actor interfaces, but no NPC AI goal or target order was found in
+the three sources examined ([evidence](../../docs/engine-packs/elden-ring.md)). The DLL
+does not access actors, write game memory, hook or start threads. No dialogue, subtitles, voice or actions are supported. No
+engine SDK, mod loader, game file or third-party library is copied here or installed by
+this repository. The DLL has not been loaded by me3 or the game.
+
+Build (outside the repository; MSVC x64 with the Visual Studio generator, `/W4 /WX`):
+
+```powershell
+cmake -S ports/elden-ring/probe -B D:/build/kagrenac-elden-probe -G "Visual Studio 17 2022" -A x64
+cmake --build D:/build/kagrenac-elden-probe --config Release
+D:/build/kagrenac-elden-probe/Release/kagrenac_er_inspect.exe "<game>/Game/eldenring.exe"
+```
+
+The inspector exits 0 for a qualified build, 3 for an identified but unqualified build
+(every build today), 1 when the file cannot be identified and 2 on wrong usage.
 
 This folder records the plan and the evidence for a port. Engine facts go in
 `docs/engine-packs/elden-ring.md`, copied from
@@ -40,21 +57,22 @@ bypasses or hides from anti-cheat.
 
 ## Evidence
 
-Status words are those in the engine pack: Unknown until cited; "Verified (in engine)" only
+Status words are those in the engine pack, plus "Blocked" (no cited mechanism for this build)
+and "Not qualified"; Unknown until cited; "Verified (in engine)" only
 after testing in the game.
 
 | Capability | Stage | Evidence | Status |
 |---|---|---|---|
-| Exact game build and mod loader version | 1 | | Unknown |
-| Offline mod launch with an isolated save | 1 | | Unknown |
-| Native DLL load through the loader, and its architecture | 2 | | Unknown |
-| Game-thread tick or callback | 2 | | Unknown |
-| Worker threads or HTTP allowed from the plugin | 2 | | Unknown |
-| Player instance, and NPC instance with a stable identity | 2 | | Unknown |
-| Hostile target selected locally | 2 | | Unknown |
-| NPC hold position on command | 2 | | Unknown |
-| NPC follows the player on command | 2 | | Unknown |
-| NPC attacks the local target on command | 2 | | Unknown |
+| Exact game build and mod loader version | 1 | File 2.7.1.0, file SHA-256 recorded; me3 v0.13.0 (989b522) chosen, not installed; title patch Unknown | Identified, not qualified |
+| Offline mod launch with an isolated save | 1 | me3 `savefile` (a copy of an existing save; back up first), offline default (cited); `probe/kagrenac_er_probe.me3.example` | Not tested (no game launch) |
+| Native DLL load through the loader, and its architecture | 2 | x64 DLL built, `kagrenac_probe_init` exported; called only from a separate test process | Built; not loaded by me3 |
+| Game-thread tick or callback | 2 | me3 initializer runs on a spawned loader thread; fromsoftware-rs task interfaces cited for 2.7.1.0, not integrated | Not qualified |
+| Worker threads or HTTP allowed from the plugin | 2 | Not used by the probe | Unknown |
+| Player instance, and NPC instance with a stable identity | 2 | fromsoftware-rs actor interfaces cited (handles have no generation field); not integrated | Not qualified |
+| Hostile target selected locally | 2 | fromsoftware-rs team data cited, no hostility helper; not integrated | Not qualified |
+| NPC hold position on command | 2 | No NPC command mechanism found (fromsoftware-rs AI fields are opaque); logged `unsupported`; future acceptance in the engine pack | Blocked |
+| NPC follows the player on command | 2 | Same | Blocked |
+| NPC attacks the local target on command | 2 | Same | Blocked |
 | Save and load hooks with a stable save identity | 2 | | Unknown |
 | Player text input and subtitle display | 3 | | Unknown |
 | WAV playback on an NPC; microphone capture | 3 | | Unknown |
