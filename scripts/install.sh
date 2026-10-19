@@ -90,8 +90,8 @@ fi
 # 3. Migrations, run as the checkout owner with the same config Apache uses.
 sudo -u "$APP_OWNER" php "$APP_DIR/scripts/migrate.php"
 
-# Apache is not changed here. DwemerDistro serves /var/www/html/ExampleServer and
-# /var/www/html/custom-mods/<id> on its shared custom mods port (CUSTOM_MODS_PORT, 19000 by
-# default) after: sudo ddistro_custom_mod setup-web
+# Apache is not changed here. DwemerDistro serves every folder under /var/www/html/custom-mods/
+# (for example custom-mods/KagrenacServer) on its shared custom mods port (CUSTOM_MODS_PORT,
+# 19000 by default) after: sudo ddistro_custom_mod setup-web
 echo "Done. If not done yet, run: sudo ddistro_custom_mod setup-web"
 echo "Check: curl http://127.0.0.1:19000/${APP_DIR#/var/www/html/}/health.php (use your CUSTOM_MODS_PORT if changed)"

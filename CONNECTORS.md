@@ -89,8 +89,8 @@ and drops the other provider's field (`model` or `form_field`); other saved sett
 Try it from the client (the WAV is saved, not played):
 
 ```text
-example_mod.exe --say "hello"              with "voice_enabled": true in config.json
-example_mod.exe --listen C:\path\speech.wav
+KagrenacClient.exe --say "hello"           with "voice_enabled": true in config.json
+KagrenacClient.exe --listen C:\path\speech.wav
 ```
 
 ## NPC selection (`decision`, optional)
@@ -113,7 +113,7 @@ transcript, just send the turn to that NPC.
 question with one criterion per offered NPC plus `abstain`, waits at most 1.5 seconds, reads
 at most 16 KB and does not follow redirects. It accepts only an offered id with confidence
 0.5 or more; anything else returns the baseline with a reason. The key is sent only to
-`url`. Try it with `example_mod.exe --decide "Scout, is the north trail safe?"`. That
+`url`. Try it with `KagrenacClient.exe --decide "Scout, is the north trail safe?"`. That
 command only prints the choice.
 Each call writes one row to Logs > Connector calls (request id, provider, status, reason,
 time taken; never the transcript) after the reply was sent.

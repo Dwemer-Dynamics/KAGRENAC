@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "id": "example-server",
-  "name": "Example AI Server",
-  "description": "Small PHP and PostgreSQL example server for building your own AI mod.",
-  "project_url": "https://github.com/Dwemer-Dynamics/ExampleServer",
+  "name": "KagrenacServer",
+  "description": "Small PHP and PostgreSQL AI NPC server template for building your own AI mod.",
+  "project_url": "https://github.com/Dwemer-Dynamics/KagrenacServer",
   "dashboard_path": "ui/",
   "health_path": "health.php",
   "requirements": { "php": "8.2", "postgresql": true },
@@ -16,7 +16,7 @@
   },
   "branches": { "default": "main", "allowed": ["main", "dev"] },
   "assets": {
-    "icon": "ui/images/question-mark.png",
-    "banner": "ui/images/question-mark.png"
+    "icon": "ui/images/kagrenac.png",
+    "banner": "ui/images/kagrenac.png"
   }
 }

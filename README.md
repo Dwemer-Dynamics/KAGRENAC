@@ -1,11 +1,13 @@
-# ExampleServer
+# KagrenacServer
 
-A small example AI server for DwemerDistro, and a template for your own AI NPC mod's
-server. A game sends what the player said to an NPC; the server answers with the NPC's
-reply and, at most, one safe action (`follow_player`).
+<img src="ui/images/kagrenac.png" alt="KagrenacServer logo" width="64">
 
-Its companion client is **[ExampleMod](https://github.com/Dwemer-Dynamics/ExampleMod)**, a
-Windows console "fake game" that shows the game side. Neither is a plugin for a real game.
+A small AI NPC server for DwemerDistro, and a template for your own AI NPC mod's server. A
+game sends what the player said to an NPC; the server answers with the NPC's reply and, at
+most, one safe action (`follow_player`).
+
+Its companion client is **[KagrenacClient](https://github.com/Dwemer-Dynamics/KagrenacClient)**,
+a Windows console "fake game" that shows the game side. Neither is a plugin for a real game.
 
 ## Features
 
@@ -26,22 +28,23 @@ Windows console "fake game" that shows the game side. Neither is a plugin for a 
 ## Quick start
 
 **From the launcher:** open **Mods > Custom mods > Add custom mod** and paste
-`https://github.com/Dwemer-Dynamics/ExampleServer`. See
+`https://github.com/Dwemer-Dynamics/KagrenacServer`. See
 [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md).
 
 **Manually**, inside the DwemerDistro WSL shell as `dwemer`:
 
 ```bash
-git clone https://github.com/Dwemer-Dynamics/ExampleServer.git /var/www/html/ExampleServer
-cd /var/www/html/ExampleServer
+sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
+git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git /var/www/html/custom-mods/KagrenacServer
+cd /var/www/html/custom-mods/KagrenacServer
 sudo bash scripts/install.sh
 sudo ddistro_custom_mod setup-web   # serves it on the shared custom mods port
-curl http://127.0.0.1:19000/ExampleServer/health.php
+curl http://127.0.0.1:19000/custom-mods/KagrenacServer/health.php
 bash scripts/smoke.sh
 ```
 
-Then open the dashboard at `http://127.0.0.1:19000/ExampleServer/`. To build and pair the
-client, follow [SETUP.md](SETUP.md); it covers both repositories.
+Then open the dashboard at `http://127.0.0.1:19000/custom-mods/KagrenacServer/`. To build
+and pair the client, follow [SETUP.md](SETUP.md); it covers both repositories.
 
 19000 is DwemerDistro's shared loopback port for all custom PHP mods (`CUSTOM_MODS_PORT`,
 19000-19999); each mod has its own path and database, and official server ports such as
@@ -61,8 +64,9 @@ update the client's `server_url`.
 | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) | Renaming and customising your copy |
 | [WAVE_ACTION.md](WAVE_ACTION.md) | Worked exercise: adding a game action |
 | [AGENTS.md](AGENTS.md) | Rules for coding agents |
-| [ExampleMod README](https://github.com/Dwemer-Dynamics/ExampleMod/blob/main/README.md) | Client commands, settings and smoke checks |
-| [AGENT_PLAYBOOK.md](https://github.com/Dwemer-Dynamics/ExampleMod/blob/main/AGENT_PLAYBOOK.md) | Prompt for porting to your engine with a coding agent |
+| [KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md) | Client commands, settings and smoke checks |
+| [AGENT_PLAYBOOK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/AGENT_PLAYBOOK.md) | Staged prompt for porting to your engine with a coding agent |
+| [ENGINE_PACK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/ENGINE_PACK.md), [PORT_RECIPES.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md) | Engine evidence record and one recipe per port stage |
 
 ## Limits
 

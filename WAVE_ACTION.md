@@ -82,7 +82,7 @@ version-1 action shape; no version bump is needed. An incompatible shape needs a
 ## 4. Prove both allowlists
 
 Build x64 and x86 with `scripts/build.ps1`. Run PHP lint and server smoke checks.
-Then run `example_mod.exe --say "wave"` against your mock server:
+Then run `KagrenacClient.exe --say "wave"` against your mock server:
 
 | Case | Expected |
 |---|---|

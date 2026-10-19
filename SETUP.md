@@ -1,22 +1,21 @@
-# Setup: ExampleServer + ExampleMod
+# Setup: KagrenacServer + KagrenacClient
 
-This walkthrough installs the example server inside DwemerDistro, builds the console
-example client on Windows, and connects the two. Allow about 15 minutes. It is the
+This walkthrough installs KagrenacServer inside DwemerDistro, builds the KagrenacClient
+console client on Windows, and connects the two. Allow about 15 minutes. It is the
 canonical reference for installation and operations; for orientation, the feature checklist
 and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 
 ## What this is, and what it is not
 
-- **ExampleServer** is a small PHP 8.2 + PostgreSQL server. It gives an NPC a reply (mock or
+- **KagrenacServer** is a small PHP 8.2 + PostgreSQL server. It gives an NPC a reply (mock or
   a real LLM) and at most one safe action, `follow_player`.
-- **ExampleMod** is a Windows console program that plays a fake game. It shows the
+- **KagrenacClient** is a Windows console program that plays a fake game. It shows the
   `GameAdapter` boundary you replace with a real engine's APIs.
-- It is **not** a plugin for any real game, and it is **not** part of CHIM, Stobe or
-  Dialectic. These are independent repositories with no shared Git history or automatic
-  upstream; only the dashboard's presentation is adapted from HerikaServer (see
-  [UI_GUIDE.md](UI_GUIDE.md)). Do not expect to merge their updates into a project made from
-  this example, or the other way round.
-- This guide is a **manual install** into `/var/www/html/ExampleServer`; the official
+- It is **not** a plugin for any real game. These are independent repositories with no
+  automatic upstream; only the dashboard's presentation is adapted third-party work, from
+  HerikaServer (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A project made from
+  this template takes later template changes by hand.
+- This guide is a **manual install** into `/var/www/html/custom-mods/KagrenacServer`; the official
   launcher and updater do not install, update or back up that copy. Alternatively, the
   launcher can install the server under **Mods > Custom mods** in its own folder and
   database; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md). The client is always built
@@ -33,11 +32,12 @@ and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 
 | Repository | URL |
 |---|---|
-| ExampleServer | <https://github.com/Dwemer-Dynamics/ExampleServer> |
-| ExampleMod | <https://github.com/Dwemer-Dynamics/ExampleMod> |
+| KagrenacServer | <https://github.com/Dwemer-Dynamics/KagrenacServer> |
+| KagrenacClient | <https://github.com/Dwemer-Dynamics/KagrenacClient> |
 
 Both offer `main` (default, the stable baseline) and `dev` (development). For your own
-project, use your own repositories instead.
+project, create your own repositories with GitHub's **Use this template** (or a fork) and
+clone those instead ([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)).
 
 ## 1. Install the server (inside DwemerDistro)
 
@@ -47,10 +47,12 @@ Open a DwemerDistro WSL shell as the `dwemer` user, for example from Windows:
 wsl -d DwemerAI4Skyrim3 -u dwemer
 ```
 
-Clone the server into Apache's web root (add `-b dev` for the development branch):
+Clone the server into the custom mods folder of Apache's web root (add `-b dev` for the
+development branch). The first command creates the empty install folder, owned by `dwemer`:
 
 ```bash
-git clone https://github.com/Dwemer-Dynamics/ExampleServer.git /var/www/html/ExampleServer
+sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
+git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git /var/www/html/custom-mods/KagrenacServer
 ```
 
 Optional, for a local repository that is not published anywhere: export its committed
@@ -60,20 +62,22 @@ ownership errors when WSL reads a Windows checkout.
 ```powershell
 $bundleFolder = Join-Path $env:LOCALAPPDATA "DwemerDynamics"
 New-Item -ItemType Directory -Force $bundleFolder
-git -C "C:\path\to\ExampleServer" bundle create (Join-Path $bundleFolder "ExampleServer.bundle") --all
+git -C "C:\path\to\KagrenacServer" bundle create (Join-Path $bundleFolder "KagrenacServer.bundle") --all
 ```
 
 ```bash
-git clone /mnt/c/Users/<windows-user>/AppData/Local/DwemerDynamics/ExampleServer.bundle /var/www/html/ExampleServer
+sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
+git clone /mnt/c/Users/<windows-user>/AppData/Local/DwemerDynamics/KagrenacServer.bundle /var/www/html/custom-mods/KagrenacServer
 ```
 
 A bundle is a snapshot, not an update source: set a real remote with
-`git remote set-url origin <your-repository-url>` before using `update.sh`.
+`git remote set-url origin https://github.com/<owner>/<repository>.git` before using
+`update.sh`.
 
 Run the installer:
 
 ```bash
-cd /var/www/html/ExampleServer
+cd /var/www/html/custom-mods/KagrenacServer
 sudo bash scripts/install.sh
 ```
 
@@ -109,23 +113,26 @@ assume `19000`.
 Check it:
 
 ```bash
-curl http://127.0.0.1:19000/ExampleServer/health.php
+curl http://127.0.0.1:19000/custom-mods/KagrenacServer/health.php
 # {"protocol":1,"ok":true,"service":"example-ai-server","schema":"007_connector_calls","expected_schema":"007_connector_calls","capabilities":["turn","cancel","result","game_event","action_target","decision","speak","listen","profiles","memory","trace"],"baseline":"baseline-1","server_version":"0.1.0"}
 bash scripts/smoke.sh
 ```
 
-> **Routing not yet verified on every install.** The shared port serves only
-> `/var/www/html/ExampleServer` and `/var/www/html/custom-mods/<id>`. If `health.php`
-> returns 404 or 403, check the folder is at one of those paths and that
-> `sudo ddistro_custom_mod setup-web` succeeded.
+`"service":"example-ai-server"` is a fixed compatibility identity; it does not follow the
+project name.
+
+The shared port serves each folder directly under `/var/www/html/custom-mods/` at
+`/custom-mods/<folder>`, so this install answers at
+`http://127.0.0.1:19000/custom-mods/KagrenacServer`. `smoke.sh` and the client's shipped
+`server_url` default to that address, and pairing infers it from the folder.
 
 ### A separate copy with its own database
 
-Use a distinct folder and database when another ExampleServer is already installed.
-The shared port serves only `/ExampleServer` and `/custom-mods/<id>`, so put the copy at
-`/var/www/html/custom-mods/<id>`. The `<id>` is 3-32 lowercase letters and digits,
-starting with a letter and joined by single hyphens (for example `my-project`, not
-`my_project`); do not use an id the launcher installs, such as `example-server`. The
+Use a distinct folder and database when another KagrenacServer is already installed. Put
+the copy in its own folder directly under `/var/www/html/custom-mods/`, for example
+`my-project`; it is served at `/custom-mods/my-project`. Use letters, digits, `.`, `_` or `-`
+in the folder name so pairing can infer the address, and do not use an id the launcher
+installs, such as `example-server`. The
 installer creates `database.name` from
 your private config if it is missing. Use 1-63 lowercase letters, digits or underscores,
 starting with a letter. Choose a new name for your own project; never point a copy at
@@ -133,15 +140,16 @@ another product's database.
 
 ```bash
 sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/my-project
-git clone https://github.com/Dwemer-Dynamics/ExampleServer.git /var/www/html/custom-mods/my-project
+git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git /var/www/html/custom-mods/my-project
 cd /var/www/html/custom-mods/my-project
 # Before running install.sh:
 cp config/config.example.php config/config.php
 php -r '$p="config/config.php"; $s=file_get_contents($p); file_put_contents($p, str_replace("CHANGE_ME_TOKEN", bin2hex(random_bytes(24)), $s));'
-# Edit only database.name in config/config.php to example_ai_my_project.
+# Edit only database.name in config/config.php to my_project_ai.
 nano config/config.php
 sudo bash scripts/install.sh
 curl http://127.0.0.1:19000/custom-mods/my-project/health.php
+bash scripts/smoke.sh http://127.0.0.1:19000/custom-mods/my-project
 # Pair from this folder too; its server_url is .../custom-mods/my-project.
 ```
 
@@ -185,7 +193,7 @@ not visible at `config/config.php`. It does not check other files in the checkou
 here stops Apache from serving `.git/` or other non-PHP files. Check that yourself as
 [START_HERE.md](START_HERE.md#deployment-and-exposure) describes.
 
-You can also open `http://127.0.0.1:19000/ExampleServer/` directly in your browser; there is
+You can also open `http://127.0.0.1:19000/custom-mods/KagrenacServer/` directly in your browser; there is
 no dashboard login. Keep it on localhost or a trusted network: anyone who can open it can
 change settings and keys. It offers settings, LLM, Voice, NPC selection and API key pages,
 a conversation test, retained history, checkpoints, diagnostics and backups. Its test
@@ -195,13 +203,13 @@ blank, form and table example pages.
 ## 2. Build the client (Windows)
 
 ```powershell
-git clone https://github.com/Dwemer-Dynamics/ExampleMod.git
-cd ExampleMod
+git clone https://github.com/Dwemer-Dynamics/KagrenacClient.git
+cd KagrenacClient
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
 
-This builds x64 and x86 into `%LOCALAPPDATA%\DwemerDynamics\ExampleMod\build\x64\Release` and `...\x86\Release`
-(change with `-BuildRoot`). `config.default.json` is copied next to each `example_mod.exe`.
+This builds x64 and x86 into `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build\x64\Release` and `...\x86\Release`
+(change with `-BuildRoot`). `config.default.json` is copied next to each `KagrenacClient.exe`.
 
 ## 3. Connect them
 
@@ -210,17 +218,17 @@ mode 0600, in a folder you own that other users cannot write to (your home folde
 fine); an existing file or link is never replaced and the token is not printed:
 
 ```bash
-cd /var/www/html/ExampleServer
+cd /var/www/html/custom-mods/KagrenacServer
 sudo -u dwemer php scripts/pair_client.php --out /home/dwemer/example-client.json
 ```
 
 The address is inferred for installs under `/var/www/html` (here
-`http://127.0.0.1:19000/ExampleServer`; a copy in `/var/www/html/custom-mods/my-project` gets
-`.../custom-mods/my-project`), on port 19000. If you changed `CUSTOM_MODS_PORT`, or the folder
+`http://127.0.0.1:19000/custom-mods/KagrenacServer`; a copy in `/var/www/html/custom-mods/my-project` gets
+`.../custom-mods/my-project`; a launcher install gets `.../custom-mods/example-server`), on port 19000. If you changed `CUSTOM_MODS_PORT`, or the folder
 is anywhere else, add `--base-url http://127.0.0.1:<port>/<path>`. The shared port listens
 on loopback only. `--session-id` is optional.
 
-Copy that file to Windows next to `example_mod.exe` and name it `config.json` (git-ignored),
+Copy that file to Windows next to `KagrenacClient.exe` and name it `config.json` (git-ignored),
 for example from PowerShell:
 
 ```powershell
@@ -234,13 +242,13 @@ still write `config.json` by hand: copy `server_url` and the `token` from
 Run:
 
 ```text
-> example_mod.exe --health
+> KagrenacClient.exe --health
 Server is ready.
 Versions: client 0.1.0, client baseline baseline-1, server 0.1.0, server baseline baseline-1, schema 007_connector_calls, protocol 1.
-> example_mod.exe --say "Follow me"
+> KagrenacClient.exe --say "Follow me"
 [Guide] Of course. Lead the way.
 * npc_guide is now following you (simulated).
-> example_mod.exe
+> KagrenacClient.exe
 * Type to talk. Commands: /cancel  /listen <file.wav>  /decide <text>  /event <type> <text>  /react <type> <text>  /npc guide|scout  /session <id>  /unload  /load  /quit
 ```
 
@@ -349,7 +357,8 @@ upgrade from `004_game_events`); they add tables and columns only and change no 
   enable it, save, then press **Reindex**. Turns fall back to the keyword search whenever the
   embedding call fails or a fact has no current vector. Editing a fact clears its vector.
 - **Tracing**: every turn, event, voice and NPC selection request has a request id. Search for
-  it on Logs, Connector calls or in the Apache error log (`example-ai [<id>]: ...`).
+  it on Logs, Connector calls or in the Apache error log (`example-ai [<id>]: ...`; the
+  prefix is a fixed log identity).
 
 Checkpoints copy the summary and diary with the session's lines; restoring one puts them back
 and deletes candidate facts the session proposed after the checkpoint. Approved facts are
@@ -358,7 +367,7 @@ shared knowledge and stay. Backups and their "verify restore" include every new 
 ## 6. Back up and update
 
 ```bash
-cd /var/www/html/ExampleServer
+cd /var/www/html/custom-mods/KagrenacServer
 sudo bash scripts/backup.sh      # database + config to /home/dwemer/example-ai-server-backups/<time>/
 sudo bash scripts/update.sh      # refuses local edits, backs up, fast-forwards, migrates
 ```
@@ -374,7 +383,7 @@ sudo bash scripts/update.sh      # refuses local edits, backs up, fast-forwards,
   run `sudo -u dwemer php scripts/migrate.php` again, or restore that backup by hand (below).
 
 **Versions.** `health.php` and **Control Panel > Diagnostics** show four different things:
-`server_version` (this server's release, `0.1.0`), `protocol` (the client/server contract, `1`), `baseline` (which example template feature set
+`server_version` (this server's release, `0.1.0`), `protocol` (the client/server contract, `1`), `baseline` (which template feature set
 this code is, `baseline-1`; not a release number) and the schema (the ordered `sql/` migrations
 this code needs, listed in `lib/app.php` `SCHEMA_MIGRATIONS`). `scripts/migrate.php` applies
 missing migrations in name order, one transaction per file, and lets only one runner work at a
@@ -448,14 +457,14 @@ Back up first, then:
 
 ```bash
 sudo -u postgres dropdb YOUR_DATABASE    # use this copy's configured name; deletes its data
-rm -rf /var/www/html/ExampleServer
+rm -rf /var/www/html/custom-mods/KagrenacServer
 ```
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| `health.php` 404 | Apache route; see the routing note above. |
+| `health.php` 403 or 404 | Run `sudo ddistro_custom_mod setup-web` and check its output. The folder must sit directly under `/var/www/html/custom-mods/` and the URL must include `/custom-mods/<folder>` and your `CUSTOM_MODS_PORT`. |
 | `500 server_not_configured` | `config/config.php` missing, unreadable by `www-data`, or token still `CHANGE_ME_TOKEN`. |
 | `503 database_unavailable` | PostgreSQL running? Database settings in `config/config.php`? |
 | `503 not_migrated` | Run `sudo bash scripts/install.sh` again. |

@@ -7,7 +7,7 @@ and shows how to add pages. To add one, start with the blank, form or table page
 
 ## What the dashboard does
 
-Open `http://127.0.0.1:19000/ExampleServer/` directly (a launcher install uses
+Open `http://127.0.0.1:19000/custom-mods/KagrenacServer/` directly (a launcher install uses
 `http://127.0.0.1:19000/custom-mods/example-server/ui/`). This baseline dashboard has no
 login. Use localhost or a trusted network. There is no rate limiting.
 
@@ -45,8 +45,8 @@ off). Each step names what you should see. The same flow from the console client
 [START_HERE.md](START_HERE.md#end-to-end-walkthrough).
 
 1. **Diagnostics** (`ui/diagnostics.php`): every required row is Ready, Migrations lists
-   `007_connector_calls`, the Baseline row shows `baseline-1` (the example template, not a
-   release) and the Protocol row shows the capabilities `health.php` reports.
+   `007_connector_calls`, the Baseline row shows `baseline-1` (the template feature set, not
+   a release) and the Protocol row shows the capabilities `health.php` reports.
 2. Run `php scripts/seed_example.php` once, then open **NPC bios**: Mira Stonebridge
    (`npc_guide`) and Oren Reed (`npc_scout`) with facts. Search facts for `market`; edit
    "Market hours" and save: "Fact updated."
@@ -106,7 +106,7 @@ ui/
   conversation.php        Browser form, optional session ID and stale-result checks
   api.php                 Fixed turn/cancel/event/speak/listen/decision bridge; token added only in PHP
   history.php             Filtered existing ex_turns, at most 50 rows
-  tmpl/header.php         Shared navigation and opening HTML
+  tmpl/header.php         Shared navigation, opening HTML and the kagrenac.png favicon
   tmpl/footer.php         Closing HTML
   tmpl/navbar.php         HerikaServer centered brand/dropdown format
   tmpl/section_navigation.php Grouped link tabs, no iframes or tab-switching framework
@@ -116,8 +116,9 @@ ui/
   css/navbar.css          HerikaServer navbar and brand-menu presentation excerpts
   css/chim-theme.css      HerikaServer shared controls, panels, tables and page headers
   css/hub-navigation.css  HerikaServer grouped section-tab presentation
-  css/style.css           Example layout and minimal dropdown primitives
-  images/question-mark.png Generated question-mark branding icon
+  css/style.css           Page layout and minimal dropdown primitives
+  images/kagrenac.png     KagrenacServer branding image (navbar, favicon, launcher icon and banner)
+  images/question-mark.png Earlier branding icon, no longer referenced; kept for compatibility
   images/navbarback.png   Original HerikaServer star background
   HERIKA-LICENSE          Preserved upstream MIT notice
   examples/
@@ -198,8 +199,8 @@ Report exactly what changed and what was tested.
 Presentation comes from HerikaServer's `ui/tmpl/head.html`, `navbar.php` and `footer.html`,
 plus `ui/css/style_new.css`, `navbar.css`, `chim-theme.css` and `hub-navigation.css`.
 The centered brand-button markup, animated star background and CSS declarations are
-reused locally, with example-page links. ExampleServer's branding uses blue accents,
-a generated question-mark icon and a Times New Roman navbar label. The excerpts
+reused locally, with example-page links. KagrenacServer's branding uses blue accents,
+the `kagrenac.png` image and a Times New Roman `KagrenacServer` navbar label. The excerpts
 retain the upstream layout and component rules with a blue accent palette;
 `style.css` supplies page layout, the brand font and the small
 dropdown primitives normally supplied by Bootstrap. The main wrapper follows
@@ -229,12 +230,18 @@ HerikaServer's runtime bootstrap, version/profile queries, character selector, b
 work and form-helper scripts are not included. Their server behavior does not belong in
 this example. The upstream copyright/license is preserved in `ui/HERIKA-LICENSE`.
 
-### ExampleServer icon
+### Branding images
 
-`ui/images/question-mark.png` is an original asset generated with the built-in image
-generation tool and copied unchanged. It is separate from the retained HerikaServer
-background and presentation styles. The transparent flat blue 2D question mark is
-displayed at 50 × 50 pixels. Generation prompt:
+`ui/images/kagrenac.png` (128 x 121 PNG) is the KagrenacServer branding image, supplied by
+the project and copied unchanged. The navbar shows it at 53 x 50 pixels next to the
+`KagrenacServer` label, the page header uses it as the favicon, and `dwemer-mod.json` uses
+it as the launcher icon and banner. The same file is `assets/kagrenac.png` in
+KagrenacClient. It is separate from the retained HerikaServer background and presentation
+styles.
+
+`ui/images/question-mark.png` is the template's earlier icon, an original asset generated
+with the built-in image generation tool. Nothing references it now; it stays so older
+copies and links keep working. Its generation prompt:
 
 > Create one extremely simple flat 2D question-mark icon for a website navbar. A single
 > bold '?' with a separate circular dot. Solid medium blue #4da3ff, clean rounded

@@ -10,7 +10,7 @@ if (PHP_SAPI !== 'cli') {
 }
 require __DIR__ . '/../lib/app.php';
 
-// npc_guide is the NPC the ExampleMod console client talks to.
+// npc_guide is the NPC the KagrenacClient console client talks to.
 $bios = [
     ['npc_guide', 'Mira Stonebridge', 'Market guide', 'Mira knows every stall in the town square. She enjoys helping travelers and remembers landmarks better than names.'],
     ['npc_scout', 'Oren Reed', 'Woodland scout', 'Oren watches the trails beyond town. He speaks carefully, carries a worn map and prefers a quiet campfire to a crowded inn.'],

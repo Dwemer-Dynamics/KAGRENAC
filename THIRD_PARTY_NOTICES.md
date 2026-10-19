@@ -1,6 +1,6 @@
 # Licence and third-party notices
 
-ExampleServer is Copyright (C) 2026 Dwemer Dynamics and is licensed under the GNU General
+KagrenacServer is Copyright (C) 2026 Dwemer Dynamics and is licensed under the GNU General
 Public License, version 3 only (`GPL-3.0-only`). The full text is in [LICENSE](LICENSE).
 
 The notices below stay with the files they cover. Keep them, unchanged, in any copy or
@@ -15,6 +15,10 @@ Only presentation (templates, CSS and the background image) is adapted from Heri
 no HerikaServer runtime code is included. [UI_GUIDE.md](UI_GUIDE.md#boundaries) lists the
 upstream sources.
 
-`ui/images/question-mark.png` (navbar icon, launcher icon and banner) is an original
+`ui/images/kagrenac.png` (navbar icon, favicon, launcher icon and banner) is the project's
+branding image, supplied for this project and used unchanged. No separate licence grant has
+been specified for it; if you make your own derived mod, replace it with your own artwork.
+
+`ui/images/question-mark.png` (the earlier icon, no longer referenced) is an original
 generated asset of this project, covered by the project licence. Its generation prompt is
-in [UI_GUIDE.md](UI_GUIDE.md#exampleserver-icon).
+in [UI_GUIDE.md](UI_GUIDE.md#branding-images).
