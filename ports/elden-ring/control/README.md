@@ -3,9 +3,9 @@
 One NPC, friendly and holding from the start, that you step with the action button: it
 follows you, holds its position, or attacks one fixed hostile, using the game's own event
 script and AI scripting. The package builds in full from the user's own files (2026-10-19,
-exit 0). The user ran the earlier, hostile-at-start event package once in game (see
-[User test](#user-test-of-the-earlier-package-2026-10-19)); the friendly package below has
-not been run in game. Voice, an LLM and the server bridge are not part of this stage.
+exit 0). The user ran two earlier packages once each ([hostile at start](#user-test-of-the-earlier-package-2026-10-19);
+[friendly, stood still after Talk and did not follow at about 10 m](#user-test-of-the-friendly-package-2026-10-19)); the
+current package (per-logic file, face-the-player sign) has not been run in game. Voice, an LLM and the server bridge are not part of this stage.
 
 ## Status
 
@@ -13,10 +13,10 @@ not been run in game. Voice, an LLM and the server bridge are not part of this s
 |---|---|---|---|---|
 | Control event | `kagrenac_control.js.in` | One flagless `Restart` event, id 1042378801, started once from common event 0; sets no team and no AI id | Compiled, merged and decompiled with DarkScript3 3.6.3 in the full build | Running in game |
 | Event merge into the user's `common.emevd` | `build-package.ps1`, `erpack merge-events` | Adds that one event and its one start to the user's original binary, keeping everything else | Full friendly build 2026-10-19: `ok` true, 253 to 254 events; owned event 1042378801 (`Restart`, 66 instructions) and `InitializeEvent(0, 1042378801, 0)` at index 0 of event 0; collateral empty; original unchanged; no `SetCharacterTeamType` (`--expect-teams` with no value); all 11 character AI calls on the copy 1042360890 | Running in game |
-| AI logic | `kagrenac_companion.lua.in` | Hold with no order; follow on `TARGET_LOCALPLAYER` (21); attack on `TARGET_EVENT` (20); no `COMMON_EasySetup_Initial` | External Lua 5.0.3 contract test on the generated file: 11 pass | Running in game |
-| Think, NpcParam and Lua packing | `erpack pack` | Clones think row 43111100 as 43111190 (`logicId` 431990) and NpcParam 43111110 as 43111190 (`teamType` 47), and adds the logic to `aicommon.luabnd` | Full build: the only differing cells are `logicId` and `teamType` (48 to 47); every other row, 43111100 and 43111110 included, and every other file unchanged | Loading in game |
+| AI logic | `kagrenac_companion.lua.in` | Hold with no order; follow on `TARGET_LOCALPLAYER` (21): within 4 m turn to face the player, beyond it approach with the game's `TARGET_SELF` fourth argument; attack on `TARGET_EVENT` (20); no `COMMON_EasySetup_Initial` | External Lua 5.0.3 contract test on the generated file: 12 pass (exact goal tuples) | Running in game |
+| Think, NpcParam and Lua packing | `erpack pack` | Clones think row 43111100 as 43111190 (`logicId` 431990) and NpcParam 43111110 as 43111190 (`teamType` 47), adds the logic to `aicommon.luabnd`, and writes it as its own `431990_logic.luabnd.dcx`, laid out like the game's `010000_logic.luabnd.dcx` | Full build: the only differing cells are `logicId` and `teamType` (48 to 47); every other row, 43111100 and 43111110 included, and every other file unchanged | Loading in game |
 | Companion copy at The First Step | `erpack place` | Adds one copy of the Gatefront soldier, with its own entity id, name, think row 43111190, NpcParam row 43111190 and `BackupEventAnimID` -1, to a copy of `m60_42_36_00.msb.dcx`, 3.5 m from The First Step grace | Full build: one part and the `c4311` model entry added; with them removed the file equals the user's original byte for byte (decompressed); id and name free in every extracted MSB and event file | Standing on the ground and loading in game |
-| Full package build | `build-package.ps1` | Builds the four assets and `package.json` | 2026-10-19, Windows PowerShell 5.1, example config: exit 0 in about 1 minute; erpack built with 0 warnings and 0 errors; `package.json` read back | Installing, loading and running in game |
+| Full package build | `build-package.ps1` | Builds the five assets and `package.json` | 2026-10-19, Windows PowerShell 5.1, example config: exit 0 in about 1 minute; erpack built with 0 warnings and 0 errors; `package.json` read back | Installing, loading and running in game |
 | Native DLL route | `../probe` | Diagnostics only | | Not qualified; it controls no actor |
 
 The existing diagnostic DLL is separate and unchanged: it returns false from its
@@ -36,9 +36,11 @@ press moves one step:
 **hold -> follow -> hold -> attack -> release (hold)**
 
 - **Hold** (at the start and after every release): no order; it waits where it is.
-- **Follow** (first press): it moves to you (`TARGET_LOCALPLAYER`) when farther than 4 m
-  and stops about 2 m away.
-- **Hold** (second press): it waits where it is.
+- **Follow** (first press): within 4 m (where you are when you press) it turns to face you
+  and stays; the turn is meant as a visible sign the order reached its logic (not yet seen
+  in game). When you are farther than
+  4 m it moves to you (`TARGET_LOCALPLAYER`) and stops about 2 m away.
+- **Hold** (second press): it waits where it is and no longer turns to you.
 - **Attack** (third press): only if the configured hostile is loaded and alive at that
   moment. Its event target becomes the hostile; it moves to it (walk or run is not yet
   observed) and, within 3 m, uses animation 3000, an attack its own battle goal (431000)
@@ -52,6 +54,10 @@ press moves one step:
   game).
 
 To go from hold back to follow, finish the cycle (attack or release), then press again.
+
+The logic is registered twice, as the game does for its logics 10000, 410000 and 430000:
+in `aicommon.luabnd` and in its own `script/431990_logic.luabnd.dcx` (see
+[the friendly-package test](#user-test-of-the-friendly-package-2026-10-19)).
 
 The Lua logic calls `COMMON_Initialize` (in the game's bytecode it has no direct `AddTopGoal` site,
 though it may call helpers that were not checked), then
@@ -163,7 +169,31 @@ Exit codes: **0** the package was built (an asset build, not tested or qualified
 game); **1** refused or a step failed, with the reason printed. Output: `<out>/package/`
 (the override files), `<out>/work/` and `<out>/package.json`.
 
-Verified friendly build for The First Step, 2026-10-19 (Windows PowerShell 5.1, exit 0 in
+Current build, after the friendly-package report, 2026-10-19 (Windows PowerShell 5.1, exit 0
+in 63 s, run once into the new folder `D:/build/kagrenac-first-step/package-turn-perlogic-20261019`,
+otherwise the same command as below):
+
+| Output | Bytes | SHA-256 |
+|---|---|---|
+| `event/common.emevd.dcx` | 35440 | `786e348e167bc4042684c5869857a33c7e181765715b1933863806a38a5ae4b8` (unchanged) |
+| `map/mapstudio/m60_42_36_00.msb.dcx` | 35344 | `6805f7ee4612a0b9472d4fc9ff6b335ad090c11888be51dcafd192854c3d9262` (unchanged) |
+| `script/aicommon.luabnd.dcx` | 144064 | `5b9caf76ccc9610e36863643c2dbad33225c47c0f40922a0e3f0206c364eed29` |
+| `script/431990_logic.luabnd.dcx` | 928 | `af700f90e4cab3af25e3061263c8ddc81f0bfe241eb31568b4eb947404d4bb0a` (new) |
+| `regulation.bin` | 1925616 | `2f7a704fe51469f5bad466e1c00363f51e77b60dc5c07dbdcae8d5158760cb0d` (unchanged) |
+
+pack: `ok`, collateral empty as below (only the 1055-byte logic entry added to `aicommon`);
+`logic_file` `ok`: the per-logic file has the game's `010000_logic.luabnd.dcx` container,
+compression (DCX KRAK level 6), entry ids 1000, 1000000 and 1000001 with `Flag1`, in that
+order, under `script\ai\out\each\431990_logic\`, with only `kagrenac431990_Logic` /
+`kagrenac431990_Interupt` in its LUAINFO and LUAGNL; an independent scratch read of both
+files agrees. Event, regulation and MSB are byte-identical to the earlier friendly build.
+External checks: the Lua contract test (exact goal tuples) passes 12 of 12 on the generated
+logic and fails 4 on the earlier one; the bytecode listing shows `ApproachTarget(3,
+TARGET_LOCALPLAYER, 2, TARGET_SELF, false, -1)` and `Turn(2, TARGET_LOCALPLAYER, 0, 0, 0)`
+then `Wait(1, TARGET_NONE, 0, 0, 0)`. `package-friendly-ready-20261019` still matches its
+recorded hashes; the game's `regulation.bin` equals the input copy.
+
+Earlier verified friendly build for The First Step, 2026-10-19 (Windows PowerShell 5.1, exit 0 in
 46 s, run once into a new folder):
 
 ```powershell
@@ -255,9 +285,15 @@ with possible values `true, false`, and `--exe <EXE>` and `--savefile <SAVEFILE>
    grace? The original soldier at Gatefront is unchanged and not controlled.
 4. Use the action button on it. No custom prompt text is added; whatever prompt the game
    shows for button row 6000 (text id 7000) is what you will see. Record what you see.
-5. **Follow** (first press): walk away. It should come to you and stop around 2 to 4 m
-   away. Note whether it moves away from you instead, or attacks.
-6. **Hold** (second press), then walk away. It should stay put.
+   The prompt stays on it after every press by design: each press steps the cycle, so a
+   prompt still shown is not a failure.
+5. **Follow** (first press, once only): walk a slow circle around it at 2 to 3 m, then stop
+   and wait 3 seconds. It is meant to turn to face you (if you stand where it already
+   faces, a turn cannot be seen, hence the circle). Then walk about 10 m away in a straight
+   line and wait 5 seconds. It should come to you and stop around 2 to 4 m away. Note whether
+   it turned, whether it moved, and whether it moves away from you or attacks.
+6. **Hold** (second press): step around it; it should no longer turn to you. Walk away; it
+   should stay put.
 7. **Attack** (third press). Only if the Man-Bat (entity 1042360215, about 152 m away and
    lower down) is loaded and alive does the soldier go after it; otherwise this press is a
    release. Attack ends by itself after 60 seconds.
@@ -269,6 +305,8 @@ Note for each step what happened, and whether the soldier behaves differently fr
 untouched one, then record the result in `docs/engine-packs/elden-ring.md`.
 
 ## User test of the earlier package, 2026-10-19
+
+(The hostile-at-start package, before the friendly one.)
 
 The user reported one offline run of the earlier, hostile-at-start event package (the copy
 kept the Gatefront rows; the event switched its team and AI on the first press):
@@ -287,11 +325,57 @@ which no game AI script uses; and the old combat target, not cleared on the firs
 The friendly package removes each of these. The run did not record logs or which files the
 game loaded.
 
+## User test of the friendly package, 2026-10-19
+
+The user reported one run of `package-friendly-ready-20261019` (the friendly package before
+the per-logic file): "he just stands there and does nothing when i click talk on him". No
+hostility was reported (not explicitly confirmed). Asked whether they walked more than 4 m
+away after the press and whether the prompt stayed, the user replied "yes i did": after one
+Talk press they walked roughly 10 m away, the prompt remained, and it did not follow. So that
+package failed to follow beyond 4 m; the cause is not proven.
+
+What that does and does not show, from the package and the user's own game files (read-only,
+scratch, 2026-10-19):
+
+- **Standing still right after the press was that package's design.** The press is made
+  within action-button range, well inside 4 m, and that logic waited whenever follow was
+  ordered within 4 m. Nothing in that package was visible between the press and walking
+  4 m away. The confirmed failure is beyond 4 m: it did not follow at roughly 10 m. Which of
+  the press, the event, the logic loading or the approach failed is not shown.
+- **The logic may never have run (inference, not proven).** That package registered logic
+  431990 only in `aicommon.luabnd`. In the user's archives, 70 of the 84 logic ids used by
+  NpcThinkParam rows have their own `script/<id>_logic.luabnd.dcx`, including 10000, 410000
+  and 430000, whose per-logic `.lua` is byte-identical to their `aicommon` copy. The 14
+  without one are 431990, logics found only in `aicommon` (441000, 800000, 1540, 1542; none
+  shown to be placed in a map) and ids defined in neither. Each per-logic file holds one
+  `.lua`, one `.luagnl` and one `.luainfo` under `script\ai\out\each\<id>_logic\`. Which
+  file the game reads a think row's logic from is not proven offline, so the current
+  package does both, as the game does for 10000.
+- **Follow's fourth `ApproachTarget` argument.** Of 131 `GOAL_COMMON_ApproachTarget` call
+  sites in the game's Lua, 101 pass `TARGET_SELF` there, and both game approaches to
+  `TARGET_LOCALPLAYER` (horse logic 800000 as a top goal, white-ghost battle as a subgoal)
+  use `(life, TARGET_LOCALPLAYER, dist, TARGET_SELF, walk, ...)`; none pass
+  `TARGET_LOCALPLAYER` there. Follow now uses that shape. Attack keeps its target as the
+  fourth argument, a shape some game battle goals use with `TARGET_ENE_0`. What the argument
+  does is not documented here, and it is not shown to have stopped the follow.
+- Not changed, and not shown to matter: `GetEventRequest()` with no slot (logic 10000 reads
+  it the same way; the event writes slot 0); the grace's 5.0 m enemy deactivation distance;
+  the team-47 NpcParam row; the event. The event, regulation and MSB of the current package
+  are byte-identical to the tested one.
+
+Reading the next test: after the first press, a new turn to face you means the event passed
+the press, the order reached the logic and the logic runs. No turn, or no visible change,
+does not isolate the path: the event, the order, the logic loading, or the turn goal itself
+or how the goal queue runs it could each be the cause, even if the logic runs. If it turns
+but does not come when you are 10 m away, the approach goal or `TARGET_LOCALPLAYER` distance
+is the open question. The Talk prompt staying on it is by design (each press steps the
+cycle) and is not itself a failure.
+
 ## Limits
 
-- The friendly package has not been run in game: friendliness at spawn, hold, follow,
-  attack, release and recovery are all unproven. The one in-game report is for the earlier
-  package (above).
+- The current package has not been run in game: loading the logic, friendliness at spawn,
+  hold, follow, attack, release and recovery are all unproven. The in-game reports are for
+  the two earlier packages (above).
 - Team 47 (the raw NpcParam value of the game's spirit-summon rows) is not shown in game to
   keep the soldier and the player off each other, or to let its attack hurt the hostile.
 - `TARGET_EVENT` after `SetCharacterEventTarget` is not shown to be the hostile.

@@ -7,7 +7,7 @@
     1. config: every value a finite number in range, no duplicates, no player id
     2. eldenring.exe SHA-256 equals the recorded build (a file check; the engine itself is
        not qualified by this)
-    3. extract-inputs.ps1: common.emevd, aicommon.luabnd and the template's, companion's and
+    3. extract-inputs.ps1: common.emevd, aicommon.luabnd, 010000_logic.luabnd and the template's, companion's and
        hostile's tile MSBs and event files, read-only;
        then one `dotnet build` of erpack into the output folder (no build servers)
     4. erpack inspect on the user's MSBs and a copy of regulation.bin: the template and the
@@ -28,7 +28,8 @@
        is unchanged; the event id must also be free in the tiles' original event files, the
        event may set no team, and every character AI call must address the companion.
        DarkScript3 decompiles the merged file again as a last check.
-    6. luac 5.0.3: compile the logic; erpack pack: add it to aicommon.luabnd and clone the
+    6. luac 5.0.3: compile the logic; erpack pack: add it to aicommon.luabnd, write it as its
+       own <logic_id>_logic.luabnd.dcx (laid out like the game's 010000_logic.luabnd), and clone the
        think row (new logicId) and the NpcParam row (new teamType) into the regulation.bin
        copy, then re-read both; a last inspect qualifies the placed copy with that regulation
   Every tool but the console `dotnet build` runs hidden; each has its own timeout and checked exit code; only the process the
@@ -221,7 +222,7 @@ $tiles = @($companionMsb, $templateMsb, $hostileMsb) | Sort-Object -Unique
 $msbs = @($tiles | ForEach-Object { "/map/mapstudio/$_.msb.dcx" })
 $mapEvents = @($tiles | ForEach-Object { "/event/$_.emevd.dcx" })
 & (Join-Path $PSScriptRoot 'extract-inputs.ps1') `
-    -GameDir $GameDir -UxmExe $Uxm -OutDir $vanilla -Files (@('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx') + $msbs + $mapEvents)
+    -GameDir $GameDir -UxmExe $Uxm -OutDir $vanilla -Files (@('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx', '/script/010000_logic.luabnd.dcx') + $msbs + $mapEvents)
 if ($LASTEXITCODE -ne 0) { Refuse 'extract-inputs.ps1 failed' }
 $steps.extract = Get-Content -LiteralPath (Join-Path $vanilla 'extract.json') -Raw | ConvertFrom-Json
 
@@ -414,13 +415,15 @@ $spec = [ordered]@{
     luabnd = (Join-Path $vanilla 'script\aicommon.luabnd.dcx'); lua_bytecode = $luaBin; lua_file = "${logicName}_logic.lua"
     logic_id = $logicId; logic_name = $logicName; globals = @("${logicName}_Logic", "${logicName}_Interupt")
     regulation = $regCopy; paramdex = $defs; think_source = $originalAi; think_new = $controlAi
-    npc_source = $originalNpc; npc_new = $controlNpc; npc_team = $controlTeam; out_dir = $pkg
+    npc_source = $originalNpc; npc_new = $controlNpc; npc_team = $controlTeam
+    logic_layout = (Join-Path $vanilla 'script\010000_logic.luabnd.dcx'); out_dir = $pkg
 }
 $specPath = Join-Path $work 'pack.json'
 [IO.File]::WriteAllText($specPath, ($spec | ConvertTo-Json), $utf8)
 $code = Tool $erpack @('pack', '--oodle', $Oodle, '--spec', $specPath) (Join-Path $work 'pack')
 if ($code -ne 0) { Refuse "erpack pack failed: $(Get-Content "$work\pack.err" -Raw)" }
 $steps.pack = Get-Content -LiteralPath "$work\pack.out" -Raw | ConvertFrom-Json
+if ($steps.pack.ok -ne $true -or $steps.pack.logic_file.ok -ne $true) { Refuse 'erpack pack did not report a verified aicommon, per-logic file and regulation' }
 
 # Qualify the copy as the game would see it: the template's and the placed tile's MSBs with the
 # packaged regulation.bin. The copy alone has the control think row (logic $logicId) and the
@@ -438,7 +441,8 @@ if (-not ($placedLines -match "^npc $originalNpc exists=True team=$originalTeam$
 $steps.ids = [ordered]@{ companion = $c; template = $t; hostile = $h; button = @($inspect -match "^button $button")[0] }
 
 $outputs = [ordered]@{}
-foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', 'regulation.bin', "map\mapstudio\$companionMsb.msb.dcx") {
+$logicFile = "script\$('{0:D6}' -f $logicId)_logic.luabnd.dcx"
+foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', $logicFile, 'regulation.bin', "map\mapstudio\$companionMsb.msb.dcx") {
     $outputs[$f.Replace('\', '/')] = Sha256 (Join-Path $pkg $f)
 }
 $manifest = [ordered]@{
@@ -447,12 +451,13 @@ $manifest = [ordered]@{
     outputs = $outputs
     commands = [ordered]@{
         event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $eventControl --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
-        script_and_param = 'luac -s; erpack pack (aicommon.luabnd copy and regulation.bin copy, each re-read)'
+        script_and_param = "luac -s; erpack pack (aicommon.luabnd copy, new $($logicFile.Replace('\', '/')) and regulation.bin copy, each re-read)"
         map = "erpack place --template <user $templateMsb.msb.dcx> --template-entity $template --dest <user $companionMsb.msb.dcx> --entity $companion --name $companionName --think $controlAi --npc $controlNpc --backup-anim -1 --bonfire-row $graceRow (re-read and compared with the original); erpack inspect of the placed MSB with the packaged regulation.bin"
     }
     source_preservation = [ordered]@{
         'event/common.emevd.dcx' = "the user's original binary common with its events, instructions, parameters and strings kept; only event $eventControl and one InitializeEvent(0, $eventControl, 0) in event 0 added, the rest checked unchanged by erpack merge-events (steps.emevd.merge)"
         'script/aicommon.luabnd.dcx' = "the user's original with one added logic file $logicName and its LUAINFO/LUAGNL names"
+        ($logicFile.Replace('\', '/')) = "new: the same logic as its own per-logic file, laid out like the game's 010000_logic.luabnd.dcx (container, entry ids, flags and folder naming), with only logic $logicId in its LUAINFO and LUAGNL (steps.pack.logic_file)"
         'regulation.bin' = "a copy of the user's original with NpcThinkParam $controlAi cloned from $originalAi (only logicId changed) and NpcParam $controlNpc cloned from $originalNpc (only teamType changed, to $controlTeam); every other row, $originalAi and $originalNpc included, and every other file unchanged (steps.pack)"
         "map/mapstudio/$companionMsb.msb.dcx" = "the user's original with one enemy $companionName (entity $companion, a copy of $template from $templateMsb with think $controlAi, NpcParam $controlNpc and BackupEventAnimID -1) and its model entry if missing; with those removed it equals the original byte for byte, decompressed (steps.place)"
     }
@@ -467,7 +472,8 @@ $manifest = [ordered]@{
         "the copy loading friendly and holding: team $controlTeam from its private NpcParam row $controlNpc (the teamType of the game's spirit-summon rows) keeping it off the player and the player off it, and logic $logicId waiting with no request",
         "ActionButtonParam $button showing a prompt on a friendly character from an event, and one press passing only one wait",
         "IfElapsedSeconds($lease) in the attack wait counting from that wait, not from the event start",
-        'GOAL_COMMON_ApproachTarget on TARGET_LOCALPLAYER following the player',
+        "the game running logic $logicId for think row $controlAi at all (from $($logicFile.Replace('\', '/')) or aicommon)",
+        'GOAL_COMMON_ApproachTarget on TARGET_LOCALPLAYER following the player, and GOAL_COMMON_Turn on TARGET_LOCALPLAYER facing the player within follow range',
         "SetCharacterEventTarget setting TARGET_EVENT, and GOAL_COMMON_AttackTunableSpin with animation $attackAnim on it hitting the selected hostile",
         'the logic running without COMMON_EasySetup_Initial, and the soldier obeying follow, hold and attack',
         'a reload, warp, death or release returning the copy to a friendly hold',

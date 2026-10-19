@@ -2,7 +2,8 @@
 // Uses only the public SoulsFormats API from the user's own WitchyBND 3.0.1 release.
 //   inspect  lists MSB enemies with their think/NPC param rows, LUAINFO entries, NPC teams,
 //            think rows and action buttons
-//   pack     adds one compiled Lua logic (+ LUAINFO/LUAGNL names) to a copy of aicommon.luabnd
+//   pack     adds one compiled Lua logic (+ LUAINFO/LUAGNL names) to a copy of aicommon.luabnd,
+//            writes it as its own <id>_logic.luabnd laid out like a game per-logic file
 //            and, in a copy of regulation.bin, clones one NpcThinkParam row (new logicId) and one
 //            NpcParam row (new teamType) for the companion alone, then re-reads both
 //   merge-events  adds one owned event and its InitializeEvent from a compiled common.emevd to
@@ -139,6 +140,7 @@ static class Program
         public int npc_source { get; set; }
         public int npc_new { get; set; }
         public byte npc_team { get; set; }
+        public string logic_layout { get; set; }
         public string out_dir { get; set; }
     }
 
@@ -148,7 +150,9 @@ static class Program
         // Never overwrite: refuse before any write if a final or partial output is already there.
         var luaOut = Path.Combine(s.out_dir, "script", "aicommon.luabnd.dcx");
         var regOut = Path.Combine(s.out_dir, "regulation.bin");
-        foreach (var p in new[] { luaOut, regOut, luaOut + ".partial", regOut + ".partial" }.Where(Path.Exists))
+        var each = $"{s.logic_id:D6}_logic";
+        var eachOut = Path.Combine(s.out_dir, "script", each + ".luabnd.dcx");
+        foreach (var p in new[] { luaOut, regOut, eachOut, luaOut + ".partial", regOut + ".partial", eachOut + ".partial" }.Where(Path.Exists))
             return Fail("output already exists, refusing to overwrite: " + p);
         var code = File.ReadAllBytes(s.lua_bytecode);
         var luaHeader = new byte[] { 0x1b, 0x4c, 0x75, 0x61, 0x50, 0x01, 0x04, 0x08, 0x04, 0x06, 0x08, 0x09, 0x09, 0x08 };
@@ -191,6 +195,31 @@ static class Program
         gnlFile.Bytes = gnl.Write();
         Directory.CreateDirectory(Path.GetDirectoryName(luaOut));
         bnd.Write(luaOut + ".partial", bnd.Compression);
+
+        // <id>_logic.luabnd.dcx: in the user's archives 70 of the 84 logic ids used by think rows
+        // have their own file of this name (the checked placed logics 10000, 410000 and 430000 do;
+        // 14 ids have none). That the game loads a logic from it is not proven; as a packaging
+        // hypothesis the logic also goes into one, laid out like the game's per-logic file given
+        // as logic_layout: the same
+        // container, entry ids, flags and folder naming, one .lua, one .luagnl, one .luainfo.
+        var layout = BND4.Read(s.logic_layout);
+        if (layout.Files.Count != 3 || layout.Files.Count(f => f.Name.EndsWith(".lua")) != 1
+            || layout.Files.Count(f => f.Name.EndsWith(".luagnl")) != 1 || layout.Files.Count(f => f.Name.EndsWith(".luainfo")) != 1)
+            return Fail("logic_layout is not a per-logic luabnd (one .lua, .luagnl and .luainfo); not guessing");
+        var layoutInfo = LUAINFO.Read(layout.Files.Single(f => f.Name.EndsWith(".luainfo")).Bytes);
+        if (layoutInfo.Goals.Count != 1 || !LogicShape(layoutInfo.Goals[0])) return Fail("logic_layout does not register exactly one logic");
+        var layoutEach = $"{layoutInfo.Goals[0].ID:D6}_logic";
+        if (!layout.Files.All(f => f.Name.Contains($"\\{layoutEach}\\{layoutEach}."))) return Fail($"logic_layout entries are not named {layoutEach}; not guessing");
+        if (!layout.Files.Single(f => f.Name.EndsWith(".lua")).Bytes.Take(luaHeader.Length).SequenceEqual(luaHeader)) return Fail("logic_layout Lua entry has another header");
+        foreach (var f in layout.Files)
+        {
+            var original = f.Name;
+            f.Name = original.Replace($"\\{layoutEach}\\{layoutEach}.", $"\\{each}\\{each}.");
+            if (original.EndsWith(".lua")) f.Bytes = code;
+            else if (original.EndsWith(".luainfo")) { layoutInfo.Goals.Clear(); layoutInfo.Goals.Add(newGoal); f.Bytes = layoutInfo.Write(); }
+            else { var g = LUAGNL.Read(f.Bytes); g.Globals.Clear(); g.Globals.AddRange(s.globals); f.Bytes = g.Write(); }
+        }
+        layout.Write(eachOut + ".partial", layout.Compression);
 
         // regulation.bin copy: clone the companion's think row; only logicId changes. battleGoalID
         // is kept for compatibility; the control logic does not queue it. Clone its NpcParam row
@@ -293,6 +322,33 @@ static class Program
         if (bnd2.Version != bnd0.Version) containerBad.Add("luabnd version");
         if (bnd2.Format != bnd0.Format) containerBad.Add("luabnd format");
         if (Dcx(bnd2.Compression) != Dcx(bnd0.Compression)) containerBad.Add("luabnd compression");
+        // The per-logic file against a fresh read of its layout: same container, entries in the
+        // same order with the same ids and flags, only the names' logic id and the contents new.
+        var lay0 = BND4.Read(s.logic_layout);
+        var each2 = BND4.Read(eachOut + ".partial");
+        var eachBad = new List<string>();
+        if (each2.Version != lay0.Version || each2.Format != lay0.Format || each2.Unicode != lay0.Unicode || each2.Extended != lay0.Extended
+            || each2.BigEndian != lay0.BigEndian || each2.BitBigEndian != lay0.BitBigEndian || each2.Unk04 != lay0.Unk04 || each2.Unk05 != lay0.Unk05)
+            eachBad.Add("container header");
+        if (Dcx(each2.Compression) != Dcx(lay0.Compression)) eachBad.Add("compression");
+        if (each2.Files.Count != lay0.Files.Count) eachBad.Add("file count");
+        else for (int i = 0; i < lay0.Files.Count; i++)
+        {
+            var (a, b) = (lay0.Files[i], each2.Files[i]);
+            if (a.ID != b.ID || a.Flags != b.Flags || b.Name != a.Name.Replace($"\\{layoutEach}\\{layoutEach}.", $"\\{each}\\{each}."))
+                eachBad.Add("entry " + a.ID);
+            else if (b.Name.EndsWith(".lua") && !b.Bytes.AsSpan().SequenceEqual(code)) eachBad.Add("lua bytes");
+            else if (b.Name.EndsWith(".luainfo"))
+            {
+                var (i0, i2) = (LUAINFO.Read(a.Bytes), LUAINFO.Read(b.Bytes));
+                if (i2.Goals.Count != 1 || !Goal(i2.Goals[0], newGoal) || i2.BigEndian != i0.BigEndian || i2.LongFormat != i0.LongFormat) eachBad.Add("luainfo");
+            }
+            else if (b.Name.EndsWith(".luagnl"))
+            {
+                var (g0, g2) = (LUAGNL.Read(a.Bytes), LUAGNL.Read(b.Bytes));
+                if (!g2.Globals.SequenceEqual(s.globals) || g2.BigEndian != g0.BigEndian || g2.LongFormat != g0.LongFormat) eachBad.Add("luagnl");
+            }
+        }
         bool containers = containerBad.Count == 0;
 
         bool ok = entry.Bytes.SequenceEqual(code) && entry.Name == dir + s.lua_file && entry.Flags == game[0].Flags
@@ -302,11 +358,13 @@ static class Program
             && differing.Select(i => r2.Cells[i].Def.InternalName).SequenceEqual(new[] { "logicId" })
             && Convert.ToByte(n2["teamType"].Value) == s.npc_team
             && npcDiffering.Select(i => n2.Cells[i].Def.InternalName).SequenceEqual(new[] { "teamType" })
-            && regBad.Count == 0 && rowsBad.Count == 0 && npcRowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers;
+            && regBad.Count == 0 && rowsBad.Count == 0 && npcRowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers
+            && eachBad.Count == 0;
         if (ok)
         {
             File.Move(luaOut + ".partial", luaOut, false);
             File.Move(regOut + ".partial", regOut, false);
+            File.Move(eachOut + ".partial", eachOut, false);
         }
         static string Show(object v) => v is byte[] a ? Convert.ToHexString(a) : v?.ToString();
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -323,7 +381,9 @@ static class Program
                 value = Show(n2.Cells[i].Value), source = Show(ns2.Cells[i].Value) }),
             collateral = new { regulation_files_changed = regBad, think_rows_changed = rowsBad, npc_rows_changed = npcRowsBad, luabnd_files_changed = luaBad,
                 luainfo_goals_kept = goalsKept, luagnl_globals_kept = globalsKept, container_metadata_changed = containerBad },
-            outputs = ok ? new[] { luaOut, regOut } : new[] { luaOut + ".partial", regOut + ".partial" },
+            logic_file = new { layout = Path.GetFileName(s.logic_layout), names = each2.Files.Select(f => $"{f.ID} {f.Flags} {f.Name}"),
+                compression = Dcx(each2.Compression), differences_from_layout = eachBad, ok = eachBad.Count == 0 },
+            outputs = ok ? new[] { luaOut, regOut, eachOut } : new[] { luaOut + ".partial", regOut + ".partial", eachOut + ".partial" },
         }));
         return ok ? 0 : Fail("re-read verification failed; unverified .partial files left in place, nothing published");
     }
