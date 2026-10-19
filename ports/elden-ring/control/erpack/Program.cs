@@ -3,13 +3,17 @@
 //   inspect  lists MSB enemies with their think/NPC param rows, LUAINFO entries, NPC teams,
 //            think rows and action buttons
 //   pack     adds one compiled Lua logic (+ LUAINFO/LUAGNL names) to a copy of aicommon.luabnd
-//            and clones one NpcThinkParam row in a copy of regulation.bin, then re-reads both
+//            and, in a copy of regulation.bin, clones one NpcThinkParam row (new logicId) and one
+//            NpcParam row (new teamType) for the companion alone, then re-reads both
 //   merge-events  adds one owned event and its InitializeEvent from a compiled common.emevd to
 //            the game's original one, so no game event is re-encoded by the script compiler;
-//            --check-events: map event files the id must also be free in; --expect-teams and
-//            --expect-entity: what every SetCharacterTeamType must set and target
-//   place    adds one copy of a template enemy, under a new entity id and name, to a copy of a
-//            destination MSB beside the grace named by a BonfireWarpParam row; refuses an id or
+//            --check-events: map event files the id must also be free in; --expect-teams: the
+//            teams SetCharacterTeamType may set (given with no value: none allowed);
+//            --expect-entity: the one character every character AI call (2004[2/11/16/17/19/20])
+//            must address
+//   place    adds one copy of a template enemy, under a new entity id and name and with its own
+//            think row, NpcParam row and backup animation, to a copy of a destination MSB beside
+//            the grace named by a BonfireWarpParam row; refuses an id or
 //            name already used in any given MSB or event file, then checks the written file is
 //            the original plus only that part (and its model entry if the map lacked it)
 // It reads its inputs and writes only new files (the spec's out_dir, or --out), never overwriting:
@@ -104,7 +108,7 @@ static class Program
             Console.WriteLine($"luabnd files={bnd.Files.Count} maxId={bnd.Files.Where(f => f.ID < 1000000).Max(f => f.ID)} goals={info.Goals.Count}");
         }
         foreach (var id in (o.GetValueOrDefault("npc") ?? new List<string>()).Select(int.Parse))
-            Console.WriteLine($"npc {id} team={npc.Rows.FirstOrDefault(r => r.ID == id)?["teamType"].Value}");
+            Console.WriteLine($"npc {id} exists={npc.Rows.Any(r => r.ID == id)} team={npc.Rows.FirstOrDefault(r => r.ID == id)?["teamType"].Value}");
         foreach (var id in (o.GetValueOrDefault("think") ?? new List<string>()).Select(int.Parse))
             Console.WriteLine($"think {id} exists={think.Rows.Any(r => r.ID == id)}");
         if (o.TryGetValue("buttons", out var ids))
@@ -132,6 +136,9 @@ static class Program
         public string paramdex { get; set; }
         public int think_source { get; set; }
         public int think_new { get; set; }
+        public int npc_source { get; set; }
+        public int npc_new { get; set; }
+        public byte npc_team { get; set; }
         public string out_dir { get; set; }
     }
 
@@ -186,7 +193,8 @@ static class Program
         bnd.Write(luaOut + ".partial", bnd.Compression);
 
         // regulation.bin copy: clone the companion's think row; only logicId changes. battleGoalID
-        // is kept for compatibility; the control logic does not queue it.
+        // is kept for compatibility; the control logic does not queue it. Clone its NpcParam row
+        // too; only teamType changes. The source rows, used by the original soldier, stay as they are.
         var reg = RegulationDecryptor.DecryptERRegulation(s.regulation);
         var thinkFile = reg.Files.Single(f => Path.GetFileName(f.Name) == "NpcThinkParam.param");
         var think = PARAM.Read(thinkFile.Bytes);
@@ -201,6 +209,20 @@ static class Program
         think.Rows.Add(row);
         think.Rows.Sort((a, b) => a.ID.CompareTo(b.ID));
         thinkFile.Bytes = think.Write();
+        var npcFile = reg.Files.Single(f => Path.GetFileName(f.Name) == "NpcParam.param");
+        var npc = PARAM.Read(npcFile.Bytes);
+        npc.ApplyParamdef(PARAMDEF.XmlDeserialize(Path.Combine(s.paramdex, "NpcParam.xml")));
+        var nsrc = npc.Rows.SingleOrDefault(r => r.ID == s.npc_source);
+        if (nsrc == null) return Fail($"NpcParam {s.npc_source} not found");
+        if (npc.Rows.Any(r => r.ID == s.npc_new)) return Fail($"NpcParam {s.npc_new} already exists");
+        if (Convert.ToByte(nsrc["teamType"].Value) == s.npc_team) return Fail($"NpcParam {s.npc_source} already has team {s.npc_team}; nothing to clone");
+        var nrow = new PARAM.Row(s.npc_new, "KAGRENAC companion", npc.AppliedParamdef);
+        for (int i = 0; i < nsrc.Cells.Count; i++)
+            nrow.Cells[i].Value = nsrc.Cells[i].Value is byte[] b ? b.Clone() : nsrc.Cells[i].Value;
+        nrow["teamType"].Value = s.npc_team;
+        npc.Rows.Add(nrow);
+        npc.Rows.Sort((a, b) => a.ID.CompareTo(b.ID));
+        npcFile.Bytes = npc.Write();
         RegulationDecryptor.EncryptERRegulation(regOut + ".partial", reg);
 
         // Re-read what was written and compare it with fresh reads of the inputs.
@@ -213,29 +235,40 @@ static class Program
         var gnl2 = LUAGNL.Read(bnd2.Files.Single(f => f.Name.EndsWith(".luagnl")).Bytes);
         var reg0 = RegulationDecryptor.DecryptERRegulation(s.regulation);
         var reg2 = RegulationDecryptor.DecryptERRegulation(regOut + ".partial");
-        PARAM ReadThink(BND4 r)
+        PARAM ReadParam(BND4 r, string name, PARAMDEF def)
         {
-            var t = PARAM.Read(r.Files.Single(f => Path.GetFileName(f.Name) == "NpcThinkParam.param").Bytes);
-            t.ApplyParamdef(think.AppliedParamdef);
+            var t = PARAM.Read(r.Files.Single(f => Path.GetFileName(f.Name) == name + ".param").Bytes);
+            t.ApplyParamdef(def);
             return t;
         }
-        var think0 = ReadThink(reg0);
-        var think2 = ReadThink(reg2);
+        var think0 = ReadParam(reg0, "NpcThinkParam", think.AppliedParamdef);
+        var think2 = ReadParam(reg2, "NpcThinkParam", think.AppliedParamdef);
         var r2 = think2.Rows.Single(r => r.ID == s.think_new);
         var s2 = think2.Rows.Single(r => r.ID == s.think_source);
         var differing = Enumerable.Range(0, r2.Cells.Count).Where(i => !Same(r2.Cells[i].Value, s2.Cells[i].Value)).ToList();
+        var npc0 = ReadParam(reg0, "NpcParam", npc.AppliedParamdef);
+        var npc2 = ReadParam(reg2, "NpcParam", npc.AppliedParamdef);
+        var n2 = npc2.Rows.Single(r => r.ID == s.npc_new);
+        var ns2 = npc2.Rows.Single(r => r.ID == s.npc_source);
+        var npcDiffering = Enumerable.Range(0, n2.Cells.Count).Where(i => !Same(n2.Cells[i].Value, ns2.Cells[i].Value)).ToList();
 
         // Collateral: everything else must equal a fresh read of the inputs.
         bool SameFile(BinderFile a, BinderFile b, bool bytes) =>
             a.ID == b.ID && a.Name == b.Name && a.Flags == b.Flags && (!bytes || a.Bytes.AsSpan().SequenceEqual(b.Bytes));
         var regBad = reg2.Files.Count != reg0.Files.Count ? new List<string> { "file count" } : Enumerable.Range(0, reg0.Files.Count)
-            .Where(i => !SameFile(reg0.Files[i], reg2.Files[i], Path.GetFileName(reg0.Files[i].Name) != "NpcThinkParam.param"))
+            .Where(i => !SameFile(reg0.Files[i], reg2.Files[i], Path.GetFileName(reg0.Files[i].Name) is not ("NpcThinkParam.param" or "NpcParam.param")))
             .Select(i => reg0.Files[i].Name).ToList();
-        var rows2 = think2.Rows.Where(r => r.ID != s.think_new).ToList();
-        var rowsBad = rows2.Count != think0.Rows.Count ? new List<int> { -1 } : Enumerable.Range(0, rows2.Count)
-            .Where(i => rows2[i].ID != think0.Rows[i].ID || rows2[i].Name != think0.Rows[i].Name
-                || Enumerable.Range(0, rows2[i].Cells.Count).Any(c => !Same(rows2[i].Cells[c].Value, think0.Rows[i].Cells[c].Value)))
-            .Select(i => think0.Rows[i].ID).ToList();
+        // Every other row of both params, the source rows included, equals the original.
+        List<int> RowsBad(PARAM before, PARAM after, int added)
+        {
+            var rows = after.Rows.Where(r => r.ID != added).ToList();
+            return rows.Count != before.Rows.Count ? new List<int> { -1 } : Enumerable.Range(0, rows.Count)
+                .Where(i => rows[i].ID != before.Rows[i].ID || rows[i].Name != before.Rows[i].Name
+                    || Enumerable.Range(0, rows[i].Cells.Count).Any(c => !Same(rows[i].Cells[c].Value, before.Rows[i].Cells[c].Value)))
+                .Select(i => before.Rows[i].ID).ToList();
+        }
+        var rowsBad = RowsBad(think0, think2, s.think_new);
+        var npcRowsBad = RowsBad(npc0, npc2, s.npc_new);
         bool Meta(BinderFile f) => f.Name.EndsWith(".luainfo") || f.Name.EndsWith(".luagnl");
         // Position by position, with the new entry removed, so a reorder counts as a change.
         var kept = bnd2.Files.Where(f => f.ID != id).ToList();
@@ -267,7 +300,9 @@ static class Program
             && s.globals.All(gnl2.Globals.Contains) && (int)r2["logicId"].Value == s.logic_id
             && Equals(r2["battleGoalID"].Value, s2["battleGoalID"].Value)
             && differing.Select(i => r2.Cells[i].Def.InternalName).SequenceEqual(new[] { "logicId" })
-            && regBad.Count == 0 && rowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers;
+            && Convert.ToByte(n2["teamType"].Value) == s.npc_team
+            && npcDiffering.Select(i => n2.Cells[i].Def.InternalName).SequenceEqual(new[] { "teamType" })
+            && regBad.Count == 0 && rowsBad.Count == 0 && npcRowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers;
         if (ok)
         {
             File.Move(luaOut + ".partial", luaOut, false);
@@ -284,7 +319,9 @@ static class Program
             think_cells_differing_from_source = differing.Select(i => r2.Cells[i].Def.InternalName),
             think_cell_diffs = differing.Select(i => new { name = r2.Cells[i].Def.InternalName, type = r2.Cells[i].Def.DisplayType.ToString(),
                 value = Show(r2.Cells[i].Value), source = Show(s2.Cells[i].Value) }),
-            collateral = new { regulation_files_changed = regBad, think_rows_changed = rowsBad, luabnd_files_changed = luaBad,
+            npc_row = s.npc_new, npc_cell_diffs = npcDiffering.Select(i => new { name = n2.Cells[i].Def.InternalName,
+                value = Show(n2.Cells[i].Value), source = Show(ns2.Cells[i].Value) }),
+            collateral = new { regulation_files_changed = regBad, think_rows_changed = rowsBad, npc_rows_changed = npcRowsBad, luabnd_files_changed = luaBad,
                 luainfo_goals_kept = goalsKept, luagnl_globals_kept = globalsKept, container_metadata_changed = containerBad },
             outputs = ok ? new[] { luaOut, regOut } : new[] { luaOut + ".partial", regOut + ".partial" },
         }));
@@ -309,7 +346,7 @@ static class Program
     {
         string origPath = One(o, "original"), compPath = One(o, "compiled"), outPath = One(o, "out");
         var id = uint.Parse(One(o, "event"));
-        var expectTeams = (o.GetValueOrDefault("expect-teams") ?? new List<string>()).Select(byte.Parse).ToList();
+        var expectTeams = o.ContainsKey("expect-teams") ? o["expect-teams"].Select(byte.Parse).ToList() : null;
         uint? expectEntity = o.ContainsKey("expect-entity") ? uint.Parse(One(o, "expect-entity")) : null;
         foreach (var p in new[] { outPath, outPath + ".partial" }.Where(Path.Exists))
             return Fail("output already exists, refusing to overwrite: " + p);
@@ -352,9 +389,13 @@ static class Program
         var teams = ev.Instructions.Select((i, k) => (i, k)).Where(x => x.i.Bank == 2004 && x.i.ID == 2)
             .Select(x => new { index = x.k, args = Convert.ToHexString(x.i.ArgData), shape_ok = x.i.ArgData.Length == 8 && x.i.ArgData[5..].All(b => b == 0),
                 entity = x.i.ArgData.Length >= 4 ? BitConverter.ToUInt32(x.i.ArgData, 0) : 0, team = x.i.ArgData.Length >= 5 ? x.i.ArgData[4] : (byte)0 }).ToList();
-        bool teamsOk = teams.All(t => t.shape_ok) && (expectTeams.Count == 0
+        bool teamsOk = teams.All(t => t.shape_ok) && (expectTeams == null
             || teams.Select(t => t.team).Distinct().Order().SequenceEqual(expectTeams.Distinct().Order()));
-        bool? entityOk = expectEntity == null ? null : teams.Count > 0 && teams.All(t => t.entity == expectEntity);
+        // Character AI calls (team, event target, clear target, AI command, AI id, replan): the
+        // character is the first argument of each.
+        var aiCalls = ev.Instructions.Where(i => i.Bank == 2004 && i.ID is 2 or 11 or 16 or 17 or 19 or 20)
+            .Select(i => new { instruction = $"2004[{i.ID}]", entity = i.ArgData.Length >= 4 ? BitConverter.ToUInt32(i.ArgData, 0) : 0 }).ToList();
+        bool? entityOk = expectEntity == null ? null : aiCalls.Count > 0 && aiCalls.All(c => c.entity == expectEntity);
 
         // Event 0 ends early on some conditions (END IF instructions), so the start goes first, as
         // the compiler places it; parameter references in event 0 move with the shifted instructions.
@@ -393,6 +434,7 @@ static class Program
             ok, event_id = id, rest = ev.RestBehavior.ToString(), event_name = ev.Name, instructions = ev.Instructions.Count,
             init = new { index = 0, instruction = Ins(init), ok = initOk }, event_kept = eventOk,
             team_commands = teams, expect_teams = expectTeams, teams_ok = teamsOk, expect_entity = expectEntity, entity_ok = entityOk,
+            ai_calls = aiCalls.GroupBy(c => (c.instruction, c.entity)).Select(g => new { g.Key.instruction, g.Key.entity, count = g.Count() }),
             event_id_checks = idChecks,
             original_sha256 = origHash, original_unchanged = origKept, format = back.Format.ToString(), compression = Dcx(back.Compression),
             original_events = fresh.Events.Count, output_events = back.Events.Count,
@@ -455,6 +497,7 @@ static class Program
         var pos = new System.Numerics.Vector3(float.Parse(pv[0], inv), float.Parse(pv[1], inv), float.Parse(pv[2], inv));
         if (!float.IsFinite(pos.X) || !float.IsFinite(pos.Y) || !float.IsFinite(pos.Z)) return Fail("position is not finite");
         float F(string k) => float.Parse(One(o, k), inv);
+        int think = int.Parse(One(o, "think")), npcRow = int.Parse(One(o, "npc")), backupAnim = int.Parse(One(o, "backup-anim"));
         float offMin = F("offset-min"), offMax = F("offset-max"), maxDy = F("max-dy"), clearChr = F("clear-chr"), clearAsset = F("clear-asset"), clearRegion = F("clear-region");
         var checkMsbs = o.GetValueOrDefault("check-msb") ?? new List<string>();
         var checkEvents = o.GetValueOrDefault("check-events") ?? new List<string>();
@@ -551,8 +594,12 @@ static class Program
         }
         if (idUses.Count > 0) return Fail($"entity {id} or name {name} already used: " + string.Join("; ", idUses));
 
-        // The copy: only name, instance, entity id, position and the template map's entity groups change.
+        // The copy: only name, instance, entity id, position, the template map's entity groups, and
+        // its own think row, NpcParam row and backup animation change.
         var copy = (MSBE.Part.Enemy)t.DeepCopy();
+        copy.ThinkParamID = think;
+        copy.NPCParamID = npcRow;
+        copy.BackupEventAnimID = backupAnim;
         copy.Name = name;
         copy.InstanceID = int.Parse(name[(t.ModelName.Length + 1)..]);
         copy.EntityID = id;
@@ -578,12 +625,13 @@ static class Program
             && back.Models.GetEntries().Count == fresh.Models.GetEntries().Count + (modelAdded ? 1 : 0)
             && back.Regions.GetEntries().Count == fresh.Regions.GetEntries().Count && back.Events.GetEntries().Count == fresh.Events.GetEntries().Count
             && back.Routes.GetEntries().Count == fresh.Routes.GetEntries().Count && ownedPart != null && ownedModels.Count == 1;
-        var allowed = new HashSet<string> { "Name", "InstanceID", "EntityID", "Position", "EntityGroupIDs" };
+        var allowed = new HashSet<string> { "Name", "InstanceID", "EntityID", "Position", "EntityGroupIDs", "ThinkParamID", "NPCParamID", "BackupEventAnimID" };
         var ft = Fields(t);
         var fo = ownedPart == null ? new Dictionary<string, string>() : Fields(ownedPart);
         var differing = ft.Keys.Union(fo.Keys).Where(k => ft.GetValueOrDefault(k) != fo.GetValueOrDefault(k)).OrderBy(k => k).ToList();
         bool copyOk = ownedPart != null && differing.All(allowed.Contains) && ownedPart.EntityID == id && ownedPart.Position == pos
-            && ownedPart.EntityGroupIDs.All(g => g == 0) && back.Parts.Enemies.IndexOf(ownedPart) == partAt;
+            && ownedPart.EntityGroupIDs.All(g => g == 0) && back.Parts.Enemies.IndexOf(ownedPart) == partAt
+            && ownedPart.ThinkParamID == think && ownedPart.NPCParamID == npcRow && ownedPart.BackupEventAnimID == backupAnim;
         bool modelOk = ownedModels.Count == 1 && Fields(ownedModels[0]).OrderBy(k => k.Key).SequenceEqual(Fields(tm).OrderBy(k => k.Key));
         var outRaw = DCX.Decompress(outPath + ".partial");
         int idInOutput = Occurrences(outRaw, idBytes);
@@ -614,7 +662,7 @@ static class Program
                 nearest = dest.Parts.GetEntries().Where(p => p is MSBE.Part.Enemy or MSBE.Part.Player or MSBE.Part.Asset or MSBE.Part.DummyAsset && p.Name != name)
                     .OrderBy(p => Flat(p.Position, pos)).Take(6).Select(p => $"{p.Name} {Flat(p.Position, pos):F2} m"),
             },
-            template = new { file = Path.GetFileName(tplPath), t.Name, entity = tplId, model = t.ModelName, think = t.ThinkParamID, npc = t.NPCParamID, talk = t.TalkID,
+            template = new { file = Path.GetFileName(tplPath), t.Name, entity = tplId, model = t.ModelName, think = t.ThinkParamID, npc = t.NPCParamID, talk = t.TalkID, backup_anim = t.BackupEventAnimID,
                 entity_groups_cleared = t.EntityGroupIDs.Where(g => g != 0), collision = t.CollisionPartName, walk_route = t.WalkRouteName },
             fields_differing_from_template = differing.Select(k => new { field = k, template = ft.GetValueOrDefault(k), copy = fo.GetValueOrDefault(k) }),
             model_added = modelAdded, model_entry_ok = modelOk, part_index = partAt, counts_ok = countsOk, copy_ok = copyOk,

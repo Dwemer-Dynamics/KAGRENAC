@@ -1,5 +1,5 @@
 {
-    "_comment": "First Step test. Companion: a dedicated copy (entity 1042360890, name c4311_9901) of the Godrick Soldier c4311_9021 (entity 1042370200, m60_42_37_00; think 43111100: logic 10000, battle goal 431000; NpcParam 43111110 team 48; no talk script), placed in m60_42_36_00 3.5 m west-south-west of The First Step grace (BonfireWarpParam 61423601); the original soldier stays as it is. Hostile: Man-Bat c4200_9005 in m60_42_36_00 (NpcParam 42000010 team 6). Control team 47 = the team of the game's spirit-summon NpcParam rows; hostile_team_type must equal the hostile's own team. build-package.ps1 re-reads all of these from the user's own files and refuses on any mismatch.",
+    "_comment": "First Step test. Companion: a dedicated copy (entity 1042360890, name c4311_9901) of the Godrick Soldier c4311_9021 (entity 1042370200, m60_42_37_00; think 43111100: logic 10000, battle goal 431000; NpcParam 43111110 team 48; no talk script), placed in m60_42_36_00 3.5 m west-south-west of The First Step grace (BonfireWarpParam 61423601); the original soldier and its rows stay as they are. The copy alone uses the control think row (a clone of 43111100 with logic 431990) and a private NpcParam row (a clone of 43111110 with teamType 47), so it loads friendly and holding. Team 47 = the teamType of the game's 115 [Spirit Summon] NpcParam rows (Paramdex TEAM_TYPE 'Spirit Summon'); it is set only in the param row, never by an event. Hostile: Man-Bat c4200_9005 in m60_42_36_00 (NpcParam 42000010 team 6); hostile_team_type must equal the hostile's own team. build-package.ps1 re-reads all of these from the user's own files and refuses on any mismatch.",
     "companion_entity": 1042360890,
     "companion_msb": "m60_42_36_00",
     "companion_name": "c4311_9901",
@@ -13,8 +13,10 @@
     "hostile_team_type": 6,
     "original_ai_id": 43111100,
     "original_team_type": 48,
+    "original_npc_id": 43111110,
     "control_ai_id": 43111190,
     "control_team_type": 47,
+    "control_npc_id": 43111190,
     "logic_id": 431990,
     "event_control": 1042378801,
     "action_button_param": 6000,
