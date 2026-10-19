@@ -19,7 +19,7 @@ authorized.
 | Voice wanted? (no / text-to-speech / speech-to-text / both) | Wanted for the later demo; not in this stage |
 | Actions beyond `follow_player` (none, or which) | hold, attack (wanted; written as an event script plus AI logic in `ports/elden-ring/control`, not tested in game; the native probe still logs them as unsupported; no protocol or client change yet) |
 | Real LLM provider (mock only, or which) | Not in scope for this stage |
-| Who will test in game, and on which architecture (x64 / x86) | The user, x64, offline with an isolated save, with a character at Gatefront; no in-game test has run |
+| Who will test in game, and on which architecture (x64 / x86) | The user, x64, offline with an isolated save, at The First Step grace (a dedicated copy of the Gatefront soldier is placed beside it); no in-game test has run |
 
 ## Decisions
 
@@ -31,6 +31,7 @@ Record each choice with its date and reason. Leave a row blank until it is decid
 | 2026-10-19 | me3 natives as the loader candidate; no libER dependency | me3 documents initializer and isolated save; libER has no character control and targets another build |
 | 2026-10-19 | Fail closed: empty qualified-build table; hold, follow and attack logged as unsupported, no gameplay code or stub interface | No game backend integrated or qualified; no NPC command mechanism found in me3, libER or fromsoftware-rs |
 | 2026-10-19 | Action route: event script (EMEDF 2004[2/11/16/17/19/20]) plus an AI goal reading `GetEventRequest`, in `ports/elden-ring/control`; action button as first input; native flag bridge deferred | Engine-documented route; the flag manager cannot be located without the SDK or a guessed address |
+| 2026-10-19 | Test companion: a dedicated copy of Gatefront soldier 1042370200 (entity 1042360890, `c4311_9901`) placed 3.5 m from The First Step grace in a package copy of `m60_42_36_00.msb.dcx`; the original soldier, the control event's steps and the Man-Bat target are unchanged | The user asked for the soldier right next to The First Step grace. The dedicated copy (so the original stays as it is) was the agent's choice, and the user was told; the 3 to 4 m range and the 3.5 m spot were also chosen by the agent |
 
 ## Acceptance
 
@@ -54,7 +55,7 @@ Current stage (Elden Ring diagnostic foundation; actions through the event route
       outside the repository, renamed to end in `.me3`)
 - [x] Control package builds in full (`control/build-package.ps1`, exit 0, `package.json`
       read back); file build only, nothing installed or loaded
-- [ ] Hold, follow and attack on command in game at Gatefront (event route,
+- [ ] Hold, follow and attack on command in game at The First Step (event route,
       [control/README.md](ports/elden-ring/control/README.md)); must meet the acceptance in
       [the engine pack](docs/engine-packs/elden-ring.md#future-acceptance-for-hold-follow-and-attack)
 
@@ -65,7 +66,7 @@ Current stage (Elden Ring diagnostic foundation; actions through the event route
 | Fill in the user brief (agent, from the conversation) | Done | |
 | Qualify the engine in `docs/engine-packs/<engine>.md` | In progress | `docs/engine-packs/elden-ring.md`; event route written, native route not qualified |
 | Elden Ring diagnostic foundation | Done | Built, not loaded: file identity, loaded PE header identity, log; not yet loaded by me3 or the game |
-| Elden Ring hold / follow / attack | In progress | Event, AI logic, extractor and builder written (`ports/elden-ring/control`); full package build verified (exit 0; event merge, think row and Lua registration checked). Next: the user's offline Gatefront test. Team 47 friendliness (raw team, seen on spirit summons), the Man-Bat on the adjacent tile being loaded, and reload or warp recovery are unverified |
+| Elden Ring hold / follow / attack | In progress | Event, AI logic, extractor and builder written (`ports/elden-ring/control`); full package build verified (exit 0; event merge, think row and Lua registration checked). Next: the user's offline First Step test (copy placed beside the grace; ground contact unverified). Team 47 friendliness (raw team, seen on spirit summons), the Man-Bat on the same tile, about 152 m away, being loaded, and reload or warp recovery are unverified |
 
 ## Evidence
 
@@ -91,3 +92,5 @@ What actually ran, with date and result. Never record a claim you did not test.
 | 2026-10-19 | Same build after the review fixes, `-OutDir D:/build/kagrenac-elden-control/package-ready-20261019` | Exit 0 in 67 s; erpack 0 warnings, 0 errors; the three SHA-256s equal `package-final-20261019`. Merge: `ok`, `teams_ok`, `entity_ok` true (both team commands on 1042370200); id 1042378801 free in the original `m60_42_36_00` and `m60_42_37_00` event files. Pack: `ok`, luabnd order kept (sorted, new entry at index 167). Not installed; not run in game |
 | 2026-10-19 | `me3 launch --help` (portable me3 0.13.0), no launch | `--online [<START_ONLINE>]` with possible values `true, false`; `--exe` and `--savefile` listed; README keeps `--online false` |
 | 2026-10-19 | `me3 profile show --file` (portable me3 0.13.0) on a renamed copy of `kagrenac_er_control.me3.example`, outside the repository | Exit 0: savefile `KagrenacControl.sl2`, Elden Ring supported, one package `kagrenac-control`, no natives, online and Arxan options unset. Game not launched |
+| 2026-10-19 | Full `build-package.ps1` run with the First Step copy (Windows PowerShell 5.1, example config), `-OutDir D:/build/kagrenac-first-step/package-20261019` | Exit 0 in 71 s; four outputs, hashes in the [control README](ports/elden-ring/control/README.md#build). Grace from the user's data: BonfireWarpParam 61423601 `[Limgrave] The First Step`, `m60_42_36_00`, asset `AEG099_090_9011` at (-12.83, 90.7, -54.5). erpack place `ok`: one part plus model `c4311` added, the output with them removed equals the original byte for byte (decompressed), id 1042360890 and name `c4311_9901` free in all five extracted MSB and event files. merge-events `ok`, both team commands on 1042360890; luabnd and regulation identical to `package-ready-20261019`. Scratch negative runs of place refused 8 bad inputs. Not installed; not run in game |
+| 2026-10-19 | Same build after the doc review, one `untested` line added (BackupEventAnimID 704 and hostile-copy risks), `-OutDir D:/build/kagrenac-first-step/package-ready-20261019` | Exit 0 in 65 s; erpack 0 warnings, 0 errors; the four output SHA-256s equal `package-20261019`; `package.json` (30223 bytes) read back with 11 `untested` lines, and apart from output paths it differs from the earlier one only by the new line. Not installed; not run in game |

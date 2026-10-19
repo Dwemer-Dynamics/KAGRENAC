@@ -8,6 +8,10 @@
 //            the game's original one, so no game event is re-encoded by the script compiler;
 //            --check-events: map event files the id must also be free in; --expect-teams and
 //            --expect-entity: what every SetCharacterTeamType must set and target
+//   place    adds one copy of a template enemy, under a new entity id and name, to a copy of a
+//            destination MSB beside the grace named by a BonfireWarpParam row; refuses an id or
+//            name already used in any given MSB or event file, then checks the written file is
+//            the original plus only that part (and its model entry if the map lacked it)
 // It reads its inputs and writes only new files (the spec's out_dir, or --out), never overwriting:
 // outputs go to *.partial and are moved into place only after re-read verification passes.
 using System;
@@ -31,7 +35,8 @@ static class Program
                 "inspect" => Inspect(opt),
                 "pack" => Pack(opt),
                 "merge-events" => MergeEvents(opt),
-                _ => Fail("usage: erpack inspect|pack|merge-events --option value ..."),
+                "place" => Place(opt),
+                _ => Fail("usage: erpack inspect|pack|merge-events|place --option value ..."),
             };
         }
         catch (Exception e) { return Fail(e.ToString()); }
@@ -394,6 +399,227 @@ static class Program
             compiled_events_ignored = comp.Events.Where(e => e.ID != id && !fresh.Events.Any(f => f.ID == e.ID)).Select(e => e.ID),
             compiled_game_events_reencoded = reencoded.Count,
             collateral = new { file_metadata_changed = fileBad, events_changed = eventsBad },
+            output = ok ? outPath : outPath + ".partial",
+        }));
+        return ok ? 0 : Fail("re-read verification failed; unverified .partial file left in place, nothing published");
+    }
+
+    // Public values of an MSB entry, nested settings objects and arrays flattened, so two
+    // entries compare field by field.
+    static Dictionary<string, string> Fields(object o, string pre = "", int depth = 0)
+    {
+        var d = new Dictionary<string, string>();
+        foreach (var p in o.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0))
+        {
+            var v = p.GetValue(o);
+            if (v == null || v is string || v.GetType().IsPrimitive || v.GetType().IsEnum || v is System.Numerics.Vector3) d[pre + p.Name] = v?.ToString() ?? "null";
+            else if (v is System.Collections.IEnumerable e) d[pre + p.Name] = string.Join(",", e.Cast<object>());
+            else if (depth < 3) foreach (var kv in Fields(v, pre + p.Name + ".", depth + 1)) d[kv.Key] = kv.Value;
+            else d[pre + p.Name] = "unread";
+        }
+        return d;
+    }
+
+    // Every offset, not only aligned ones, so any stored copy of the value counts as a use.
+    static int Occurrences(byte[] data, byte[] value)
+    {
+        int n = 0;
+        for (int i = data.AsSpan().IndexOf(value); i >= 0; )
+        {
+            n++;
+            int next = data.AsSpan(i + 1).IndexOf(value);
+            i = next < 0 ? -1 : i + 1 + next;
+        }
+        return n;
+    }
+
+    static float Flat(System.Numerics.Vector3 a, System.Numerics.Vector3 b) => MathF.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z));
+
+    static IEnumerable<IMsbEntry> Entries(MSBE m) =>
+        m.Models.GetEntries().Concat<IMsbEntry>(m.Events.GetEntries()).Concat(m.Regions.GetEntries()).Concat(m.Routes.GetEntries()).Concat(m.Parts.GetEntries());
+
+    // One copy of a template enemy beside a grace. The grace comes from the user's own
+    // BonfireWarpParam row (name from the Paramdex names file, tile from areaNo/gridXNo/gridZNo,
+    // landmark = the one destination asset at the row's position, bonfire entity registered by
+    // RegisterBonfire 2009[03] in the tile's events); the height is checked against that landmark
+    // and the nearest player part (a warp spawn). Nothing about the grace is guessed or fixed here.
+    static int Place(Dictionary<string, List<string>> o)
+    {
+        string tplPath = One(o, "template"), destPath = One(o, "dest"), outPath = One(o, "out"), name = One(o, "name");
+        uint tplId = uint.Parse(One(o, "template-entity")), id = uint.Parse(One(o, "entity"));
+        int row = int.Parse(One(o, "bonfire-row"));
+        string wantName = One(o, "bonfire-name");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var pv = o.GetValueOrDefault("pos") ?? new List<string>();
+        if (pv.Count != 3) return Fail("need --pos x y z");
+        var pos = new System.Numerics.Vector3(float.Parse(pv[0], inv), float.Parse(pv[1], inv), float.Parse(pv[2], inv));
+        if (!float.IsFinite(pos.X) || !float.IsFinite(pos.Y) || !float.IsFinite(pos.Z)) return Fail("position is not finite");
+        float F(string k) => float.Parse(One(o, k), inv);
+        float offMin = F("offset-min"), offMax = F("offset-max"), maxDy = F("max-dy"), clearChr = F("clear-chr"), clearAsset = F("clear-asset"), clearRegion = F("clear-region");
+        var checkMsbs = o.GetValueOrDefault("check-msb") ?? new List<string>();
+        var checkEvents = o.GetValueOrDefault("check-events") ?? new List<string>();
+        bool Listed(List<string> l, string p) => l.Any(x => Path.GetFullPath(x).Equals(Path.GetFullPath(p), StringComparison.OrdinalIgnoreCase));
+        if (!Listed(checkMsbs, tplPath) || !Listed(checkMsbs, destPath)) return Fail("--check-msb must include the template and destination MSBs");
+        if (!Listed(checkEvents, One(o, "dest-events"))) return Fail("--check-events must include the destination's event file");
+        foreach (var p in new[] { outPath, outPath + ".partial" }.Where(Path.Exists))
+            return Fail("output already exists, refusing to overwrite: " + p);
+        var full = Path.GetFullPath(outPath);
+        if (checkMsbs.Concat(checkEvents).Append(tplPath).Append(destPath).Any(p => Path.GetFullPath(p).Equals(full, StringComparison.OrdinalIgnoreCase)))
+            return Fail("--out must be a new path, not an input");
+        string Hash(string p) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p)));
+        var inputHashes = checkMsbs.Concat(checkEvents).Append(tplPath).Append(destPath).Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(p => p, Hash);
+
+        // The grace, from the user's regulation and the Paramdex names.
+        var names = File.ReadAllLines(One(o, "bonfire-names")).Where(l => l.StartsWith(row + " ")).ToList();
+        if (names.Count != 1 || names[0][(row.ToString().Length + 1)..] != wantName) return Fail($"BonfireWarpParam {row} is not named '{wantName}' in the names file");
+        var reg = RegulationDecryptor.DecryptERRegulation(One(o, "regulation"));
+        var bw = LoadParam(reg, One(o, "paramdex"), "BonfireWarpParam").Rows.SingleOrDefault(r => r.ID == row);
+        if (bw == null) return Fail($"BonfireWarpParam {row} not in regulation.bin");
+        var tile = $"m{bw["areaNo"].Value:00}_{bw["gridXNo"].Value:00}_{bw["gridZNo"].Value:00}_00";
+        var destTile = Path.GetFileName(destPath).Split('.')[0];
+        if (destTile != tile) return Fail($"BonfireWarpParam {row} is on {tile}, not {destTile}");
+        var warp = new System.Numerics.Vector3((float)bw["posX"].Value, (float)bw["posY"].Value, (float)bw["posZ"].Value);
+        uint bonfire = (uint)bw["bonfireEntityId"].Value;
+        var destEvents = One(o, "dest-events");
+        if (Path.GetFileName(destEvents).Split('.')[0] != tile) return Fail($"--dest-events must be {tile}'s event file");
+        var registers = EMEVD.Read(destEvents).Events.SelectMany(e => e.Instructions.Select((i, k) => (e, i, k)))
+            .Where(x => x.i.Bank == 2009 && x.i.ID == 3 && x.i.ArgData.Length >= 24 && BitConverter.ToUInt32(x.i.ArgData, 4) == bonfire).ToList();
+        if (registers.Count != 1) return Fail($"bonfire entity {bonfire} is registered {registers.Count} times (RegisterBonfire 2009[03]) in {tile}'s events, need one");
+        var rb = registers[0];
+
+        var dest = MSBE.Read(destPath);
+        var marks = dest.Parts.Assets.Where(a => MathF.Abs(a.Position.X - warp.X) < 0.01f && MathF.Abs(a.Position.Y - warp.Y) < 0.01f && MathF.Abs(a.Position.Z - warp.Z) < 0.01f).ToList();
+        if (marks.Count != 1) return Fail($"{marks.Count} assets at BonfireWarpParam {row}'s position {warp} in {tile}, need exactly one");
+        var mark = marks[0];
+        var spawn = dest.Parts.Players.Where(p => Flat(p.Position, mark.Position) <= 5).OrderBy(p => Flat(p.Position, mark.Position)).FirstOrDefault();
+        if (spawn == null) return Fail("no player part within 5 m of the grace to check the height against");
+
+        // The place: beside the grace, at its height, clear of characters, assets and event areas.
+        float off = Flat(pos, mark.Position);
+        if (off < offMin || off > offMax) return Fail($"position is {off:F2} m from the grace, need {offMin}..{offMax}");
+        if (MathF.Abs(pos.Y - mark.Position.Y) > maxDy || MathF.Abs(pos.Y - spawn.Position.Y) > maxDy)
+            return Fail($"height {pos.Y} is more than {maxDy} m from the grace ({mark.Position.Y}) or the player part {spawn.Name} ({spawn.Position.Y})");
+        var tooClose = dest.Parts.Enemies.Cast<MSBE.Part>().Concat(dest.Parts.Players).Concat(dest.Parts.DummyEnemies).Where(p => Flat(p.Position, pos) < clearChr)
+            .Concat(dest.Parts.Assets.Cast<MSBE.Part>().Concat(dest.Parts.DummyAssets).Where(p => Flat(p.Position, pos) < clearAsset))
+            .Select(p => $"{p.Name} {Flat(p.Position, pos):F2} m").ToList();
+        if (tooClose.Count > 0) return Fail("position too close to " + string.Join(", ", tooClose));
+        // Event-addressed areas (entity id set): outside each, with a margin, on the ground plane.
+        // A box counts by its corner radius, so its rotation does not matter; any other shape
+        // within 30 m is refused unchecked.
+        bool Inside(MSBE.Region r) => Flat(pos, r.Position) < clearRegion + r.Shape switch
+        {
+            MSB.Shape.Point => 0,
+            MSB.Shape.Sphere s => s.Radius,
+            MSB.Shape.Cylinder c => c.Radius,
+            MSB.Shape.Box b => MathF.Sqrt(b.Width * b.Width + b.Depth * b.Depth) / 2,
+            _ => 30,
+        };
+        var inRegions = dest.Regions.GetEntries().Where(r => r.EntityID != 0 && Inside(r)).Select(r => $"{r.GetType().Name} {r.EntityID} {r.Shape.GetType().Name}").ToList();
+        if (inRegions.Count > 0) return Fail("position inside (or unchecked shape of) event regions: " + string.Join(", ", inRegions));
+
+        // The template and its references.
+        var tpl = MSBE.Read(tplPath);
+        var src = tpl.Parts.Enemies.Where(e => e.EntityID == tplId).ToList();
+        if (src.Count != 1) return Fail($"template entity {tplId} found {src.Count} times in {Path.GetFileName(tplPath)}");
+        var t = src[0];
+        var tm = tpl.Models.Enemies.SingleOrDefault(m => m.Name == t.ModelName);
+        if (tm == null) return Fail($"template model {t.ModelName} not registered in its own MSB");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(name, $"^{t.ModelName}_\\d{{4}}$")) return Fail($"name must be {t.ModelName}_NNNN");
+        // Any other name reference (collision, patrol route, ...) would point into the template's map.
+        var refs = t.GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name is not ("Name" or "ModelName" or "SibPath"))
+            .Select(p => (p.Name, v: (string)p.GetValue(t))).Where(x => !string.IsNullOrEmpty(x.v)).ToList();
+        if (refs.Count > 0) return Fail("template references " + string.Join(", ", refs.Select(r => $"{r.Name}={r.v}")) + "; not guessing a destination reference");
+        if (t.TileLoad.MapID.Any(b => b != 255)) return Fail("template has a tile-load map reference; not guessing one for the destination");
+
+        // The id and name must be new everywhere given: any byte offset of every MSB and event file,
+        // and every entry name of every MSB (also as raw UTF-16).
+        var idBytes = BitConverter.GetBytes(id);
+        var nameBytes = System.Text.Encoding.Unicode.GetBytes(name + "\0");
+        var idUses = new List<string>();
+        foreach (var p in checkMsbs)
+        {
+            var raw = DCX.Decompress(p);
+            int n = Occurrences(raw, idBytes), m = Occurrences(raw, nameBytes);
+            if (n > 0 || m > 0) idUses.Add($"{Path.GetFileName(p)}: id {n}x, name {m}x");
+            if (Entries(MSBE.Read(p)).Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))) idUses.Add($"{Path.GetFileName(p)}: entry named {name}");
+        }
+        foreach (var p in checkEvents)
+        {
+            int n = Occurrences(DCX.Decompress(p), idBytes);
+            if (n > 0 || EMEVD.Read(p).Events.Any(e => e.ID == id)) idUses.Add($"{Path.GetFileName(p)}: id {n}x");
+        }
+        if (idUses.Count > 0) return Fail($"entity {id} or name {name} already used: " + string.Join("; ", idUses));
+
+        // The copy: only name, instance, entity id, position and the template map's entity groups change.
+        var copy = (MSBE.Part.Enemy)t.DeepCopy();
+        copy.Name = name;
+        copy.InstanceID = int.Parse(name[(t.ModelName.Length + 1)..]);
+        copy.EntityID = id;
+        copy.Position = pos;
+        for (int i = 0; i < copy.EntityGroupIDs.Length; i++) copy.EntityGroupIDs[i] = 0;
+        bool Sorted<T>(List<T> l) where T : IMsbEntry => l.Zip(l.Skip(1)).All(p => string.CompareOrdinal(p.First.Name, p.Second.Name) < 0);
+        int At<T>(List<T> l, string n) where T : IMsbEntry => Sorted(l) ? l.Count(x => string.CompareOrdinal(x.Name, n) < 0) : l.Count;
+        bool modelAdded = !dest.Models.Enemies.Any(m => m.Name == t.ModelName);
+        if (modelAdded) dest.Models.Enemies.Insert(At(dest.Models.Enemies, tm.Name), (MSBE.Model.Enemy)tm.DeepCopy());
+        int partAt = At(dest.Parts.Enemies, name);
+        dest.Parts.Enemies.Insert(partAt, copy);
+        Directory.CreateDirectory(Path.GetDirectoryName(full));
+        dest.Write(outPath + ".partial", dest.Compression);
+
+        // Re-read: exactly the one part (and model) added; with them removed, the file is the
+        // user's original byte for byte (decompressed); the inputs are unchanged.
+        var back = MSBE.Read(outPath + ".partial");
+        var fresh = MSBE.Read(destPath);
+        var owned = back.Parts.GetEntries().Where(e => e.Name == name).ToList();
+        var ownedPart = owned.Count == 1 ? owned[0] as MSBE.Part.Enemy : null;
+        var ownedModels = back.Models.Enemies.Where(m => m.Name == t.ModelName).ToList();
+        bool countsOk = back.Parts.GetEntries().Count == fresh.Parts.GetEntries().Count + 1
+            && back.Models.GetEntries().Count == fresh.Models.GetEntries().Count + (modelAdded ? 1 : 0)
+            && back.Regions.GetEntries().Count == fresh.Regions.GetEntries().Count && back.Events.GetEntries().Count == fresh.Events.GetEntries().Count
+            && back.Routes.GetEntries().Count == fresh.Routes.GetEntries().Count && ownedPart != null && ownedModels.Count == 1;
+        var allowed = new HashSet<string> { "Name", "InstanceID", "EntityID", "Position", "EntityGroupIDs" };
+        var ft = Fields(t);
+        var fo = ownedPart == null ? new Dictionary<string, string>() : Fields(ownedPart);
+        var differing = ft.Keys.Union(fo.Keys).Where(k => ft.GetValueOrDefault(k) != fo.GetValueOrDefault(k)).OrderBy(k => k).ToList();
+        bool copyOk = ownedPart != null && differing.All(allowed.Contains) && ownedPart.EntityID == id && ownedPart.Position == pos
+            && ownedPart.EntityGroupIDs.All(g => g == 0) && back.Parts.Enemies.IndexOf(ownedPart) == partAt;
+        bool modelOk = ownedModels.Count == 1 && Fields(ownedModels[0]).OrderBy(k => k.Key).SequenceEqual(Fields(tm).OrderBy(k => k.Key));
+        var outRaw = DCX.Decompress(outPath + ".partial");
+        int idInOutput = Occurrences(outRaw, idBytes);
+        if (ownedPart != null) back.Parts.Enemies.Remove(ownedPart);
+        if (modelAdded && ownedModels.Count == 1) back.Models.Enemies.Remove(ownedModels[0]);
+        bool originalKept = DCX.Decompress(back.Write()).AsSpan().SequenceEqual(DCX.Decompress(destPath));
+        bool sameCompression = Dcx(MSBE.Read(outPath + ".partial").Compression) == Dcx(fresh.Compression);
+        var inputsChanged = inputHashes.Where(kv => Hash(kv.Key) != kv.Value).Select(kv => Path.GetFileName(kv.Key)).ToList();
+
+        bool ok = countsOk && copyOk && modelOk && idInOutput == 1 && originalKept && sameCompression && inputsChanged.Count == 0;
+        if (ok) File.Move(outPath + ".partial", outPath, false);
+        string V(System.Numerics.Vector3 v) => $"{v.X.ToString(inv)}, {v.Y.ToString(inv)}, {v.Z.ToString(inv)}";
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            ok,
+            grace = new
+            {
+                bonfire_warp_row = row, name = wantName, tile, warp_position = V(warp), bonfire_entity = bonfire,
+                register_bonfire = new { @event = rb.e.ID, index = rb.k, flag = BitConverter.ToUInt32(rb.i.ArgData, 0),
+                    reaction_distance = BitConverter.ToSingle(rb.i.ArgData, 8), enemy_deactivation_distance = BitConverter.ToSingle(rb.i.ArgData, 20) },
+                landmark = new { mark.Name, model = mark.ModelName, entity = mark.EntityID, position = V(mark.Position), rotation_y = mark.Rotation.Y },
+                height_reference = new { spawn.Name, model = spawn.ModelName, entity = spawn.EntityID, position = V(spawn.Position), distance = Flat(spawn.Position, mark.Position) },
+            },
+            placed = new
+            {
+                name, entity = id, position = V(pos), rotation = V(copy.Rotation), from_grace_m = off,
+                dx = pos.X - mark.Position.X, dz = pos.Z - mark.Position.Z, dy_grace = pos.Y - mark.Position.Y, dy_spawn = pos.Y - spawn.Position.Y,
+                nearest = dest.Parts.GetEntries().Where(p => p is MSBE.Part.Enemy or MSBE.Part.Player or MSBE.Part.Asset or MSBE.Part.DummyAsset && p.Name != name)
+                    .OrderBy(p => Flat(p.Position, pos)).Take(6).Select(p => $"{p.Name} {Flat(p.Position, pos):F2} m"),
+            },
+            template = new { file = Path.GetFileName(tplPath), t.Name, entity = tplId, model = t.ModelName, think = t.ThinkParamID, npc = t.NPCParamID, talk = t.TalkID,
+                entity_groups_cleared = t.EntityGroupIDs.Where(g => g != 0), collision = t.CollisionPartName, walk_route = t.WalkRouteName },
+            fields_differing_from_template = differing.Select(k => new { field = k, template = ft.GetValueOrDefault(k), copy = fo.GetValueOrDefault(k) }),
+            model_added = modelAdded, model_entry_ok = modelOk, part_index = partAt, counts_ok = countsOk, copy_ok = copyOk,
+            id_and_name_free_in = checkMsbs.Concat(checkEvents).Select(Path.GetFileName), id_in_output = idInOutput,
+            original_entries_unchanged = originalKept, same_compression = sameCompression, inputs_changed = inputsChanged,
             output = ok ? outPath : outPath + ".partial",
         }));
         return ok ? 0 : Fail("re-read verification failed; unverified .partial file left in place, nothing published");
