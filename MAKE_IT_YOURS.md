@@ -26,7 +26,7 @@ template as an extra remote and merge reviewed updates on a working branch.
 | Model behavior | Server `lib/llm.php`: `openai_reply()` system prompt; `mock_reply()` for predictable tests |
 | Safe actions | Both allowlists, explicit adapter/handler, `PROTOCOL.md`; see [WAVE_ACTION.md](WAVE_ACTION.md) |
 | Private endpoints/keys | Server `config/config.php`, client `config.json` (next to the built exe, outside the repository); never shipped defaults or documentation |
-| Your project brief | `PROJECT.md`: what you are building, decisions, acceptance and evidence |
+| Your project brief | `PROJECT.md`: brief, integration plan, stages, decisions and latest evidence |
 | Your copyright notice | Add your notice to README and `THIRD_PARTY_NOTICES.md` (and `client/THIRD_PARTY_NOTICES.md` for client binaries); keep `LICENSE` (GPL-3.0-only) and every existing and third-party notice |
 
 For local WSL setup, clone your own repository into

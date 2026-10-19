@@ -3,9 +3,9 @@
 **KAGRENAC AI Mod Maker** is one repository with two components: **KagrenacServer** (PHP 8.2 +
 PostgreSQL, at the repository root, runs inside DwemerDistro WSL) and **KagrenacClient** (a
 C++17 Windows console "fake game", in `client/`). Use them, with a coding agent, to build the
-server and client of your own AI NPC mod. The developer cold start is
-[docs/getting-started.md](docs/getting-started.md); your project brief is
-[PROJECT.md](PROJECT.md). This page gets you oriented, shows
+server and client of your own AI NPC mod. The route from download to your first AI
+prototype is [docs/getting-started.md](docs/getting-started.md); your project brief is
+[PROJECT.md](PROJECT.md). This reference page gets you oriented, shows
 what works today, walks one request from start to finish, and tells you where each detail
 is documented.
 
@@ -49,8 +49,8 @@ Each topic has one canonical document. Other pages link to it instead of repeati
 
 | Need | Canonical document |
 |---|---|
-| Your project brief, decisions, acceptance and evidence | [PROJECT.md](PROJECT.md) |
-| Developer cold start: tools, clone, the two copies, `scripts/project.ps1` | [docs/getting-started.md](docs/getting-started.md) |
+| Your project brief, integration plan, stage checklist and latest evidence | [PROJECT.md](PROJECT.md) |
+| The route (brief, integration plan, DwemerDistro, LLM and voice tests, first prototype), the two copies, `scripts/project.ps1` | [docs/getting-started.md](docs/getting-started.md) |
 | Orientation, status, walkthrough, troubleshooting by request ID, event log, server files, porting checklist | This page |
 | Install, permissions, pairing, LLM and voice setup, backups, updates, versions, migrations, checkpoints, removal, troubleshooting by symptom | [SETUP.md](SETUP.md) |
 | Copyable LLM, voice, NPC selection, profile and memory/embedding settings | [CONNECTORS.md](CONNECTORS.md) |
@@ -620,8 +620,9 @@ The template has no packaging script. When you share your project:
 
 ## Porting to a real engine
 
-Hand the agent [docs/agent-playbook.md](docs/agent-playbook.md) with the repository and
-your engine's real SDK. Record engine facts and results in
+After the brief and integration plan ([getting-started](docs/getting-started.md)), hand the
+agent [docs/agent-playbook.md](docs/agent-playbook.md) with the repository and your engine's
+real SDK. Record engine facts and results in
 [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md); how-to steps for each item are in
 [docs/feature-recipes/PORT_RECIPES.md](docs/feature-recipes/PORT_RECIPES.md). The port must provide:
 
@@ -655,6 +656,9 @@ Evidence levels. Report each one separately, and claim only what you actually ra
 3. Real provider calls (LLM, voice, JEV), each tested on its own.
 4. In-game: talk to an NPC, see the subtitle, follow, cancel a slow reply, unload the NPC
    while a reply is pending, and stop the server, all without a crash or hang.
+
+Level 1 is required when server code changed and level 2 when shared client code changed;
+neither is a warm-up that the first in-game prototype has to wait for.
 
 Until level 4 has been done in a specific game, do not describe the mod as working in that
 game. Passing console checks says nothing about an engine.

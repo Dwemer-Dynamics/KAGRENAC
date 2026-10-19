@@ -1,13 +1,13 @@
 # Agent playbook: turn the template into a real mod
 
-Paste the prompt below into your coding agent, from the root of your copy of the
+The deep reference for a full engine port. Start with the route in
+[getting-started.md](getting-started.md): the brief and the integration plan in
+[PROJECT.md](../PROJECT.md) come first, and this staged prompt carries the plan through to a
+complete port. Paste it into your coding agent from the root of your copy of the
 **KAGRENAC AI Mod Maker** repository (KagrenacServer at the root, KagrenacClient in
-`client/`) with your engine's modding SDK or project available. Make the copy from
-<https://github.com/Dwemer-Dynamics/Kagrenac> with GitHub's **Use this template** or a
-fork. You do not need to fill in [PROJECT.md](../PROJECT.md) or "Authorized now" first:
-the agent fills PROJECT.md from your conversation and earlier instructions, and
-"Authorized now" is an optional pre-fill. The agent keeps going through everything you
-authorized and asks only for what is materially missing.
+`client/`) with your engine's modding SDK or project available. "Authorized now" is an
+optional pre-fill; the agent keeps going through everything you authorized and asks only
+for what is materially missing.
 
 Companion files: [engine-packs/ENGINE_PACK.md](engine-packs/ENGINE_PACK.md) is the blank
 evidence record for your engine, and [feature-recipes/PORT_RECIPES.md](feature-recipes/PORT_RECIPES.md)
@@ -19,10 +19,11 @@ has one bounded recipe per stage. The canonical port checklist and evidence leve
 ```text
 You are porting the KAGRENAC AI Mod Maker template, KagrenacServer (the AI server, at the
 repository root) and KagrenacClient (a console "fake game" client, in client/), into an AI
-NPC mod for my engine. Before changing anything, read PROJECT.md, START_HERE.md, AGENTS.md,
-client/AGENTS.md, README.md, client/README.md, PROTOCOL.md, SETUP.md,
-docs/engine-packs/ENGINE_PACK.md and docs/feature-recipes/PORT_RECIPES.md. Follow both
-AGENTS.md files. Host setup is in SETUP.md; provider settings are in CONNECTORS.md.
+NPC mod for my engine. Before changing anything, read AGENTS.md, client/AGENTS.md,
+PROJECT.md (with its integration plan) and docs/getting-started.md, and follow both
+AGENTS.md files. Open the references when a stage needs them: PROTOCOL.md for the contract,
+docs/feature-recipes/PORT_RECIPES.md per stage, SETUP.md for the host, CONNECTORS.md for
+providers.
 
 AUTHORIZED NOW (optional pre-fill. A blank item is not authorized unless my current or
 earlier instructions already grant it; "no" means do not do it. See HOW TO WORK.)
@@ -46,7 +47,8 @@ HOW TO WORK
   by me); a material decision (a protocol, schema, endpoint or
   dependency change, or anything a recipe marks out of scope); or a blocker you cannot
   resolve (an engine API you cannot find, a build you cannot fix, source that contradicts
-  the docs).
+  the docs). Record what blocks it and the next action, and keep going on the stages that
+  do not depend on it.
 - Never invent engine APIs. Cite the SDK file or doc for every engine fact. If something is
   unknown, write "Unknown" in your engine pack, leave a clearly marked TODO, and say so.
 - Skip optional stages that are not authorized and say they were skipped.
@@ -56,13 +58,16 @@ HOW TO WORK
 
 STAGES (recipes in docs/feature-recipes/PORT_RECIPES.md; record results in your copy of
 docs/engine-packs/ENGINE_PACK.md)
-0. Scope. List the docs you read, the constraints you noted and the authorized items.
-   Do not pause.
+0. Scope. Confirm the integration plan in PROJECT.md is filled in (write it if it is not;
+   stages 1 to 3 do not wait for it, but mod code from stage 4 on needs its options
+   chosen), and list the constraints you noted and the authorized items. Do not pause.
 1. Recon. Fill the "SDK facts" part of the engine pack: plugin architecture (native,
    managed or script), lifecycle hooks, main-thread tick, threading and HTTP, NPC
    identity, display, follow, save hooks, config location, logging, optional audio.
-2. Baseline. Install the server and build the console client unchanged, as SETUP.md says.
-   Run evidence levels 1 and 2 from START_HERE. Change nothing until they pass.
+   Unknowns get bounded research and concrete options, as getting-started.md describes.
+2. Baseline. Install the server as SETUP.md says and run evidence level 1 from START_HERE.
+   This is a developer check, not a demo; run level 2 (console) only when shared client
+   code changes.
 3. Project identity. Rename folders, database name and ids in docs. Add your own notice
    to README and THIRD_PARTY_NOTICES.md; keep LICENSE (GPL-3.0-only) unchanged and every
    existing and third-party notice; never rename or remove the
@@ -102,10 +107,11 @@ ACCEPTANCE REPORT
 
 ---
 
-## Warm-up exercise (before stage 5)
+## Optional exercise (never a gate)
 
 A small change that touches each boundary once, on your own copy with a disposable
-database, so the agent learns the seams before porting:
+database. Use it only if a developer wants to learn the seams; it is not required before
+the integration plan, setup or the first AI line in game:
 
 1. **Game side** (`client/src/console_game.h`, behind `GameAdapter`): add a third fictional
    NPC, e.g. `npc_smith` "Smith" at "Forge Lane", and let `/npc smith` face it. Nothing in

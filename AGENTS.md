@@ -7,24 +7,34 @@ Follow both when a change touches both.
 
 ## Start of every task
 
-1. Read [PROJECT.md](PROJECT.md): the user's brief, decisions, acceptance criteria and
-   evidence so far. If it is blank or incomplete, fill it in yourself from the current
-   conversation and the user's earlier instructions; the user does not have to fill in a
-   form first, and you do not ask them to confirm what they already said.
-2. Settle scope before building: which game or engine, whether voice is wanted, and which
-   actions beyond `follow_player`. Take what the user already said; ask only for facts that
-   are materially missing for the next step. Do not assume any of them. Permissions the
-   user already gave stay in force, so do not ask for them again; silence never grants a
-   side effect (installs, provider calls, commits, publishing).
-3. Inspect real capabilities before promising anything: what this repository does today
-   ([README.md](README.md#what-works-today), [START_HERE.md](START_HERE.md#feature-and-status-checklist)),
-   what is installed and running (`scripts/project.ps1 doctor`), and what the engine's SDK
-   actually offers.
-4. Qualify the engine with a copy of [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md)
-   (cited SDK facts versus verified in engine) before promising game support, microphone
-   capture, audio playback or real actions. The console's follow is a printed simulation.
-5. Record the brief, decisions and evidence in `PROJECT.md` as you go; keep it short and
-   factual.
+1. Read [PROJECT.md](PROJECT.md) and resume at its first unchecked stage that is ready to
+   work on. If it is blank or incomplete, fill it in yourself from the conversation and the
+   user's earlier instructions; never send the user a form or ask them to confirm what they
+   already said. A blocked stage does not freeze the rest: record what blocks it and the
+   next action, tell the user, and say which independent stages you continue with.
+2. Follow the route in [docs/getting-started.md](docs/getting-started.md): ask only for what
+   is missing of game, starting feature and mod name, and write the integration plan in
+   PROJECT.md before building mod code. DwemerDistro, server install, client checks, LLM
+   and voice setup do not wait for the plan. Do not replace the user's goal with a
+   different demo.
+3. Inspect real capabilities before promising anything: this repository
+   ([README.md](README.md#what-works-today)), the one DwemerDistro the user named
+   (`scripts/project.ps1 doctor -WslDistro <name>`), and what the engine's SDK and files
+   actually offer. Cite every engine fact; never invent an API or address. For an unknown,
+   do bounded research with a stated stopping point, then summarize two or three concrete
+   options with a recommendation; it is a short step, not a detour.
+4. Permissions the user already gave stay in force: continue routine, reversible setup
+   within them without asking again. Do the service, dashboard and browser work yourself
+   when you have the tools and that authority; only when a step is a GUI you cannot drive,
+   give the user its exact steps. Silence never grants a side effect (installs, provider
+   calls, commits, publishing); ask only for a missing provider, key or install that needs
+   the user's information. A chosen provider, a key the user set up privately and a request
+   to test it authorize that test. Keys go on the dashboard **API keys** page or in the
+   private `config/config.php`, never in chat.
+5. Mock mode and the console client are developer checks, not the user's demo; the
+   console's follow is a printed simulation. A full port records evidence in a copy of
+   [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md).
+6. Keep PROJECT.md short and current; detailed engine history goes in `ports/<engine>/`.
 
 ## Layout and copies
 
@@ -92,11 +102,12 @@ Follow both when a change touches both.
 - **Config and secrets**: settings live in untracked `config/config.php`. Add new settings
   to `config/config.example.php` with a safe default. Optional features (LLM key, TTS, STT)
   must fail cleanly with a clear error and never pretend to succeed.
-- **Voice**: optional, off by default; text and mock come first. If the user wants voice,
-  start with PocketTTS for TTS and Parakeet for STT (the recommended DwemerDistro choices)
-  before the supported alternatives. Do not assume either is installed or running: within
-  the scope the user has authorized, verify the service is available and running before
-  enabling or testing voice, then confirm with the dashboard Voice page test.
+- **Voice**: optional and off by default in config; text always still works without it. If
+  the user wants voice, start with PocketTTS for TTS and Parakeet for STT (the recommended
+  DwemerDistro choices) before the supported alternatives. Do not assume either is installed
+  or running: within the scope the user has authorized, verify the service is available and
+  running before enabling or testing voice, then confirm the user heard the dashboard Voice
+  page's Speak test before any engine demo.
 - **Installers**: `install.sh` must stay safe to repeat, copy config only when missing,
   and change nothing outside this app's folder and database. `update.sh` must keep
   refusing dirty checkouts, back up first, and only fast-forward. Never add
