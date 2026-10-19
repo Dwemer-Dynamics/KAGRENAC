@@ -4,7 +4,7 @@
         <div class="container-fluid mx-1">
             <div class="navbar-content-wrapper">
                 <div class="navbar-center dropdown">
-                    <button class="navbar-brand Title btn btn-link p-0 dropdown-toggle" id="brand-toggle" type="button" aria-expanded="false" aria-controls="brand-menu" title="Open menu">
+                    <button class="navbar-brand Title btn btn-link p-0 dropdown-toggle" id="brand-toggle" type="button" aria-expanded="false" aria-controls="brand-menu" title="KAGRENAC AI Mod Maker server: open menu">
                         <img src="<?= e($uiBase) ?>/images/kagrenac.png" alt="" width="53" height="50">
                         <span>KagrenacServer</span>
                     </button>

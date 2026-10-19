@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "id": "example-server",
-  "name": "KagrenacServer",
-  "description": "Small PHP and PostgreSQL AI NPC server template for building your own AI mod.",
-  "project_url": "https://github.com/Dwemer-Dynamics/KagrenacServer",
+  "name": "KAGRENAC AI Mod Maker",
+  "description": "Installs KagrenacServer, the server component of KAGRENAC AI Mod Maker: a small PHP and PostgreSQL AI NPC server template for building your own AI mod.",
+  "project_url": "https://github.com/Dwemer-Dynamics/Kagrenac",
   "dashboard_path": "ui/",
   "health_path": "health.php",
   "requirements": { "php": "8.2", "postgresql": true },

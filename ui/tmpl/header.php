@@ -14,7 +14,7 @@ foreach ($sections as $key => $section) {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= e($title) ?> · KagrenacServer</title>
+    <title><?= e($title) ?> · KagrenacServer · KAGRENAC AI Mod Maker</title>
     <link rel="icon" type="image/png" href="<?= e($uiBase) ?>/images/kagrenac.png">
     <link rel="stylesheet" href="<?= e($uiBase) ?>/css/style_new.css">
     <link rel="stylesheet" href="<?= e($uiBase) ?>/css/navbar.css">

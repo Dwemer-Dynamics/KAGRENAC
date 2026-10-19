@@ -1,7 +1,9 @@
-# Setup: KagrenacServer + KagrenacClient
+# Setup: KAGRENAC AI Mod Maker (KagrenacServer + KagrenacClient)
 
 This walkthrough installs KagrenacServer inside DwemerDistro, builds the KagrenacClient
-console client on Windows, and connects the two. Allow about 15 minutes. It is the
+console client on Windows, and connects the two. Both come from one repository: the server
+is the repository root and the client is `client/`. The short developer path, including
+`scripts\project.ps1`, is [docs/getting-started.md](docs/getting-started.md). Allow about 15 minutes. It is the
 canonical reference for installation and operations; for orientation, the feature checklist
 and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 
@@ -11,10 +13,10 @@ and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
   a real LLM) and at most one safe action, `follow_player`.
 - **KagrenacClient** is a Windows console program that plays a fake game. It shows the
   `GameAdapter` boundary you replace with a real engine's APIs.
-- It is **not** a plugin for any real game. These are independent repositories with no
-  automatic upstream; only the dashboard's presentation is adapted third-party work, from
-  HerikaServer (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A project made from
-  this template takes later template changes by hand.
+- It is **not** a plugin for any real game. Your copy of the repository has no automatic
+  upstream; only the dashboard's presentation is adapted third-party work (see
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A project made from this template
+  takes later template changes by hand.
 - This guide is a **manual install** into `/var/www/html/custom-mods/KagrenacServer`; the official
   launcher and updater do not install, update or back up that copy. Alternatively, the
   launcher can install the server under **Mods > Custom mods** in its own folder and
@@ -32,12 +34,43 @@ and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 
 | Repository | URL |
 |---|---|
-| KagrenacServer | <https://github.com/Dwemer-Dynamics/KagrenacServer> |
-| KagrenacClient | <https://github.com/Dwemer-Dynamics/KagrenacClient> |
+| Kagrenac (server at the root, client in `client/`) | <https://github.com/Dwemer-Dynamics/Kagrenac> |
 
-Both offer `main` (default, the stable baseline) and `dev` (development). For your own
-project, create your own repositories with GitHub's **Use this template** (or a fork) and
-clone those instead ([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)).
+It offers `main` (default, the stable baseline) and `dev` (development). For your own
+project, create your own repository with GitHub's **Use this template** (or a fork) and
+clone that instead ([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)).
+
+### Two copies, two jobs
+
+| Copy | Where | Used for | Never |
+|---|---|---|---|
+| Windows development copy | Any folder you own on Windows, outside DwemerDistro | Editing, building the client (output in `%LOCALAPPDATA%`), `scripts\project.ps1` | Served by Apache |
+| WSL server copy | `/var/www/html/custom-mods/KagrenacServer` (manual) or `/custom-mods/example-server` (launcher) | Running the server: `install.sh`, `update.sh`, `smoke.sh`, pairing to a file outside the web root | Building the client, writing a client `config.json`, or holding build output |
+
+The server copy is not synced from the Windows copy; it is its own clone, updated with
+`update.sh` (or the launcher) from your pushed branch.
+
+## Before you install: web protection
+
+The server copy is the whole repository, so Apache's web root also holds `.git/` and the
+source-only `client/`, `docs/` and `ports/` folders. Install DwemerDistro Core's custom mod
+web protection **before** you install this server or update an existing install to this
+consolidated layout. It comes with **Update Distro** in a Core version whose
+`ddistro_custom_mod setup-web` writes the deny rules described in Core's `CUSTOM_MODS.md`;
+then apply it:
+
+```bash
+sudo ddistro_custom_mod setup-web
+grep -qF '(client|ports|docs)' /etc/apache2/sites-available/dwemerdistro-custom-mods.conf && echo protected
+```
+
+It must print `protected`; an older Core writes a site file without these rules.
+The protection covers `.git/` under every custom mod, and `client/`, `docs/` and `ports/`
+under `/custom-mods/KagrenacServer`, `/custom-mods/example-server` and `/ExampleServer`. If
+you install into any other folder (a renamed copy or a fork), add equivalent server-side
+Apache rules for that folder yourself; nothing here protects arbitrary paths. After
+installing, check every Apache port that serves `/var/www/html` as
+[START_HERE.md](START_HERE.md#deployment-and-exposure) describes.
 
 ## 1. Install the server (inside DwemerDistro)
 
@@ -47,12 +80,13 @@ Open a DwemerDistro WSL shell as the `dwemer` user, for example from Windows:
 wsl -d DwemerAI4Skyrim3 -u dwemer
 ```
 
-Clone the server into the custom mods folder of Apache's web root (add `-b dev` for the
-development branch). The first command creates the empty install folder, owned by `dwemer`:
+Clone the repository into the custom mods folder of Apache's web root (add `-b dev` for the
+development branch). The folder name stays `KagrenacServer`; that is the server's route. The
+first command creates the empty install folder, owned by `dwemer`:
 
 ```bash
 sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
-git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git /var/www/html/custom-mods/KagrenacServer
+git clone https://github.com/Dwemer-Dynamics/Kagrenac.git /var/www/html/custom-mods/KagrenacServer
 ```
 
 Optional, for a local repository that is not published anywhere: export its committed
@@ -62,12 +96,12 @@ ownership errors when WSL reads a Windows checkout.
 ```powershell
 $bundleFolder = Join-Path $env:LOCALAPPDATA "DwemerDynamics"
 New-Item -ItemType Directory -Force $bundleFolder
-git -C "C:\path\to\KagrenacServer" bundle create (Join-Path $bundleFolder "KagrenacServer.bundle") --all
+git -C "C:\path\to\Kagrenac" bundle create (Join-Path $bundleFolder "Kagrenac.bundle") --all
 ```
 
 ```bash
 sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
-git clone /mnt/c/Users/<windows-user>/AppData/Local/DwemerDynamics/KagrenacServer.bundle /var/www/html/custom-mods/KagrenacServer
+git clone /mnt/c/Users/<windows-user>/AppData/Local/DwemerDynamics/Kagrenac.bundle /var/www/html/custom-mods/KagrenacServer
 ```
 
 A bundle is a snapshot, not an update source: set a real remote with
@@ -95,8 +129,10 @@ The installer:
 
 Running it again keeps your config and data.
 
-Then let DwemerDistro serve it on the shared custom mods port (safe to repeat; it only
-writes the distro's own Apache site and never changes official servers):
+You already ran `setup-web` in [Before you install](#before-you-install-web-protection);
+it serves every folder directly under `/var/www/html/custom-mods/` on the shared custom mods
+port, including this one. Running it again is safe (it only writes the distro's own Apache
+site and never changes official servers):
 
 ```bash
 sudo ddistro_custom_mod setup-web
@@ -132,7 +168,9 @@ Use a distinct folder and database when another KagrenacServer is already instal
 the copy in its own folder directly under `/var/www/html/custom-mods/`, for example
 `my-project`; it is served at `/custom-mods/my-project`. Use letters, digits, `.`, `_` or `-`
 in the folder name so pairing can infer the address, and do not use an id the launcher
-installs, such as `example-server`. The
+installs, such as `example-server`. A folder with another name is **not** covered by Core's
+web protection for `client/`, `docs/` and `ports/`: add equivalent Apache rules for it first
+([Before you install](#before-you-install-web-protection)). The
 installer creates `database.name` from
 your private config if it is missing. Use 1-63 lowercase letters, digits or underscores,
 starting with a letter. Choose a new name for your own project; never point a copy at
@@ -140,7 +178,7 @@ another product's database.
 
 ```bash
 sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/my-project
-git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git /var/www/html/custom-mods/my-project
+git clone https://github.com/Dwemer-Dynamics/Kagrenac.git /var/www/html/custom-mods/my-project
 cd /var/www/html/custom-mods/my-project
 # Before running install.sh:
 cp config/config.example.php config/config.php
@@ -189,9 +227,11 @@ the dashboard itself never changes the config's owner or group. Check **Control 
 settings") after any change.
 Do not rely on `.htaccess` to protect secrets. Secrets are kept in `config/config.php`,
 which prints nothing when served through PHP. `scripts/smoke.sh` checks that the token is
-not visible at `config/config.php`. It does not check other files in the checkout: nothing
-here stops Apache from serving `.git/` or other non-PHP files. Check that yourself as
-[START_HERE.md](START_HERE.md#deployment-and-exposure) describes.
+not visible at `config/config.php`. It does not check other files in the checkout. Only
+DwemerDistro Core's web protection ([Before you install](#before-you-install-web-protection))
+stops Apache from serving `.git/` and the source-only `client/`, `docs/` and `ports/`
+folders, and only at the known install paths; other non-PHP files stay readable. Check that
+yourself as [START_HERE.md](START_HERE.md#deployment-and-exposure) describes.
 
 You can also open `http://127.0.0.1:19000/custom-mods/KagrenacServer/` directly in your browser; there is
 no dashboard login. Keep it on localhost or a trusted network: anyone who can open it can
@@ -202,11 +242,16 @@ blank, form and table example pages.
 
 ## 2. Build the client (Windows)
 
+Use your Windows development copy, never the server copy in WSL:
+
 ```powershell
-git clone https://github.com/Dwemer-Dynamics/KagrenacClient.git
-cd KagrenacClient
-powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+git clone https://github.com/Dwemer-Dynamics/Kagrenac.git
+cd Kagrenac
+powershell -ExecutionPolicy Bypass -File client\scripts\build.ps1
 ```
+
+`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 setup` runs the same build and
+reports what else is still a manual step.
 
 This builds x64 and x86 into `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build\x64\Release` and `...\x86\Release`
 (change with `-BuildRoot`). `config.default.json` is copied next to each `KagrenacClient.exe`.
@@ -365,6 +410,10 @@ and deletes candidate facts the session proposed after the checkpoint. Approved 
 shared knowledge and stay. Backups and their "verify restore" include every new table.
 
 ## 6. Back up and update
+
+Before the first update that brings the consolidated layout (`client/`, `docs/`, `ports/`)
+into an existing install, install the web protection
+([Before you install](#before-you-install-web-protection)).
 
 ```bash
 cd /var/www/html/custom-mods/KagrenacServer

@@ -33,14 +33,14 @@ spoken text and returns only allowlisted names. Never execute raw model text.
 
 ## 2. Client: give wave one explicit game method
 
-Add this public method to `GameAdapter` in `src/game_adapter.h`:
+Add this public method to `GameAdapter` in `client/src/game_adapter.h`:
 
 ```cpp
 // The current NPC performs the engine's wave animation on the game thread.
 virtual void wave(const std::string& npcId) = 0;
 ```
 
-Add this public console implementation to `src/console_game.h`:
+Add this public console implementation to `client/src/console_game.h`:
 
 ```cpp
 void wave(const std::string& npcId) override
@@ -49,7 +49,7 @@ void wave(const std::string& npcId) override
 }
 ```
 
-In `src/main.cpp`'s `applyResult()`, insert this branch after the `follow_player` branch,
+In `client/src/main.cpp`'s `applyResult()`, insert this branch after the `follow_player` branch,
 before the final rejection `else`. It reports the action like `follow_player` does:
 
 ```cpp
@@ -69,19 +69,19 @@ In your private client `config.json`, set:
 ```
 
 Keep the braces/other settings of the existing JSON object. To ship wave deliberately,
-update `config.default.json` too. A real adapter must implement wave using its engine's
+update `client/config.default.json` too. A real adapter must implement wave using its engine's
 actual animation API, on the game thread. The console output is only a simulation.
 
-## 3. Keep both contracts identical
+## 3. Update the contract
 
-In BOTH copies of PROTOCOL.md, define `wave` as an optional allowlisted action with no
-parameters, and add a mock row: wave / Hello there! / action wave. Explain that
+In `PROTOCOL.md` (the one copy shared by server and client), define `wave` as an optional
+allowlisted action with no parameters, and add a mock row: wave / Hello there! / action wave. Explain that
 clients without an explicit handler reject it. This optional action uses the existing
 version-1 action shape; no version bump is needed. An incompatible shape needs a bump.
 
 ## 4. Prove both allowlists
 
-Build x64 and x86 with `scripts/build.ps1`. Run PHP lint and server smoke checks.
+Build x64 and x86 with `client/scripts/build.ps1`. Run PHP lint and server smoke checks.
 Then run `KagrenacClient.exe --say "wave"` against your mock server:
 
 | Case | Expected |

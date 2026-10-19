@@ -41,7 +41,7 @@ require __DIR__ . '/tmpl/header.php';
         <div class="widget-content"><strong class="status-label"><?= $ready ? 'Ready' : 'Setup needed' ?></strong><p><?= e($status) ?></p>
         <p class="help">Server version <?= e(SERVER_VERSION) ?> (release, lib/version.php). Protocol <?= e(PROTOCOL_VERSION) ?>, schema <?= e(SCHEMA_VERSION) ?>.</p>
         <?php if ($config !== null): ?><dl><?php foreach ($services as $name => [$state, $detail, $page]): ?><dt><?= e($name) ?></dt><dd><?= e($state) ?> (<?= e($detail) ?>) <a href="<?= e($page) ?>" aria-label="Open <?= e($name) ?> page">Open</a></dd><?php endforeach; ?><dt>History</dt><dd>Bounded per session and NPC</dd></dl><?php endif; ?>
-        <p class="help">Pair the console client in one private step: in this server's folder run <code>sudo -u dwemer php scripts/pair_client.php --out /home/dwemer/example-client.json</code>, then copy that file next to <code>KagrenacClient.exe</code> as <code>config.json</code>. See SETUP.md. The token is never shown on this page.</p></div>
+        <p class="help">This dashboard belongs to KagrenacServer, the server component of KAGRENAC AI Mod Maker. Build the KagrenacClient console client from <code>client/</code> in a separate Windows copy of the repository, never in this server folder. Pair it in one private step: in this server's folder run <code>sudo -u dwemer php scripts/pair_client.php --out /home/dwemer/example-client.json</code>, then copy that file next to <code>KagrenacClient.exe</code> as <code>config.json</code>. See docs/getting-started.md. The token is never shown on this page.</p></div>
     </section>
     <section class="widget">
         <div class="widget-header"><h2>Conversation</h2></div>

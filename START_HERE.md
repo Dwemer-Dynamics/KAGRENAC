@@ -1,36 +1,47 @@
 # Start here
 
-**KagrenacServer** (PHP 8.2 + PostgreSQL, runs inside DwemerDistro WSL) and **KagrenacClient**
-(a C++17 Windows console "fake game") are two small templates. Use them, with a coding agent,
-to build the server and client of your own AI NPC mod. This page gets you oriented, shows
+**KAGRENAC AI Mod Maker** is one repository with two components: **KagrenacServer** (PHP 8.2 +
+PostgreSQL, at the repository root, runs inside DwemerDistro WSL) and **KagrenacClient** (a
+C++17 Windows console "fake game", in `client/`). Use them, with a coding agent, to build the
+server and client of your own AI NPC mod. The developer cold start is
+[docs/getting-started.md](docs/getting-started.md); your project brief is
+[PROJECT.md](PROJECT.md). This page gets you oriented, shows
 what works today, walks one request from start to finish, and tells you where each detail
 is documented.
 
-What these templates are not:
+What this template is not:
 
 - **Not a plugin for any real game.** KagrenacClient has no engine SDK and no game hooks. A
   real mod replaces its console `GameAdapter`. No game is supported until someone builds
   and tests a port in that game.
-- **Not a shared codebase.** These are independent repositories with no automatic
-  upstream. Your copy has its own history; take template changes by hand. The dashboard's
+- **Not a shared codebase.** Your copy of the repository has no automatic upstream and its
+  own history; take template changes by hand. The dashboard's
   presentation (navbar template, CSS excerpts, background image) is adapted from
   HerikaServer and keeps its MIT notice ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
   [UI_GUIDE.md](UI_GUIDE.md#boundaries)).
 - **Not a hardened online service.** It is meant for loopback use inside DwemerDistro WSL
   (see [Deployment and exposure](#deployment-and-exposure)).
 
-The two repositories are separate and public:
+Both components live in one public repository:
 
 | Repository | Clone |
 |---|---|
-| KagrenacServer | `git clone https://github.com/Dwemer-Dynamics/KagrenacServer.git` |
-| KagrenacClient | `git clone https://github.com/Dwemer-Dynamics/KagrenacClient.git` |
+| Kagrenac (server at the root, client in `client/`) | `git clone https://github.com/Dwemer-Dynamics/Kagrenac.git` |
 
+You use two copies of it, with separate jobs:
+
+- a **Windows development copy** where you edit, build the client and run
+  `scripts\project.ps1`; and
+- a **WSL server copy** inside Apache's web root
+  (`/var/www/html/custom-mods/KagrenacServer`, or `/custom-mods/example-server` from the
+  launcher) that only runs the server. Never build the client or write a client
+  `config.json` there.
+
+Install DwemerDistro Core's custom mod web protection **before** installing or updating the
+server copy ([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)).
 For your own project, start from GitHub's **Use this template** or a fork
-([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)). Clone the two as siblings named `KagrenacServer` and
-`KagrenacClient`; file paths from one repository to the other in agent instructions assume
-that layout. A local Git bundle is an optional alternative for unpublished work
-([SETUP.md, section 1](SETUP.md#1-install-the-server-inside-dwemerdistro)).
+([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)). A local Git bundle is an optional alternative for
+unpublished work ([SETUP.md, section 1](SETUP.md#1-install-the-server-inside-dwemerdistro)).
 
 ## Which document answers what
 
@@ -38,16 +49,18 @@ Each topic has one canonical document. Other pages link to it instead of repeati
 
 | Need | Canonical document |
 |---|---|
+| Your project brief, decisions, acceptance and evidence | [PROJECT.md](PROJECT.md) |
+| Developer cold start: tools, clone, the two copies, `scripts/project.ps1` | [docs/getting-started.md](docs/getting-started.md) |
 | Orientation, status, walkthrough, troubleshooting by request ID, event log, server files, porting checklist | This page |
 | Install, permissions, pairing, LLM and voice setup, backups, updates, versions, migrations, checkpoints, removal, troubleshooting by symptom | [SETUP.md](SETUP.md) |
 | Copyable LLM, voice, NPC selection, profile and memory/embedding settings | [CONNECTORS.md](CONNECTORS.md) |
-| The request and reply contract (identical in both repositories) | [PROTOCOL.md](PROTOCOL.md) |
-| Server features, quick start and limits | [README.md](README.md) |
-| Client commands, settings and smoke checks | [KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md) |
-| Rules for coding agents | [AGENTS.md](AGENTS.md), [KagrenacClient AGENTS.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/AGENTS.md) |
-| Prompt for porting to your engine with an agent | [AGENT_PLAYBOOK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/AGENT_PLAYBOOK.md) |
-| Blank evidence record for your engine (SDK facts versus verified in engine) | [ENGINE_PACK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/ENGINE_PACK.md) |
-| Port recipes: lifecycle, dialogue, events, sessions, voice, diagnostics, packaging | [PORT_RECIPES.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md) |
+| The request and reply contract (one copy, shared by server and client) | [PROTOCOL.md](PROTOCOL.md) |
+| Overview, capability table, directory map, quick start and limits | [README.md](README.md) |
+| Client commands, settings and smoke checks | [client/README.md](client/README.md) |
+| Rules for coding agents | [AGENTS.md](AGENTS.md), [client/AGENTS.md](client/AGENTS.md) |
+| Prompt for porting to your engine with an agent | [docs/agent-playbook.md](docs/agent-playbook.md) |
+| Blank evidence record for your engine (SDK facts versus verified in engine) | [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md) |
+| Port recipes: lifecycle, dialogue, events, sessions, voice, diagnostics, packaging | [docs/feature-recipes/PORT_RECIPES.md](docs/feature-recipes/PORT_RECIPES.md) |
 | Renaming and customising your copies | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) |
 | Adding a game action (worked `wave` exercise) | [WAVE_ACTION.md](WAVE_ACTION.md) |
 | Dashboard pages, a guided tour, adding pages | [UI_GUIDE.md](UI_GUIDE.md) |
@@ -96,19 +109,30 @@ client's `server_url`. Keep it on loopback or a trusted local network:
   so requesting them prints nothing; endpoints and `health.php` do print their responses.
   If PHP is not enabled for the folder, Apache may serve PHP source as text, which is why
   `scripts/smoke.sh` checks the config. Nothing in this repository stops Apache from serving
-  other files in the folder: the `.git/` folder (the full committed history),
-  Markdown, `sql/` and `scripts/`. Whether they are served depends on your Apache
-  configuration. `scripts/smoke.sh` checks only that the token is not visible at
-  `config/config.php`; it does not check `.git/`. Check your install:
+  other files in the folder: the `.git/` folder (the full committed history), the
+  source-only `client/`, `docs/` and `ports/` folders, Markdown, `sql/` and `scripts/`.
+  DwemerDistro Core's custom mod web protection (install it first, see
+  [SETUP.md](SETUP.md#before-you-install-web-protection)) denies `.git/` under every custom
+  mod and `client/`, `docs/` and `ports/` under the known install paths
+  `/custom-mods/KagrenacServer`, `/custom-mods/example-server` and `/ExampleServer`. A copy
+  in any other folder needs equivalent server-side rules of its own. `scripts/smoke.sh`
+  checks only that the token is not visible at `config/config.php`; it does not check these
+  paths. Check your install, on every Apache port that serves `/var/www/html`:
 
   ```bash
-  curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:19000/custom-mods/KagrenacServer/.git/HEAD
+  for p in .git/HEAD client/CMakeLists.txt docs/getting-started.md ports/elden-ring/README.md; do
+    curl -s -o /dev/null -w "%{http_code} $p\n" "http://127.0.0.1:19000/custom-mods/KagrenacServer/$p"
+  done
   ```
 
-  `200` means anyone who can reach that port can download your committed history.
+  Expect `403` for each: only `403` shows the protection denied the path. `200` means anyone
+  who can reach that port can download those files; for `.git/HEAD`, your committed history.
+  `404`, a redirect, `500`, `000` (no answer) or any other status is unverified, not proof
+  of protection: fix the URL or the install and check again. `scripts\project.ps1 doctor`
+  applies the same rule to the URL it checks.
   Never commit secrets, and do not forward or proxy port 19000, or port 8081 (the official
-  web port, which also serves `/var/www/html`), beyond a trusted network. These templates
-  do not provide a secure online deployment.
+  web port, which also serves `/var/www/html`), beyond a trusted network. This template
+  does not provide a secure online deployment.
 
 What the server does enforce:
 
@@ -151,8 +175,8 @@ below). "Working" never means tested in a real game or with a real provider.
 | Dashboard working pages | Working: Home, Conversation, History, Checkpoints, Memory, NPC bios, Profiles, Server settings, LLM, Voice, NPC selection, Memory settings, API keys, Logs, Connector calls, Diagnostics, Backups | no login | [UI_GUIDE](UI_GUIDE.md#what-the-dashboard-does) |
 | Dashboard samples | **Preview only, save nothing:** `ui/examples/` blank, form and table | | [UI_GUIDE](UI_GUIDE.md#working-tools-and-previews) |
 | Versions, migrations, upgrade refusal | Working | `0.1.0`, `baseline-1`, protocol 1, `007_connector_calls` | [SETUP 6](SETUP.md#6-back-up-and-update) |
-| Launcher custom-mod manifest (`dwemer-mod.json`) | Present, for `https://github.com/Dwemer-Dynamics/KagrenacServer`; install not tested by these docs | `main`; `dev` offered | [LAUNCHER_CUSTOM_MOD](LAUNCHER_CUSTOM_MOD.md) |
-| Windows client x64 and x86 | Builds with `scripts\build.ps1` | | [KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md) |
+| Launcher custom-mod manifest (`dwemer-mod.json`) | Present, for `https://github.com/Dwemer-Dynamics/Kagrenac`; install not tested by these docs | `main`; `dev` offered | [LAUNCHER_CUSTOM_MOD](LAUNCHER_CUSTOM_MOD.md) |
+| Windows client x64 and x86 | Builds with `client\scripts\build.ps1` | | [client/README.md](client/README.md) |
 | Real game plugin | **Not provided.** The console fake game is the only client | | [Porting](#porting-to-a-real-engine) |
 
 ## End-to-end walkthrough
@@ -178,7 +202,8 @@ example `bash scripts/smoke.sh http://127.0.0.1:19000/custom-mods/example-server
 
 ### 2. Build the client and pair it
 
-Build both architectures (Windows, in KagrenacClient):
+Build both architectures (Windows, in the `client` folder of your development copy, never
+the WSL server copy):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
@@ -349,7 +374,7 @@ are never retried automatically. Server check: `SMOKE_STALE=1 bash scripts/smoke
 ### 11. Voice (optional)
 
 Voice is opt-in, and the voice services are installed and started separately. The
-templates never install or start them. Start with PocketTTS (audio.cpp, port 8086) for
+template never installs or starts them. Start with PocketTTS (audio.cpp, port 8086) for
 text-to-speech and Parakeet (port 8022) for speech-to-text, the recommended DwemerDistro
 starting choices; existing setups often have them already. Check each in the DwemerDistro
 launcher, install it there if missing, and start it before enabling or testing. Enable
@@ -482,9 +507,9 @@ These are versioned separately. Never treat one as another:
 | Name | Current | Changes when | Set in |
 |---|---|---|---|
 | Server release | `0.1.0` | You release your server | `lib/version.php` (`SERVER_VERSION`) |
-| Client release | `0.1.0` | You release your client | KagrenacClient `CMakeLists.txt` (`project(... VERSION)`) |
-| Protocol | `1` | A change a version-1 peer would misread; bump both repositories | `PROTOCOL.md`, both sides' code |
-| Baseline | `baseline-1` | The template's feature set; a support label, not a release | `lib/app.php`, client `ai_client.h` |
+| Client release | `0.1.0` | You release your client | `client/CMakeLists.txt` (`project(... VERSION)`) |
+| Protocol | `1` | A change a version-1 peer would misread; bump server and client together | `PROTOCOL.md`, both sides' code |
+| Baseline | `baseline-1` | The template's feature set; a support label, not a release | `lib/app.php`, `client/src/ai_client.h` |
 | Schema | `007_connector_calls` | You add `sql/NNN_name.sql` and append it to `SCHEMA_MIGRATIONS` | `lib/app.php` |
 
 Migration behaviour (details and exit codes in
@@ -523,8 +548,9 @@ Migration behaviour (details and exit codes in
 | `lib/audit.php` | Connector audit rows (`ex_connector_calls`) for voice, NPC selection, embedding and memory calls. |
 | `config/config.example.php` | Every setting, with comments. Copied to `config/config.php` (untracked). |
 | `sql/*.sql` | Migrations, applied once each by `scripts/migrate.php`. |
-| `scripts/` | `install.sh`, `update.sh`, `backup.sh`, `smoke.sh`, `migrate.php`, `pair_client.php`, optional `seed_example.php` and `checkpoint.php`. |
+| `scripts/` | `install.sh`, `update.sh`, `backup.sh`, `smoke.sh`, `migrate.php`, `pair_client.php`, optional `seed_example.php` and `checkpoint.php`; `project.ps1` is the Windows developer wrapper and never runs on the server. |
 | `ui/` | The dashboard; see [UI_GUIDE.md](UI_GUIDE.md). |
+| `client/`, `docs/`, `ports/` | Source only, not served: the console client, authoring docs and engine port records. They sit in the server checkout because it is one repository; see [Deployment and exposure](#deployment-and-exposure). |
 
 Profiles, advanced memory and vector search are optional: a fresh install and an old config
 behave exactly as before. Profiles never hold URLs or keys. Memory is stored as JSON in this
@@ -555,7 +581,7 @@ Files to keep private and out of commits and packages: `config/config.php`,
 ## Launcher install and multiple copies
 
 `dwemer-mod.json` lets the DwemerDistro launcher install this server from
-`https://github.com/Dwemer-Dynamics/KagrenacServer` under **Mods > Custom mods**. That
+`https://github.com/Dwemer-Dynamics/Kagrenac` under **Mods > Custom mods**. That
 install gets its own folder, database and config, the `ui/images/kagrenac.png` icon and
 banner, and the offered branches (`default` plus `allowed`). The manifest `id` stays
 `example-server` for compatibility with existing installs, so the install lives at
@@ -574,7 +600,7 @@ You can run several copies at once, as long as each has its own database:
 
 ## Packaging, licensing and private data
 
-The templates have no packaging script. When you share your project:
+The template has no packaging script. When you share your project:
 
 - Server: publish the Git repository, or `git archive` of a commit, which contains
   committed files only. Never include `config/config.php`, backups, dumps or logs.
@@ -582,22 +608,22 @@ The templates have no packaging script. When you share your project:
   Never ship a `config.json` that has a token. Build output stays outside the source tree
   (`%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build` by default). This applies to sharing
   the console template as a demo. An engine port ships its plugin artifacts instead, not
-  the console program; see [PORT_RECIPES, Packaging](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#packaging).
-- Licences: both repositories are `GPL-3.0-only` (`LICENSE`); a project based on them must
+  the console program; see [PORT_RECIPES, Packaging](docs/feature-recipes/PORT_RECIPES.md#packaging).
+- Licences: the server and the client are both `GPL-3.0-only` (`LICENSE`, `client/LICENSE`); a project based on them must
   follow its terms, including offering the corresponding source with any binaries you
-  share. Each `THIRD_PARTY_NOTICES.md` lists every notice. Add your own notice and keep the
+  share. `THIRD_PARTY_NOTICES.md` and `client/THIRD_PARTY_NOTICES.md` list every notice. Add your own notice and keep the
   existing ones:
   `LICENSES/Original-MIT.txt`, `ui/HERIKA-LICENSE` (dashboard presentation) and
-  `third_party/nlohmann/LICENSE.MIT` (JSON library).
+  `client/third_party/nlohmann/LICENSE.MIT` (JSON library), plus `client/LICENSES/Original-MIT.txt`.
 - Keep public docs generic. Leave out personal names, local paths, private endpoints and
   credential values.
 
 ## Porting to a real engine
 
-Hand the agent [AGENT_PLAYBOOK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/AGENT_PLAYBOOK.md) with both repositories
-and your engine's real SDK. Record engine facts and results in
-[ENGINE_PACK.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/ENGINE_PACK.md); how-to steps for each item are in
-[PORT_RECIPES.md](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md). The port must provide:
+Hand the agent [docs/agent-playbook.md](docs/agent-playbook.md) with the repository and
+your engine's real SDK. Record engine facts and results in
+[docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md); how-to steps for each item are in
+[docs/feature-recipes/PORT_RECIPES.md](docs/feature-recipes/PORT_RECIPES.md). The port must provide:
 
 - [ ] A main-thread tick or callback. Only it calls `GameAdapter`.
 - [ ] Worker threads, or async HTTP, for every server call. The game never blocks on the AI.
@@ -612,20 +638,20 @@ and your engine's real SDK. Record engine facts and results in
 - [ ] Optional: WAV playback on the NPC and microphone capture to WAV.
 - [ ] The correct architecture (x64 or x86) for the game, built without warnings.
 - [ ] Plugin load, unload and quit handled in plugin glue, with no worker calling back
-      after unload ([lifecycle](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#plugin-lifecycle-and-shutdown)).
+      after unload ([lifecycle](docs/feature-recipes/PORT_RECIPES.md#plugin-lifecycle-and-shutdown)).
 - [ ] Pending replies dropped and cancelled on NPC change, NPC unload, and save load or new
-      game, in the old session ([sessions](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#sessions-saves-and-branches)).
+      game, in the old session ([sessions](docs/feature-recipes/PORT_RECIPES.md#sessions-saves-and-branches)).
 - [ ] If the game sends events: bounded; no responding event while any turn is pending or a
-      cancel for that NPC in that session is still out ([events](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#game-events)).
+      cancel for that NPC in that session is still out ([events](docs/feature-recipes/PORT_RECIPES.md#game-events)).
 - [ ] A client log of request ID, endpoint, status and outcome, never the token or
-      audio, and no player text by default ([diagnostics](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#diagnostics)).
+      audio, and no player text by default ([diagnostics](docs/feature-recipes/PORT_RECIPES.md#diagnostics)).
 - [ ] A plugin package, separate from the console demo, installed into a clean game
-      install ([packaging](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/PORT_RECIPES.md#packaging)).
+      install ([packaging](docs/feature-recipes/PORT_RECIPES.md#packaging)).
 
 Evidence levels. Report each one separately, and claim only what you actually ran:
 
 1. Server lint, migrations twice and `scripts/smoke.sh` in mock mode.
-2. The console client's smoke checks ([KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md#smoke-checks)).
+2. The console client's smoke checks ([client/README.md](client/README.md#smoke-checks)).
 3. Real provider calls (LLM, voice, JEV), each tested on its own.
 4. In-game: talk to an NPC, see the subtitle, follow, cancel a slow reply, unload the NPC
    while a reply is pending, and stop the server, all without a crash or hang.

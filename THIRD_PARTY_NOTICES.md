@@ -22,3 +22,8 @@ been specified for it; if you make your own derived mod, replace it with your ow
 `ui/images/question-mark.png` (the earlier icon, no longer referenced) is an original
 generated asset of this project, covered by the project licence. Its generation prompt is
 in [UI_GUIDE.md](UI_GUIDE.md#branding-images).
+
+KagrenacClient, in `client/`, is the other component of the same project (KAGRENAC AI Mod
+Maker). It keeps its own licence copy and notices, unchanged, in
+[client/LICENSE](client/LICENSE) and [client/THIRD_PARTY_NOTICES.md](client/THIRD_PARTY_NOTICES.md),
+including JSON for Modern C++ under `client/third_party/nlohmann/`.
