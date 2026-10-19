@@ -1,9 +1,9 @@
-# Engine pack (blank template)
+# Engine pack (generic evidence template)
 
-Copy this file into your project and fill it in during recon (stage 1 of
-[AGENT_PLAYBOOK.md](AGENT_PLAYBOOK.md)). It records evidence. It is not a workflow or a
-second checklist. The acceptance checklist is
-[START_HERE, Porting to a real engine](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/START_HERE.md#porting-to-a-real-engine),
+Copy this file to `docs/engine-packs/<your-engine>.md` in your project and fill it in during
+recon (stage 1 of [agent-playbook.md](../agent-playbook.md)). It records evidence. It is not a
+workflow or a second checklist. The acceptance checklist is
+[START_HERE, Porting to a real engine](../../START_HERE.md#porting-to-a-real-engine),
 and the "Checklist" column below names its items by keyword. Rows marked "recon" are facts
 the port needs that the checklist does not list on its own.
 
@@ -53,9 +53,9 @@ another engine.
 ### Transport choice
 
 The shared client code (`ai_client`, `config`) is blocking C++17 built on the platform HTTP
-API these templates target. It fits a native plugin only if the SDK allows that language,
+API this template targets. It fits a native plugin only if the SDK allows that language,
 that API and blocking calls on threads the plugin owns. A managed or script plugin
-implements [PROTOCOL.md](PROTOCOL.md) with its own HTTP facility and keeps the same rules
+implements [PROTOCOL.md](../../PROTOCOL.md) with its own HTTP facility and keeps the same rules
 (request ID, stale check, `isSameNpc()` recheck, cancel in the sending session, allowlist,
 no retries, main-thread apply).
 

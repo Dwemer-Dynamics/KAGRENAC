@@ -89,7 +89,7 @@ if ($config !== null) {
 }
 // What health.php reports to the game: the protocol, the needed schema and optional features.
 status_check('Server version', 'Ready', SERVER_VERSION . ' (this server release, set in lib/version.php; health.php reports it as server_version).');
-status_check('Baseline', 'Ready', BASELINE_ID . ' (KagrenacServer template baseline, not a release or schema number). Needs migrations '
+status_check('Baseline', 'Ready', BASELINE_ID . ' (KagrenacServer baseline for KAGRENAC AI Mod Maker, not a release or schema number). Needs migrations '
     . implode(', ', SCHEMA_MIGRATIONS) . ', in order.');
 status_check('Protocol', 'Ready', 'Version ' . PROTOCOL_VERSION . '. health.php reports server_version ' . SERVER_VERSION . ', baseline ' . BASELINE_ID . ', expected_schema ' . SCHEMA_VERSION
     . ' and capabilities: ' . implode(', ', SERVER_CAPABILITIES) . '. Clients check it with KagrenacClient.exe --health.');
@@ -102,7 +102,7 @@ $active = 'diagnostics';
 require __DIR__ . '/tmpl/header.php';
 ?>
 <section class="chim-panel">
-    <p>Live checks made when this page loaded. The page says Ready only when no check failed. The game's <code>health.php</code> checks less: a valid config, the database, every migration up to <code><?= e(SCHEMA_VERSION) ?></code> and no unknown newer ones, so it can answer ready while a check here (for example backup tools) has failed. Optional services are not contacted here, so they show Disabled or Not tested; use their test buttons. Finished turns appear in <a href="logs.php">Logs</a>.</p>
+    <p>Live checks for this KagrenacServer install, made when this page loaded. The page says Ready only when no check failed. The game's <code>health.php</code> checks less: a valid config, the database, every migration up to <code><?= e(SCHEMA_VERSION) ?></code> and no unknown newer ones, so it can answer ready while a check here (for example backup tools) has failed. Optional services are not contacted here, so they show Disabled or Not tested; use their test buttons. Finished turns appear in <a href="logs.php">Logs</a>.</p>
     <p><strong class="status-label"><?= $ready ? 'Ready' : 'Setup needed' ?></strong><?= $failed ? ' Failed: ' . e(implode(', ', $failed)) . '.' : '' ?> <a href="diagnostics.php">Check again</a></p>
     <div class="table-wrap"><table class="dense-table"><thead><tr><th scope="col">Check</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead><tbody>
     <?php foreach ($checks as $item): ?>

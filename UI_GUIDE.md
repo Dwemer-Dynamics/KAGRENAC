@@ -235,8 +235,8 @@ this example. The upstream copyright/license is preserved in `ui/HERIKA-LICENSE`
 `ui/images/kagrenac.png` (128 x 121 PNG) is the KagrenacServer branding image, supplied by
 the project and copied unchanged. The navbar shows it at 53 x 50 pixels next to the
 `KagrenacServer` label, the page header uses it as the favicon, and `dwemer-mod.json` uses
-it as the launcher icon and banner. The same file is `assets/kagrenac.png` in
-KagrenacClient. It is separate from the retained HerikaServer background and presentation
+it as the launcher icon and banner. KagrenacClient uses the same file as `client/assets/kagrenac.png`.
+It is separate from the retained HerikaServer background and presentation
 styles.
 
 `ui/images/question-mark.png` is the template's earlier icon, an original asset generated

@@ -2,14 +2,16 @@
 
 <img src="assets/kagrenac.png" alt="KagrenacClient logo" width="64">
 
-A Windows console "fake game" that talks to
-**[KagrenacServer](https://github.com/Dwemer-Dynamics/KagrenacServer)**. It shows how a game
+The client component of **KAGRENAC AI Mod Maker**: a Windows console "fake game" that talks
+to **KagrenacServer** (the [repository root](../README.md)). It shows how a game
 mod can send what the player says to an NPC, show the reply as a subtitle, and run one
 allowlisted action (`follow_player`), with optional voice.
 
 This is a reference, **not** a plugin for any real game: it has no engine SDK and no game
 hooks. To make a real mod you replace the console `GameAdapter` with your engine's APIs.
-It is built separately; the DwemerDistro launcher installs only the server.
+It is built on Windows from your development copy of the repository; the DwemerDistro
+launcher installs only the server, and the client is never built inside the server's web
+root copy.
 
 ## Features
 
@@ -23,37 +25,39 @@ It is built separately; the DwemerDistro launcher installs only the server.
 
 | Read | For |
 |---|---|
-| [KagrenacServer START_HERE.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/START_HERE.md) | **Start here.** Document map, feature status, end-to-end walkthrough, troubleshooting by request ID |
-| [KagrenacServer SETUP.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md) | Installing the server, building and pairing this client |
-| [PROTOCOL.md](PROTOCOL.md) | The request and reply contract (identical in both repositories) |
-| [AGENT_PLAYBOOK.md](AGENT_PLAYBOOK.md) | Staged prompt for porting to your engine with a coding agent |
-| [ENGINE_PACK.md](ENGINE_PACK.md) | Blank evidence record for your engine (SDK facts versus verified in engine) |
-| [PORT_RECIPES.md](PORT_RECIPES.md) | One recipe per port stage: lifecycle, dialogue, actions, events, sessions, voice, diagnostics, packaging |
-| [AGENTS.md](AGENTS.md) | Rules for coding agents |
+| [START_HERE.md](../START_HERE.md) | **Start here.** Document map, feature status, end-to-end walkthrough, troubleshooting by request ID |
+| [docs/getting-started.md](../docs/getting-started.md), [SETUP.md](../SETUP.md) | Developer cold start; installing the server, building and pairing this client |
+| [PROTOCOL.md](../PROTOCOL.md) | The request and reply contract (one copy, shared with the server) |
+| [docs/agent-playbook.md](../docs/agent-playbook.md) | Staged prompt for porting to your engine with a coding agent |
+| [docs/engine-packs/ENGINE_PACK.md](../docs/engine-packs/ENGINE_PACK.md) | Blank evidence record for your engine (SDK facts versus verified in engine) |
+| [docs/feature-recipes/PORT_RECIPES.md](../docs/feature-recipes/PORT_RECIPES.md) | One recipe per port stage: lifecycle, dialogue, actions, events, sessions, voice, diagnostics, packaging |
+| [AGENTS.md](AGENTS.md), [root AGENTS.md](../AGENTS.md) | Rules for coding agents |
 | This README | Commands, settings, smoke checks and limits |
 
 ## Fast start
 
-1. Install and start KagrenacServer first (its
-   [SETUP.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md) covers
-   both repos).
-2. Clone and build (Visual Studio 2022 with C++ tools):
+1. Install and start KagrenacServer first ([SETUP.md](../SETUP.md) covers the server and
+   this client).
+2. Clone the repository on Windows (your development copy, not the server copy inside WSL)
+   and build (Visual Studio 2022 with C++ tools):
 
    ```powershell
-   git clone https://github.com/Dwemer-Dynamics/KagrenacClient.git
-   cd KagrenacClient
+   git clone https://github.com/Dwemer-Dynamics/Kagrenac.git
+   cd Kagrenac\client
    powershell -ExecutionPolicy Bypass -File scripts\build.ps1
    ```
 
    `main` is the stable baseline; `dev` holds development work (`git clone -b dev ...`).
-   For your own mod, start from GitHub's **Use this template** or a fork instead.
+   For your own mod, start from GitHub's **Use this template** or a fork instead. From the
+   repository root, `scripts\project.ps1 setup` runs the same build.
 
    Output goes to `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build\x64\Release\KagrenacClient.exe` and
    `...\x86\Release\KagrenacClient.exe`. Change with `-BuildRoot <folder>`.
 
-3. Next to `KagrenacClient.exe`, put a `config.json` with the server token (git-ignored).
-   The server's `scripts/pair_client.php` writes one privately (KagrenacServer
-   [SETUP.md, "Connect them"](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/SETUP.md#3-connect-them));
+3. Next to `KagrenacClient.exe` (in the build folder, never in a source or web root copy), put
+   a `config.json` with the server token (git-ignored).
+   The server's `scripts/pair_client.php` writes one privately
+   ([SETUP.md, "Connect them"](../SETUP.md#3-connect-them));
    copy that file here. Or write it by hand:
 
    ```json
@@ -96,7 +100,7 @@ with `--config <file>`) overrides any key it sets.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `server_url` | `http://127.0.0.1:19000/custom-mods/KagrenacServer` | Where the server is: the manual install route from the server SETUP.md. Pairing writes the route of the install it runs in. A launcher install is `http://127.0.0.1:19000/custom-mods/example-server` (the launcher id stays `example-server` for compatibility). 19000 is DwemerDistro's shared custom mods port (`CUSTOM_MODS_PORT`); if it is changed (then `sudo ddistro_custom_mod setup-web`), update this URL too. |
+| `server_url` | `http://127.0.0.1:19000/custom-mods/KagrenacServer` | Where the server is: the manual install route from `../SETUP.md`. Pairing writes the route of the install it runs in. A launcher install is `http://127.0.0.1:19000/custom-mods/example-server` (the launcher id stays `example-server` for compatibility). 19000 is DwemerDistro's shared custom mods port (`CUSTOM_MODS_PORT`); if it is changed (then `sudo ddistro_custom_mod setup-web`), update this URL too. |
 | `token` | empty | Required. From the server's `config/config.php`. |
 | `session_id` | `demo-save-1` | Keeps NPC history apart, e.g. one per save game. |
 | `timeout_seconds` | `40` | HTTP timeout per phase (connect, send, waiting for the reply headers, each read), 1-300. WinHTTP checks it coarsely (a 1 second setting fired after about 2-4 seconds in tests), so a call can block longer; any reply that completes after `timeout_seconds` is discarded with an error, never applied. A timed-out turn is never retried. |
@@ -170,7 +174,7 @@ The console's "handled" means its simulated handler ran, not a real game engine.
 `--decide <text>` and `/decide <text>` send the line with two fictional candidates,
 `npc_guide` (Guide, the baseline) and `npc_scout` (Scout), to the server's `decision.php`
 and print which one it chose and why. It is display only: the client does not switch the
-NPC it talks to and runs no actions. Server settings are in KagrenacServer [CONNECTORS.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/CONNECTORS.md#npc-selection-decision-optional).
+NPC it talks to and runs no actions. Server settings are in [CONNECTORS.md](../CONNECTORS.md#npc-selection-decision-optional).
 
 ## Voice examples
 
@@ -179,7 +183,7 @@ voice services running. Start with PocketTTS (audio.cpp) for text-to-speech and 
 (default) for speech-to-text, the recommended DwemerDistro starting choices; faster-whisper
 remains a supported transcription alternative. Existing setups often have them already:
 check each in the DwemerDistro launcher, install it there if missing, and start it before
-enabling or testing. Set them up as described in [CONNECTORS.md](https://github.com/Dwemer-Dynamics/KagrenacServer/blob/main/CONNECTORS.md#voice). The client needs
+enabling or testing. Set them up as described in [CONNECTORS.md](../CONNECTORS.md#voice). The client needs
 `"voice_enabled": true` only for replies spoken as WAV; `--listen` works without it.
 
 | Command | Expect |

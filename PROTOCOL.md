@@ -1,7 +1,8 @@
 # Protocol, version 1
 
 The game (client) talks to the server over plain HTTP with JSON. This file is the
-contract between KagrenacClient and KagrenacServer; it is identical in both repos.
+contract between KagrenacClient (`client/`) and KagrenacServer (the repository root); it is
+the only copy, shared by both components.
 
 - Base URL, default for a manual DwemerDistro install: `http://127.0.0.1:19000/custom-mods/KagrenacServer`
   (a launcher install uses `http://127.0.0.1:19000/custom-mods/example-server`)
@@ -367,7 +368,8 @@ curl -s -H "Authorization: Bearer $TOKEN" --data \
 ## Changing the protocol
 
 Add optional fields freely. For anything a version-1 client would misread (renamed or removed
-fields, new required fields, new meaning), bump `protocol` in both repos together.
+fields, new required fields, new meaning), bump `protocol` in the server and the client together.
 
-The companion KagrenacServer `WAVE_ACTION.md` shows an optional wave extension. It is
-not enabled by this template; keep both copied contracts identical when extending it.
+[WAVE_ACTION.md](WAVE_ACTION.md) shows an optional wave extension. It is not enabled by
+this template; update this one contract, the server and the client together when
+extending it.

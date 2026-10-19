@@ -4,13 +4,18 @@
 launcher, open **Mods > Custom mods > Add custom mod** and paste:
 
 ```text
-https://github.com/Dwemer-Dynamics/KagrenacServer
+https://github.com/Dwemer-Dynamics/Kagrenac
 ```
 
 The launcher previews the exact commit before installing. The full version 1 contract is
 documented in DwemerDistro Core's `CUSTOM_MODS.md`. The launcher manages this PHP server
-only; the KagrenacClient console client is built separately
-([KagrenacClient README](https://github.com/Dwemer-Dynamics/KagrenacClient/blob/main/README.md)).
+only; the KagrenacClient console client is built separately on Windows from your
+development copy ([client/README.md](client/README.md)), never inside the installed folder.
+
+The launcher clones the whole repository, including the source-only `client/`, `docs/` and
+`ports/` folders. Update DwemerDistro Core first so its custom mod web protection is in
+place before you add or update this mod; it denies those folders and `.git/` at
+`/custom-mods/example-server` ([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)).
 
 What the distro does with this manifest:
 
@@ -86,6 +91,9 @@ A copy of this template is a different mod. Before publishing it:
 
 - Create your own public HTTPS repository and its branches (for example `main` and `dev`),
   and set `project_url` to that repository.
+- Your new `id` is a folder Core's web protection does not know: add equivalent Apache deny
+  rules for `.git/`, `client/`, `docs/` and `ports/` under `/custom-mods/<your-id>`, or keep
+  those folders out of the repository you publish for the launcher.
 - Change `id` to your own unique value (3-32 characters, `a-z`, `0-9` and single hyphens,
   starting with a letter). It cannot change after install, and the launcher derives the
   folder and database names from it (`custom_<id>`), so your mod never shares this
@@ -130,6 +138,6 @@ test of changes not yet pushed, clone a Git bundle bare inside the distro and in
 it:
 
 ```bash
-git clone --bare /path/to/KagrenacServer.bundle /path/to/KagrenacServer.git
-sudo ddistro_custom_mod install --local-source /path/to/KagrenacServer.git
+git clone --bare /path/to/Kagrenac.bundle /path/to/Kagrenac.git
+sudo ddistro_custom_mod install --local-source /path/to/Kagrenac.git
 ```

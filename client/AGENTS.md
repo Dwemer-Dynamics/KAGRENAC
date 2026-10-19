@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Guidance for coding agents working on KagrenacClient, or on a mod copied from it.
+Guidance for coding agents working on KagrenacClient, the `client/` component of KAGRENAC AI
+Mod Maker, or on a mod copied from it. These rules add to the root [../AGENTS.md](../AGENTS.md);
+read [../PROJECT.md](../PROJECT.md) for the user's brief before changing anything.
 
 ## Keep it simple
 
@@ -25,9 +27,9 @@ Guidance for coding agents working on KagrenacClient, or on a mod copied from it
 - **Actions**: an action runs only if it is in the client's `allowed_actions` *and* has an
   explicit handler in `applyResult()`. Never map action names to console commands, scripts,
   file paths or anything generic.
-- **Protocol** (`PROTOCOL.md`, identical in the server repo): `"protocol": 1`. Check the
-  reply's shape before using it, as `sendTurn()` does. Bump the version in both repos for
-  incompatible changes.
+- **Protocol** ([../PROTOCOL.md](../PROTOCOL.md), the single copy shared with the server):
+  `"protocol": 1`. Check the reply's shape before using it, as `sendTurn()` does. Bump the
+  version in the server and the client together for incompatible changes.
 - **Config**: shipped defaults in `config.default.json`; secrets only in the untracked
   `config.json`.
 - **Voice is optional**: text first; on any voice failure keep the subtitle or let the
@@ -41,8 +43,11 @@ Guidance for coding agents working on KagrenacClient, or on a mod copied from it
 ## Checks before finishing
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build.ps1   # x64 and x86, must have no warnings
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1   # in client/; x64 and x86, must have no warnings
 ```
+
+Build only in the Windows development copy, with output outside the repository (the script's
+default). Never build, or write `config.json`, inside the server copy in Apache's web root.
 
 Then, with KagrenacServer running in mock mode, run the table in README "Smoke checks" for
 the architectures you changed. Report what ran, and what was not tested (real engine,
