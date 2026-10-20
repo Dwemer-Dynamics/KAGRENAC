@@ -1,12 +1,15 @@
-# Engine pack: Elden Ring (diagnostic foundation, not qualified in engine)
+# Engine pack: Elden Ring (reference port, not verified in game)
 
-Copied from [ENGINE_PACK.md](ENGINE_PACK.md). Scope: the native diagnostic probe in
-[ports/elden-ring/](../../ports/elden-ring/README.md), not dialogue, voice or protocol work.
-The separate event-script route for hold, follow and attack is in
-[ports/elden-ring/control/](../../ports/elden-ring/control/README.md); its package builds
-and verifies in full from the user's own files; the user ran two earlier builds, and after the current
-package was handed over reported "okay it works", without naming an action or which build ran.
-That report is user-reported only; no action is independently verified in game.
+Copied from [ENGINE_PACK.md](ENGINE_PACK.md). The reference port is in
+[ports/elden-ring/](../../ports/elden-ring/README.md): a native me3 client
+([client/](../../ports/elden-ring/client/README.md), built and fixture-tested outside the
+game), an event-script control package
+([control/](../../ports/elden-ring/control/README.md), full package build verified) and the
+diagnostic probe this page mostly covers. Follow and hold are the reference actions;
+attack is unavailable until its target and handler pass the acceptance below in game. The
+user ran two earlier control builds, and after the current package was handed over reported
+"okay it works", without naming an action or which build ran. That report is user-reported
+only; no action is independently verified in game.
 Sources were read on 2026-10-19 through the GitHub API at the pins below; nothing was
 downloaded into the repository or installed, and no source code was copied. Three
 projects were examined. fromsoftware-rs explicitly handles the installed file version

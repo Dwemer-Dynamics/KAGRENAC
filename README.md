@@ -7,7 +7,7 @@ One repository holds both components:
 
 - **KagrenacServer** (the repository root): a small PHP 8.2 + PostgreSQL server. A game sends
   what the player said to an NPC; the server answers with the NPC's reply and, at most, one
-  safe action (`follow_player`).
+  allowlisted action (`follow_player` by default).
 - **KagrenacClient** (`client/`): a Windows console "fake game" (C++17, x64 and x86) that
   shows the game side. It is not a plugin for any real game.
 
@@ -18,7 +18,8 @@ One repository holds both components:
 | Server (mock mode) | Working: turns, game events, history, NPC bios and facts, checkpoints, backups, cancellation and stale-reply protection, dashboard. Real LLM providers are code paths you configure and test yourself | [START_HERE.md](START_HERE.md#feature-and-status-checklist) |
 | Console client | Builds for x64 and x86; talks to the server, shows replies as text, and simulates `follow_player` by printing a line | [client/README.md](client/README.md) |
 | Voice | Optional and off by default. The server can call PocketTTS (text to speech) and Parakeet or faster-whisper (speech to text) once you install and enable them; the console saves reply WAVs and transcribes a WAV file you give it. No microphone capture and no playback | [CONNECTORS.md](CONNECTORS.md#voice) |
-| Real game | **None.** No game is supported until someone ports the client and tests it in that game. `ports/` holds evidence records only | [docs/agent-playbook.md](docs/agent-playbook.md) |
+| Real game | **None verified.** An Elden Ring reference (a native me3 client plus an event-script control package for follow and hold) builds and passes fixture checks outside the game; it is not verified in game, and attack is unavailable until its target and handler are verified there | [ports/elden-ring/](ports/elden-ring/README.md) |
+| Deploy and pair (Windows) | `scripts\project.ps1 deploy` installs or updates your committed HEAD through DwemerDistro Core; `pair` writes the private client config | [docs/getting-started.md](docs/getting-started.md#deploy-and-pair) |
 
 ## First prompt for your coding agent
 
@@ -36,25 +37,25 @@ for keys in chat.
 ## Get started
 
 The route, from download to the first AI line in your game, is
-[docs/getting-started.md](docs/getting-started.md). The server runs from a separate clone
-inside DwemerDistro WSL ([SETUP.md](SETUP.md#1-install-the-server-inside-dwemerdistro), or
-the launcher's **Mods > Custom mods**, [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md)),
-after DwemerDistro Core's custom mod web protection
-([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)). The dashboard
-is at `http://127.0.0.1:19000/custom-mods/KagrenacServer/`; 19000 is DwemerDistro's shared
-loopback port for custom PHP mods (`CUSTOM_MODS_PORT`). A full engine port uses the staged
-prompt in [docs/agent-playbook.md](docs/agent-playbook.md).
+[docs/getting-started.md](docs/getting-started.md). Your copy gets its own `id` and `name`
+in `dwemer-mod.json`; `scripts\project.ps1 deploy -WslDistro <name>` then installs it inside
+DwemerDistro WSL through Core, at `/custom-mods/<id>` with database `custom_<id>`. A manual
+install ([SETUP.md](SETUP.md#1-install-the-server-inside-dwemerdistro)) or the launcher's
+**Mods > Custom mods** ([LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md)) are separate
+routes. 19000 is DwemerDistro's shared loopback port for custom PHP mods
+(`CUSTOM_MODS_PORT`). A full engine port uses the staged prompt in
+[docs/agent-playbook.md](docs/agent-playbook.md).
 
 ## Directory map
 
 | Path | What |
 |---|---|
 | `*.php`, `lib/`, `sql/`, `config/`, `ui/` | KagrenacServer: endpoints, helpers, migrations, private config, dashboard |
-| `scripts/` | Server scripts (`install.sh`, `update.sh`, `smoke.sh`, `migrate.php`, `pair_client.php`, ...) and the Windows developer wrapper `project.ps1` |
-| `dwemer-mod.json` | Launcher manifest for the server (id `example-server`) |
+| `scripts/` | Server scripts (`install.sh`, `update.sh`, `smoke.sh`, `migrate.php`, `pair_client.php`, ...), the Windows developer wrapper `project.ps1` and its WSL side `project-runtime.sh` |
+| `dwemer-mod.json` | Manifest for the server (template id `example-server`; your copy sets its own) |
 | `client/` | KagrenacClient source, CMake project and `scripts/build.ps1` |
 | `docs/` | [Getting started](docs/getting-started.md), [agent playbook](docs/agent-playbook.md), [engine pack template](docs/engine-packs/ENGINE_PACK.md), [port recipes](docs/feature-recipes/PORT_RECIPES.md) |
-| `ports/` | Per-engine evidence records; no port is implemented |
+| `ports/` | Per-engine work and evidence; `ports/elden-ring/` is a reference, not verified in game |
 | `PROJECT.md` | Your project brief, integration plan, stage checklist and latest evidence |
 
 `client/`, `docs/` and `ports/` are source only and are not meant to be served.
@@ -77,6 +78,9 @@ prompt in [docs/agent-playbook.md](docs/agent-playbook.md).
 
 - A template, not a product: no real game is supported until someone ports and tests the
   client in that game. The console's follow is a printed simulation.
+- `deploy` needs a DwemerDistro Core with `setup-web --protect-project` and
+  `update --expect-commit`, not yet in a public Core release; until a compatible Core is
+  available, it stops with a clear message and changes nothing.
 - Meant for one PC or a trusted local network. The dashboard has **no login**, there is
   **no rate limiting**, and the token travels over plain HTTP.
 - The server copy sits inside Apache's web root. Private config and `lib/` files print

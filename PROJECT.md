@@ -13,6 +13,7 @@ or in the private `config/config.php`. A blank row is not a permission.
 | Game, version and modding tools | |
 | Starting feature (new companion or existing NPC, and what it does) | |
 | Mod name | |
+| Project id and name in `dwemer-mod.json` (own values, set before deploy) | |
 | Voice (none, or PocketTTS replies; speech input later?) | |
 | LLM provider (name only) | |
 | DwemerDistro (the one WSL distro name) | |
@@ -30,7 +31,8 @@ options offered.
 | HTTP off the game thread, result back on it | | |
 | Reply display | | |
 | Audio playback | | |
-| Action bridge (existing mechanism only) | | |
+| Game awareness: each value's source and freshness; unread values sent as `unavailable` | | |
+| Action bridge (existing mechanism only): capability, target, instance check, preconditions | | |
 | Saves, offline play, cancel | | |
 | First thin slice and its acceptance | | |
 
@@ -43,13 +45,15 @@ others.
 
 - [ ] 1. Brief: game, starting feature, mod name
 - [ ] 2. Integration plan written; each Unknown researched, with an option chosen
-- [ ] 3. DwemerDistro: `doctor -WslDistro <name>` shows no FAIL, UNVERIFIED or WARN on the
-      distro and server lines; server installed, health ok on loopback and every exposure
-      probe HTTP 403
+- [ ] 3. DwemerDistro: own id set and committed; `project.ps1 deploy -WslDistro <name>`
+      reports the commit deployed (health ok, exposure probes HTTP 403); the game side paired
+      with `project.ps1 pair`. Doctor output is diagnostic only
 - [ ] 4. LLM: the dashboard **Send test** returned a real reply from the chosen provider
-      (OpenRouter, OpenAI or local; nothing has to answer on port 1234)
-- [ ] 5. Voice: PocketTTS running; the dashboard **Speak** test heard (or "not wanted")
-- [ ] 6. First prototype: the thin slice seen and heard in the game
+      (nothing has to answer on port 1234 unless that is the chosen provider)
+- [ ] 5. Voice: PocketTTS running; a reply heard on the dashboard **Speak** test or in the
+      game (a generated WAV is not "heard"), or "not wanted"
+- [ ] 6. First prototype: the thin slice seen and heard in the game, each action reported
+      on its own
 - [ ] 7. Expand: next feature named
 
 ## Decisions
@@ -60,7 +64,8 @@ others.
 ## Latest evidence
 
 The last few results only; older detail goes in `ports/<engine>/`. Never record what did not
-run.
+run. Kind is one of source, build, fixture, provider, user-reported or in-game; a broad
+"it works" is not evidence for each action.
 
-| Date | What ran (command or in-game step) | Result |
-|---|---|---|
+| Date | Kind | What ran (command or in-game step) | Result |
+|---|---|---|---|

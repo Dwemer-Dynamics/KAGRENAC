@@ -19,7 +19,9 @@ Follow both when a change touches both.
    different demo.
 3. Inspect real capabilities before promising anything: this repository
    ([README.md](README.md#what-works-today)), the one DwemerDistro the user named
-   (`scripts/project.ps1 doctor -WslDistro <name>`), and what the engine's SDK and files
+   (`scripts/project.ps1 doctor -WslDistro <name>`; diagnostic only, and a service the user
+   did not choose, such as port 1234 beside OpenRouter, blocks nothing), any reference port
+   already in `ports/<engine>/` (reuse it), and what the engine's SDK and files
    actually offer. Cite every engine fact; never invent an API or address. For an unknown,
    do bounded research with a stated stopping point, then summarize two or three concrete
    options with a recommendation; it is a short step, not a detour.
@@ -29,25 +31,35 @@ Follow both when a change touches both.
    give the user its exact steps. Silence never grants a side effect (installs, provider
    calls, commits, publishing); ask only for a missing provider, key or install that needs
    the user's information. A chosen provider, a key the user set up privately and a request
-   to test it authorize that test. Keys go on the dashboard **API keys** page or in the
-   private `config/config.php`, never in chat.
+   to test it authorize that test, and no other paid call. Keys go on the dashboard **API
+   keys** page or in the private `config/config.php`, never in chat; pair with
+   `project.ps1 pair` so the user never copies a token. Reuse a provider the user already
+   configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
+   `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
 5. Mock mode and the console client are developer checks, not the user's demo; the
    console's follow is a printed simulation. A full port records evidence in a copy of
    [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md).
 6. Keep PROJECT.md short and current; detailed engine history goes in `ports/<engine>/`.
+   Report evidence by kind: source, build, fixture, provider, user-reported, in game. A
+   user's broad "it works" is user-reported and never proof of each action; an action is
+   usable only after its own in-game check.
 
 ## Layout and copies
 
-- Keep the server at the repository root, with its id `example-server`, `config/config.php`,
-  database placeholder `example_ai_mod`, service identity `example-ai-server`, port and routes
-  unchanged unless the user explicitly asks.
+- Keep the server at the repository root. In the template, the manifest id `example-server`,
+  `config/config.php`, database placeholder `example_ai_mod`, service identity
+  `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
+  and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
+  for a new install); Core then names the database `custom_<id>`. One repository per mod.
 - `client/`, `docs/` and `ports/` are source only. The server copy in Apache's web root
   contains them because it is one repository; DwemerDistro Core's custom mod web protection
   must be installed before a server install or update (SETUP.md). Never build the client,
   write a client `config.json` or put build output inside the server copy or the
   repository; builds go outside both (the client script defaults to `%LOCALAPPDATA%`).
 - `scripts/project.ps1` is a thin Windows wrapper over the existing scripts. Keep it free of
-  dependency installation, source copying into WSL, database resets and background services;
+  dependency installation, database resets and background services. `deploy` sends only a
+  bundle of the committed HEAD into the named distro and installs through DwemerDistro Core
+  (or a named manual install's `update.sh`); it never adopts or repoints an install. Other
   server installs through it stay explicit opt-in for a named WSL checkout.
 - `ports/<engine>/` holds evidence and capability gates. Do not mark a port implemented,
   copy an engine SDK into the repository, or install SDK dependencies without the user's
@@ -70,12 +82,20 @@ Follow both when a change touches both.
   returns only names in `allowed_actions`; the client checks its own allowlist and has one
   explicit handler per action. To add an action, update the prompt in `lib/llm.php`, the
   config allowlist, `PROTOCOL.md`, and the client handler together. Never execute model
-  output as commands, SQL, paths or URLs.
+  output as commands, SQL, paths or URLs. The prompt offers exactly the current
+  `allowed_actions`; with none it tells the model it cannot act or claim an action. A tag is
+  a request, not a result: `handled` in `result.php` means the handler ran, and an outcome is
+  stated only after the game observed it. Each action records its capability, target,
+  instance check and preconditions, and passes the gates in
+  [PORT_RECIPES, Awareness and actions](docs/feature-recipes/PORT_RECIPES.md#awareness-and-actions)
+  before it is marked usable. Obvious commands map to their handler without a model call;
+  no model call ever runs from a game tick.
 - **Decisions**: `decision.php` only returns one of the ids the game offered, or the
   baseline on any failure. Keep it free of history, chat, memory and actions, and keep its
   provider call short (`DECISION_TIMEOUT_MS`), size-capped and without redirects. Its only
   database write is one connector-audit row sent after the reply (`reply_then()`), so audit
-  logging never delays or changes a decision.
+  logging never delays or changes a decision. Choosing actions with JEV is a separate future
+  contract (PORT_RECIPES, Awareness and actions), never an extension of `decision.php`.
 - **Profiles and memory**: profiles never store URLs or keys; a profile may only switch to a
   keyless mode (`lib/profiles.php`). Generated summaries, diaries and candidate facts are
   untrusted data: cleaned, size-capped, sent to the model only as quoted reference data, and
@@ -86,7 +106,9 @@ Follow both when a change touches both.
   transcripts, audio or provider bodies, and keep those out of `ex_connector_calls`.
 - **Trust**: everything from the game is untrusted. Validate with `require_id()` /
   `require_text()` and keep the size limits. Keep the token check on every endpoint except
-  `health.php`.
+  `health.php`. Game context reaches the model only as quoted data. The game sends only what
+  it actually read, with a cited source and freshness; anything it cannot read, or read too
+  long ago, is sent as `unavailable` (unknown), never invented or static text.
 - **Game events**: `event.php` with `respond: false` only logs (no LLM, history or actions);
   `respond: true` must keep using `run_turn()` in `lib/turn.php`. No automatic triggers,
   queues or background work. Action targets come from the request's `npc.id`, never from
@@ -106,8 +128,8 @@ Follow both when a change touches both.
   the user wants voice, start with PocketTTS for TTS and Parakeet for STT (the recommended
   DwemerDistro choices) before the supported alternatives. Do not assume either is installed
   or running: within the scope the user has authorized, verify the service is available and
-  running before enabling or testing voice, then confirm the user heard the dashboard Voice
-  page's Speak test before any engine demo.
+  running before enabling or testing voice. Voice counts as working only when the user heard
+  it, on the dashboard Voice page's Speak test or in the game; a generated WAV is not heard.
 - **Installers**: `install.sh` must stay safe to repeat, copy config only when missing,
   and change nothing outside this app's folder and database. `update.sh` must keep
   refusing dirty checkouts, back up first, and only fast-forward. Never add
