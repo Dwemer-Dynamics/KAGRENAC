@@ -20,13 +20,16 @@
        the grace of the configured BonfireWarpParam row (read from the user's regulation and
        the Paramdex names), checked against that grace and its player part, and checked to be
        the original plus only that part and model
-    5. DarkScript3 /cmd: decompile common (the control event id must be free), add the one
-       control event and InitializeEvent(0, event_control, 0) to event 0, compile into the
-       work folder. erpack merge-events then writes package/event/common.emevd.dcx from the
-       user's original binary common, keeping its events, instructions, parameters and
-       strings, appending only that event and that one start, and checking everything else
-       is unchanged; the event id must also be free in the tiles' original event files, the
-       event may set no team, and every character AI call must address the companion.
+    4b. extract-inputs.ps1 -EventAudit and erpack flag-audit: the 96-flag bridge window must
+       be unreferenced by every event script, allocation list, talk script, param, the Lua
+       and the MSBs of the user's game
+    5. DarkScript3 /cmd: decompile common (the three event ids must be free), add the bridge
+       init, bridge mailbox and control events and one InitializeEvent(0, id, 0) each, in
+       that order, to event 0, compile into the work folder. erpack merge-events then writes
+       package/event/common.emevd.dcx from the user's original binary common, keeping its
+       events, instructions, parameters and strings, appending only those events and starts,
+       and checking everything else is unchanged; the event ids must also be free in the
+       tiles' original event files, the events may set no team, and every character AI call must address the companion.
        DarkScript3 decompiles the merged file again as a last check.
     6. luac 5.0.3: compile the logic; erpack pack: add it to aicommon.luabnd, write it as its
        own <logic_id>_logic.luabnd.dcx (laid out like the game's 010000_logic.luabnd), and clone the
@@ -37,14 +40,15 @@
   and the game folder on PATH are set for erpack and DarkScript3 only; this session's
   environment is not changed.
   Writes only into a new, empty -OutDir outside the repository and the game, reached
-  without junctions or 8.3 aliases. Never writes to the game folder, saves or me3.
+  without junctions or 8.3 aliases. -Tools and -OutDir default to tools and build under
+  %LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control; pass either to override. Never writes to the game folder, saves or me3.
   Exit codes: 0 package built (not tested in game), 1 refused or a step failed.
 #>
 param(
     [Parameter(Mandatory)] [string] $Config,
     [Parameter(Mandatory)] [string] $GameDir,
-    [Parameter(Mandatory)] [string] $Tools,
-    [Parameter(Mandatory)] [string] $OutDir
+    [string] $Tools = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\elden-ring\control\tools"),
+    [string] $OutDir = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\elden-ring\control\build")
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'paths.ps1')
@@ -123,8 +127,16 @@ if ($controlTeam -ne 47) { Refuse 'control_team_type must be 47 (the teamType of
 $hostileTeam = Int 'hostile_team_type' 1 255
 if ($hostileTeam -in $originalTeam, $controlTeam) { Refuse 'hostile_team_type must differ from original_team_type and control_team_type' }
 $logicId = Int 'logic_id' 1 2147483647
-# One flagless event; where it waits is the control state.
+# The control event (where it waits is the control state) plus the bridge's init and
+# mailbox events, which own a 96-flag window that must start a byte inside one 1000-flag block.
 $eventControl = Int 'event_control' 1000000 4294967295
+$eventInit = Int 'event_bridge_init' 1000000 4294967295
+$eventMailbox = Int 'event_bridge_mailbox' 1000000 4294967295
+if (@($eventControl, $eventInit, $eventMailbox | Sort-Object -Unique).Count -ne 3) { Refuse 'event_control, event_bridge_init and event_bridge_mailbox must all differ' }
+$flagBase = Int 'bridge_flag_base' 1000000 4294967295
+if (($flagBase % 1000) % 8 -ne 0 -or ($flagBase % 1000) + 95 -gt 999) { Refuse 'bridge_flag_base must start a byte (offset divisible by 8) with 96 flags left in its 1000-flag block' }
+$hostileNear = Num 'bridge_hostile_near_m' 5 100
+$mapParts = @($companionMsb.Substring(1).Split('_') | ForEach-Object { [int] $_ })
 $commands = [ordered]@{}
 foreach ($c in 'command_hold', 'command_follow', 'command_attack') { $commands[$c] = Int $c 1 2147483647 }
 if (@($commands.Values | Sort-Object -Unique).Count -ne 3) { Refuse 'command ids must be distinct' }
@@ -152,8 +164,12 @@ $values = [ordered]@{
     CMD_ATTACK = $commands.command_attack; ATTACK_LEASE = $lease; ATTACK_ANIM = $attackAnim
     FOLLOW_MIN = $followMin.ToString('0.0##', $inv); FOLLOW_MAX = $followMax.ToString('0.0##', $inv)
     ATTACK_REACH = $reach.ToString('0.0##', $inv)
+    E_BRIDGE_INIT = $eventInit; E_BRIDGE_MAILBOX = $eventMailbox; BRIDGE_FLAG_BASE = $flagBase
+    HOSTILE_NEAR = $hostileNear.ToString('0.0##', $inv); MAP_NAME = $companionMsb
+    MAP_AREA = $mapParts[0]; MAP_BLOCK = $mapParts[1]; MAP_REGION = $mapParts[2]; MAP_INDEX = $mapParts[3]
 }
 if ($values.Values -contains $PlayerEntity) { Refuse 'no configured id may be the player entity 10000' }
+$values.PLAYER = $PlayerEntity  # only the mailbox's distance sensors name the player
 
 # 2. Game build (file identity only).
 $exeSha = Sha256 (Join-Path $GameDir 'eldenring.exe')
@@ -304,10 +320,39 @@ $steps.place = $place
 
 function Render([string] $template) {
     $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $template) -Raw
+    # @F+n@: flag n of the bridge window (n 0-95 only).
+    foreach ($m in [regex]::Matches($text, '@F\+(\d+)@')) {
+        if ([int] $m.Groups[1].Value -gt 95) { Refuse "bridge flag $($m.Value) is outside the 96-flag window" }
+    }
+    $text = [regex]::Replace($text, '@F\+(\d+)@', { param($m) [string] ($flagBase + [int] $m.Groups[1].Value) })
     foreach ($k in $values.Keys) { $text = $text.Replace("@$k@", [string] $values[$k]) }
     $left = [regex]::Match($text, '@[A-Z_]+@')
     if ($left.Success) { Refuse "unfilled placeholder $($left.Value) in $template" }
     return $text
+}
+
+# 4b. The bridge window must be unused by the game: every event script, allocation list and talk
+# script the UXM dictionary names, read from the user's archives, plus the regulation, the Lua and
+# the MSBs. Any reference to a flag inside it (typed, range, event value, any 32-bit value or value
+# pair in an event instruction with caller parameters substituted, or a raw constant) refuses.
+$auditDir = Join-Path $work 'audit'
+& (Join-Path $PSScriptRoot 'extract-inputs.ps1') -GameDir $GameDir -UxmExe $Uxm -OutDir $auditDir -EventAudit
+if ($LASTEXITCODE -ne 0) { Refuse 'extract-inputs.ps1 -EventAudit failed' }
+$code = Tool $erpack (@('flag-audit', '--oodle', $Oodle, '--window', $flagBase, ($flagBase + 95), '--emedf', $Emedf,
+    '--emevd', (Join-Path $auditDir 'event'), '--alloc', (Join-Path $auditDir 'event\eventflag'), '--regulation', $regCopy,
+    '--raw', (Join-Path $auditDir 'script\talk'), (Join-Path $vanilla 'script\aicommon.luabnd.dcx'),
+    (Join-Path $vanilla 'script\010000_logic.luabnd.dcx')) + $msbPaths) (Join-Path $work 'bridge-audit')
+try { $audit = Get-Content -LiteralPath "$work\bridge-audit.out" -Raw | ConvertFrom-Json } catch { $audit = $null }
+if ($code -ne 0 -or $null -eq $audit -or $audit.window_clear -ne $true -or $audit.hits_total -ne 0 -or $audit.emevd_files -lt 500) {
+    Refuse "bridge window $flagBase-$($flagBase + 95) is not clear (exit $code); see $work\bridge-audit.out"
+}
+$steps.bridge_audit = [ordered]@{
+    window = @($flagBase, ($flagBase + 95)); report_sha256 = (Sha256 "$work\bridge-audit.out")
+    emevd_files = $audit.emevd_files; instructions_checked = $audit.instructions_checked
+    parameter_substitutions = $audit.parameter_substitutions; raw_files = $audit.raw_files; param_files = $audit.param_files
+    unresolved_event_starts = $audit.unresolved_event_starts; hits_total = $audit.hits_total
+    block_flags_used_by_game = @($audit.block_flags_used | ForEach-Object { $_.offset })
+    alloc_lists = @($audit.alloc_lists | ForEach-Object { "$($_.file) ($($_.bytes) bytes)" })
 }
 
 # 5. Event script: EMEDF names and argument counts, then DarkScript3 compile and round trip.
@@ -349,12 +394,17 @@ $code = Tool $DarkScript @('/cmd', '-decompile', '-game', 'er', '-indir', $dsSou
 $commonJs = Join-Path $dsIn 'common.emevd.dcx.js'
 if ($code -ne 0 -or -not (Test-Path -LiteralPath $commonJs)) { Refuse "DarkScript3 decompile failed (exit $code)" }
 $common = Get-Content -LiteralPath $commonJs -Raw
-if ([regex]::IsMatch($common, "\bEvent\(\s*$eventControl\s*,")) { Refuse "event id $eventControl already exists in common" }
+# Start order in event 0: the init event first, so it has cleared the window before the mailbox
+# (which also waits 0.5 s) or the control event reads it.
+$ownedEvents = @($eventInit, $eventMailbox, $eventControl)
+foreach ($e in $ownedEvents) {
+    if ([regex]::IsMatch($common, "\bEvent\(\s*$e\s*,")) { Refuse "event id $e already exists in common" }
+}
 $eventHeader = '(?m)^\$?Event\(\s*\d+\s*,'
 $ctor = [regex]::Matches($common, '(?m)^\$?Event\(\s*0\s*,[^\r\n]*\{[ \t]*\r?$')
 if ($ctor.Count -ne 1) { Refuse "expected exactly one event 0 header in common, found $($ctor.Count)" }
 $at = $ctor[0].Index + $ctor[0].Length
-$patched = $common.Substring(0, $at) + "`n    InitializeEvent(0, $eventControl, 0);" +
+$patched = $common.Substring(0, $at) + (($ownedEvents | ForEach-Object { "`n    InitializeEvent(0, $_, 0);" }) -join '') +
     $common.Substring($at).TrimEnd() + "`n`n" + $eventsJs
 $dsPatched = Join-Path $work 'ds-patched'
 New-Item -ItemType Directory -Force -Path $dsPatched | Out-Null
@@ -371,7 +421,7 @@ if ($code -ne 0 -or -not (Test-Path -LiteralPath $compiled)) {
 $pkgEvent = Join-Path $pkg 'event'
 New-Item -ItemType Directory -Force -Path $pkgEvent | Out-Null
 $emevdOut = Join-Path $pkgEvent 'common.emevd.dcx'
-$code = Tool $erpack (@('merge-events', '--original', $vanillaEmevd, '--compiled', $compiled, '--event', $eventControl,
+$code = Tool $erpack (@('merge-events', '--original', $vanillaEmevd, '--compiled', $compiled, '--event') + $ownedEvents + @(
     '--out', $emevdOut, '--oodle', $Oodle, '--expect-teams', '--expect-entity', $companion,
     '--check-events') + @($mapEvents | ForEach-Object { Join-Path $vanilla $_.TrimStart('/') })) (Join-Path $work 'merge')
 if ($code -ne 0 -or -not (Test-Path -LiteralPath $emevdOut)) {
@@ -390,17 +440,19 @@ $code = Tool $DarkScript @('/cmd', '-decompile', '-game', 'er', '-indir', $pkgEv
 $roundJs = Join-Path $dsCheck 'common.emevd.dcx.js'
 if ($code -ne 0 -or -not (Test-Path -LiteralPath $roundJs)) { Refuse "DarkScript3 round-trip decompile failed (exit $code)" }
 $round = Get-Content -LiteralPath $roundJs -Raw
-if (-not [regex]::IsMatch($round, "\bEvent\(\s*$eventControl\s*,")) { Refuse "event $eventControl missing after the merge round trip" }
-if (-not [regex]::IsMatch($round, "InitializeEvent\(0,\s*$eventControl\b")) { Refuse 'control event start missing after the merge round trip' }
+foreach ($e in $ownedEvents) {
+    if (-not [regex]::IsMatch($round, "\bEvent\(\s*$e\s*,")) { Refuse "event $e missing after the merge round trip" }
+    if (-not [regex]::IsMatch($round, "InitializeEvent\(0,\s*$e\b")) { Refuse "start of event $e missing after the merge round trip" }
+}
 $eventsBefore = [regex]::Matches($common, $eventHeader).Count
 $eventsAfter = [regex]::Matches($round, $eventHeader).Count
-if ($eventsAfter -ne $eventsBefore + 1) { Refuse "merged common has $eventsAfter events, expected $($eventsBefore + 1)" }
+if ($eventsAfter -ne $eventsBefore + $ownedEvents.Count) { Refuse "merged common has $eventsAfter events, expected $($eventsBefore + $ownedEvents.Count)" }
 $steps.emevd = [ordered]@{
     instructions = $used
     source_sha256 = (Sha256 $vanillaEmevd); compiled_sha256 = (Sha256 $compiled)
     bytes = (Get-Item -LiteralPath $emevdOut).Length; sha256 = (Sha256 $emevdOut)
     merge = $merge
-    round_trip = "DarkScript3 reads the merged file: event $eventControl and its event 0 start present, $eventsBefore events before, $eventsAfter after"
+    round_trip = "DarkScript3 reads the merged file: events $($ownedEvents -join ', ') and their event 0 starts present, $eventsBefore events before, $eventsAfter after"
 }
 
 # 6. Lua logic, aicommon.luabnd and the regulation.bin copy.
@@ -450,25 +502,33 @@ $manifest = [ordered]@{
     game_exe_sha256 = $exeSha
     outputs = $outputs
     commands = [ordered]@{
-        event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $eventControl --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
+        event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $($ownedEvents -join ' ') --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
         script_and_param = "luac -s; erpack pack (aicommon.luabnd copy, new $($logicFile.Replace('\', '/')) and regulation.bin copy, each re-read)"
         map = "erpack place --template <user $templateMsb.msb.dcx> --template-entity $template --dest <user $companionMsb.msb.dcx> --entity $companion --name $companionName --think $controlAi --npc $controlNpc --backup-anim -1 --bonfire-row $graceRow (re-read and compared with the original); erpack inspect of the placed MSB with the packaged regulation.bin"
     }
     source_preservation = [ordered]@{
-        'event/common.emevd.dcx' = "the user's original binary common with its events, instructions, parameters and strings kept; only event $eventControl and one InitializeEvent(0, $eventControl, 0) in event 0 added, the rest checked unchanged by erpack merge-events (steps.emevd.merge)"
+        'event/common.emevd.dcx' = "the user's original binary common with its events, instructions, parameters and strings kept; only events $($ownedEvents -join ', ') (bridge init, bridge mailbox, control) and one InitializeEvent(0, id, 0) each at the start of event 0 added, the rest checked unchanged by erpack merge-events (steps.emevd.merge)"
         'script/aicommon.luabnd.dcx' = "the user's original with one added logic file $logicName and its LUAINFO/LUAGNL names"
         ($logicFile.Replace('\', '/')) = "new: the same logic as its own per-logic file, laid out like the game's 010000_logic.luabnd.dcx (container, entry ids, flags and folder naming), with only logic $logicId in its LUAINFO and LUAGNL (steps.pack.logic_file)"
         'regulation.bin' = "a copy of the user's original with NpcThinkParam $controlAi cloned from $originalAi (only logicId changed) and NpcParam $controlNpc cloned from $originalNpc (only teamType changed, to $controlTeam); every other row, $originalAi and $originalNpc included, and every other file unchanged (steps.pack)"
         "map/mapstudio/$companionMsb.msb.dcx" = "the user's original with one enemy $companionName (entity $companion, a copy of $template from $templateMsb with think $controlAi, NpcParam $controlNpc and BackupEventAnimID -1) and its model entry if missing; with those removed it equals the original byte for byte, decompressed (steps.place)"
     }
     values = $values
+    # The contract a native mailbox client must match (layout 1); none is part of this package.
+    bridge = [ordered]@{
+        layout_version = 1; window = @($flagBase, ($flagBase + 95)); events = [ordered]@{ init = $eventInit; mailbox = $eventMailbox; control = $eventControl }
+        dll_writes_only = "flags $($flagBase + 56)-$($flagBase + 63) (window byte 7), only while all eight are off"
+        beacon_bytes_if_lowest_flag_is_lowest_bit = 'E5 96 at bytes 0-1, 8B at byte 6, 5C at byte 8; A7 69, D1, 3A if it is the highest bit'
+    }
     companion_copy = [ordered]@{
         template_entity = $template; template_msb = $templateMsb; companion_msb = $companionMsb; companion_name = $companionName
         companion_position = $companionPos; grace_bonfire_row = $graceRow; grace_name = $graceName
     }
     steps = $steps
     untested = @(
-        "common event 0 starting control event $eventControl on every load or warp (constructor lifetime not confirmed)",
+        "common event 0 starting events $($ownedEvents -join ', ') on every load or warp, the init event first (constructor lifetime and start order not confirmed)",
+        "the bridge window $flagBase-$($flagBase + 95) being stored, set and read by the game like its own flags of block $([math]::Floor($flagBase / 1000)) (statically unused, see steps.bridge_audit; the allocation lists do not name this tile)",
+        "the mailbox sensors (IfCharacterBackreadStatus, IfCharacterDeadalive, IfEntityInoutsideRadiusOfEntity, IfPlayerInoutMap) evaluated without waiting by SkipIfConditionGroupStateUncompiled",
         "the copy loading friendly and holding: team $controlTeam from its private NpcParam row $controlNpc (the teamType of the game's spirit-summon rows) keeping it off the player and the player off it, and logic $logicId waiting with no request",
         "ActionButtonParam $button showing a prompt on a friendly character from an event, and one press passing only one wait",
         "IfElapsedSeconds($lease) in the attack wait counting from that wait, not from the event start",

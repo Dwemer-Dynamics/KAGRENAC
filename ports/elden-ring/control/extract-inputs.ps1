@@ -15,6 +15,12 @@
   the allowlisted files into a new, empty -OutDir outside the repository and the game, plus
   extract.json with sizes and SHA-256. Refuses anything over 32 MB in total.
 
+  -EventAudit (for the bridge flag-window audit, `erpack flag-audit`) replaces -Files with
+  every event script, event flag allocation list and talk script that the UXM release's own
+  EldenRingDictionary.txt names: /event/<name>.emevd.dcx, /event/eventflag/<name>.eventflagalloclist.dcx
+  and /script/talk/<name>.talkesdbnd.dcx, nothing else, up to 128 MB. Names the dictionary
+  lists but no archive holds are recorded in extract.json (not_in_archives), not refused.
+
   Exit codes: 0 all files written, 1 refused or failed.
 #>
 param(
@@ -23,7 +29,8 @@ param(
     [Parameter(Mandatory)] [string] $OutDir,
     [string[]] $Files = @('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx',
         '/map/mapstudio/m60_42_36_00.msb.dcx', '/map/mapstudio/m60_42_37_00.msb.dcx',
-        '/map/mapstudio/m60_43_36_00.msb.dcx')
+        '/map/mapstudio/m60_43_36_00.msb.dcx'),
+    [switch] $EventAudit
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'paths.ps1')
@@ -37,6 +44,15 @@ $MaxTotal = 32MB
 $Archives = 'Data0', 'Data1', 'Data2', 'Data3', 'DLC'
 
 if ($PSVersionTable.PSEdition -ne 'Desktop') { Refuse 'run with Windows PowerShell 5.1 (powershell.exe)' }
+if ($EventAudit) {
+    $dictionary = Join-Path (Split-Path (Full $UxmExe) -Parent) 'res\EldenRingDictionary.txt'
+    if (-not (Test-Path -LiteralPath $dictionary -PathType Leaf)) { Refuse "missing $dictionary" }
+    $auditPattern = '^/(event/[a-z0-9_]+\.emevd|event/eventflag/[a-z0-9_]+\.eventflagalloclist|script/talk/[a-z0-9_]+\.talkesdbnd)\.dcx$'
+    $Files = @([IO.File]::ReadAllLines($dictionary) | ForEach-Object { $_.Trim() } | Where-Object { $_ -cmatch $auditPattern } | Sort-Object -Unique)
+    if ($Files.Count -eq 0) { Refuse "no event or talk script names in $dictionary" }
+    $Allow = $Files
+    $MaxTotal = 128MB
+}
 foreach ($f in $Files) { if ($f -notin $Allow) { Refuse "$f is not in the extraction allowlist" } }
 if (-not (Test-Path -LiteralPath (Join-Path $GameDir 'eldenring.exe') -PathType Leaf)) { Refuse "no eldenring.exe in $GameDir" }
 if (-not (Test-Path -LiteralPath $UxmExe -PathType Leaf)) { Refuse "missing $UxmExe" }
@@ -95,8 +111,8 @@ foreach ($arc in $Archives) {
         }
     }
 }
-$missing = @($wanted.Keys | Where-Object { -not $found.ContainsKey($_) } | ForEach-Object { $wanted[$_] })
-if ($missing.Count) { Refuse "not found in any archive: $($missing -join ', ')" }
+$missing = @($wanted.Keys | Where-Object { -not $found.ContainsKey($_) } | ForEach-Object { $wanted[$_] } | Sort-Object)
+if ($missing.Count -and -not $EventAudit) { Refuse "not found in any archive: $($missing -join ', ')" }
 $total = 0
 foreach ($v in $found.Values) { $total += [int64] $v.entry.PaddedFileSize }
 if ($total -gt $MaxTotal) { Refuse "allowlisted files total $total bytes, over $MaxTotal" }
@@ -114,6 +130,7 @@ foreach ($h in $found.Keys) {
     $report[$wanted[$h]] = [ordered]@{ archive = $v.archive; bytes = $bytes.Length; sha256 = (Sha256 $dest) }
     Write-Host "extracted $($wanted[$h]) from $($v.archive) ($($bytes.Length) bytes)"
 }
-[IO.File]::WriteAllText((Join-Path $OutDir 'extract.json'), ($report | ConvertTo-Json -Depth 3))
+if ($EventAudit) { $report = [ordered]@{ files = $report; not_in_archives = $missing } }
+[IO.File]::WriteAllText((Join-Path $OutDir 'extract.json'), ($report | ConvertTo-Json -Depth 4))
 [AppDomain]::CurrentDomain.remove_AssemblyResolve($resolver)
 exit 0
