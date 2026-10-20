@@ -6,7 +6,17 @@
 # Git bundle of the committed HEAD); client config is generated only through 'pair'. It starts
 # no background services and never prints tokens or keys.
 #
-# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <doctor|setup|check|pair|deploy> [options]
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|deploy> [options]
+#   new     -Destination <full Windows path> -Id <id> -Name <name> [-Game <text>] [-Feature <text>]
+#           [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port folder>]
+#           Start a new mod: copy exactly the committed HEAD of this template (git archive; no
+#           Git history, untracked or ignored files, private config, database, build output or
+#           logs) into a new folder outside every Git checkout and web root, set the copy's own
+#           id and name in dwemer-mod.json, record the brief, paths and stage states in its
+#           PROJECT.md (with -Engine, the plan from ports/<engine>/PLAN.md), and run 'git init'
+#           there. It refuses an existing destination, an id already used by a deploy or build
+#           folder, and any source that is not the template. It commits nothing and never
+#           changes this checkout; commit the copy yourself before its first deploy.
 #   doctor  Report tools, WSL distros and their state, client build, client config (no secrets)
 #           and server health (ok and service identity only). On a healthy server, probe .git/
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
@@ -24,6 +34,7 @@
 #           scripts/smoke.sh there.
 #   pair    -WslDistro <name> -WslServerPath <existing checkout> -OutFile <full Windows path>
 #           [-ServerUrl <base URL>] [-SessionId <id>] [-AllowedActions <name,...>]
+#           [-NpcId <id>] [-NpcName <name>] [-VoiceEnabled]
 #           Run that checkout's scripts/pair_client.php as dwemer (this may start the named
 #           distro) into a private folder made for this run, read the file once over
 #           \\wsl.localhost, and save it as a new private client config: the file is created
@@ -33,6 +44,8 @@
 #           another CUSTOM_MODS_PORT). An existing -OutFile is never overwritten: if it is private
 #           and holds the same URL, token and session it is reported as already paired and kept
 #           as it is; otherwise pair refuses. The token and file contents are never printed.
+#           -NpcId, -NpcName (a game client's npc_id and npc_name) and -VoiceEnabled only shape
+#           a new file; an existing one is kept byte for byte.
 #   deploy  -WslDistro <name> [-WslServerPath <existing manual install>] [-ServerUrl <base URL>]
 #           Deploy the committed HEAD (the checkout must have no uncommitted or untracked files)
 #           under the id in its dwemer-mod.json: a Git bundle of exactly HEAD goes to a private
@@ -49,17 +62,30 @@
 #           retry steps) next to the bundle. The same commit again reports already deployed.
 #           -ServerUrl only changes where Windows checks health (default: the route on the
 #           custom mods listener that WSL verified).
+#   -BuildRoot defaults to %LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\client for a
+#   project with its own id, and to %LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build in the template.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("doctor", "setup", "check", "pair", "deploy")]
+    [ValidateSet("new", "doctor", "setup", "check", "pair", "deploy")]
     [string]$Command,
-    [string]$BuildRoot = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build"),
+    [string]$BuildRoot = "",
+    [string]$Destination = "",
+    [string]$Id = "",
+    [string]$Name = "",
+    [string]$Game = "",
+    [string]$Feature = "",
+    [string]$Voice = "",
+    [string]$LlmProvider = "",
+    [string]$Engine = "",
     [string]$ServerUrl = "",
     [string]$WslDistro = "",
     [string]$WslServerPath = "",
     [string]$OutFile = "",
     [string]$SessionId = "",
     [string[]]$AllowedActions = @(),
+    [string]$NpcId = "",
+    [string]$NpcName = "",
+    [switch]$VoiceEnabled,
     [switch]$RunServerInstaller,
     [switch]$RunSmoke,
     [switch]$SkipBuild
@@ -672,6 +698,8 @@ function Invoke-Pair {
         $actions = ($AllowedActions -join ",").Split(",")
         if (-not (Test-ActionNames $actions)) { throw "-AllowedActions must be 1-8 different names of 1-40 characters A-Z a-z 0-9 _, separated by commas." }
     }
+    if ($NpcId -and $NpcId -cnotmatch '^[A-Za-z0-9_.:-]{1,64}\z') { throw "-NpcId must be 1-64 characters of A-Z a-z 0-9 _ . : -" }
+    if ($NpcName -and ($NpcName -cnotmatch '^[^\x00-\x1f\x7f]{1,64}\z' -or $NpcName.Trim(' ') -cne $NpcName)) { throw "-NpcName must be 1-64 characters without control characters or a space at either end." }
     if ($WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "pair needs -WslDistro <name> made of A-Z a-z 0-9 . _ - (it is also used in the \\wsl.localhost path)." }
     $existing = [int](New-Object System.IO.FileInfo $outPath).Attributes -ne -1
     if ($existing -and -not (Test-PrivateAcl (New-Object System.IO.FileInfo $outPath))) {
@@ -694,6 +722,9 @@ function Invoke-Pair {
         $phpArgs = @("$WslServerPath/scripts/pair_client.php", "--out", "$folder/client.json", "--base-url", $url)
         if ($SessionId) { $phpArgs += @("--session-id", $SessionId) }
         if ($actions.Count -gt 0) { $phpArgs += @("--allowed-actions", ($actions -join ",")) }
+        if ($NpcId) { $phpArgs += @("--npc-id", $NpcId) }
+        if ($NpcName) { $phpArgs += @("--npc-name", $NpcName) }
+        if ($VoiceEnabled) { $phpArgs += @("--voice-enabled", "true") }
         $output = @(Invoke-Native { & wsl.exe -d $WslDistro -u dwemer -e php @phpArgs })
         $code = $LASTEXITCODE
         if ($code -ne 0) {
@@ -711,8 +742,11 @@ function Invoke-Pair {
         $valid = $config -and $config.server_url -is [string] -and $config.server_url -ceq $url -and
             $config.token -is [string] -and $config.token.Length -ge 16 -and
             $config.session_id -is [string] -and $(if ($SessionId) { $config.session_id -ceq $SessionId } else { $config.session_id -cmatch '^[A-Za-z0-9_.:-]{1,64}\z' }) -and
-            $config.timeout_seconds -is [int] -and $config.voice_enabled -is [bool] -and $config.allowed_actions -is [array] -and
-            (Test-ActionNames @($config.allowed_actions)) -and ($actions.Count -eq 0 -or ($config.allowed_actions -join ",") -ceq ($actions -join ","))
+            $config.timeout_seconds -is [int] -and $config.voice_enabled -is [bool] -and $config.voice_enabled -eq [bool]$VoiceEnabled -and
+            $config.allowed_actions -is [array] -and
+            (Test-ActionNames @($config.allowed_actions)) -and ($actions.Count -eq 0 -or ($config.allowed_actions -join ",") -ceq ($actions -join ",")) -and
+            $(if ($NpcId) { $config.npc_id -is [string] -and $config.npc_id -ceq $NpcId } else { $null -eq $config.npc_id }) -and
+            $(if ($NpcName) { $config.npc_name -is [string] -and $config.npc_name -ceq $NpcName } else { $null -eq $config.npc_name })
         if (-not $valid) { throw "scripts/pair_client.php wrote a file that is not the expected client config (contents not shown); nothing was written on Windows." }
 
         if ($existing) {
@@ -725,7 +759,8 @@ function Invoke-Pair {
                 throw ("$outPath already holds a different pairing (different {0}; values not shown). Nothing was changed; choose a new -OutFile, or move that file away yourself and pair again." -f ($differ -join ", "))
             }
             Say "OK" "Already paired: $outPath is private and has this server's URL ($url), token and session $($config.session_id). Its voice, timeout and action settings were kept; nothing was written."
-            if ($actions.Count -gt 0) { Say "INFO" "-AllowedActions was not applied to the existing file; edit its allowed_actions yourself if needed." }
+            $ignored = @(foreach ($given in @(@("-AllowedActions", ($actions.Count -gt 0)), @("-NpcId", [bool]$NpcId), @("-NpcName", [bool]$NpcName), @("-VoiceEnabled", [bool]$VoiceEnabled))) { if ($given[1]) { $given[0] } })
+            if ($ignored.Count -gt 0) { Say "INFO" "$($ignored -join ', ') only shape a new file and were not applied; the existing file was kept byte for byte." }
             $script:done.Add("Pairing checked: $outPath already paired with $url")
             return
         }
@@ -743,6 +778,11 @@ function Invoke-Pair {
         $null = Invoke-Native { & wsl.exe -d $WslDistro -u dwemer -e sh -c 'test -f $1/client.json && ! test -L $1/client.json && test $(stat -c %a $1/client.json) = 600 && rm -- $1/client.json; rmdir -- $1' sh $folder }
         if ($LASTEXITCODE -ne 0) { Say "WARN" "Could not remove the temporary folder $folder in $WslDistro; delete it there yourself (it may hold the token)." }
     }
+}
+
+# A manifest id Core accepts: 3-32 lowercase letters, digits and single hyphens.
+function Test-ProjectId([string]$value) {
+    return ($value -cmatch '^[a-z][a-z0-9-]{1,30}[a-z0-9]\z' -and -not $value.Contains("--"))
 }
 
 # Git in this checkout; returns the output lines and throws on failure.
@@ -868,7 +908,7 @@ function Invoke-Deploy {
     $manifest = $null
     try { $manifest = (Invoke-RepoGit @("show", "$($head):dwemer-mod.json")) -join "`n" | ConvertFrom-Json } catch { }
     $id = $(if ($manifest -is [System.Management.Automation.PSCustomObject]) { [string]$manifest.id } else { "" })
-    if ($id -cnotmatch '^[a-z][a-z0-9-]{1,30}[a-z0-9]\z' -or $id.Contains("--")) { throw "dwemer-mod.json at $head has no valid id (3-32 lowercase letters, digits, single hyphens)." }
+    if (-not (Test-ProjectId $id)) { throw "dwemer-mod.json at $head has no valid id (3-32 lowercase letters, digits, single hyphens)." }
     $healthPath = [string]$manifest.health_path
     if ($healthPath -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}\z' -or $healthPath.Contains("..")) { throw "dwemer-mod.json at $head has no valid health_path." }
     $folder = $(if ($WslServerPath) { $WslServerPath } else { "/var/www/html/custom-mods/$id" })
@@ -934,6 +974,228 @@ function Invoke-Deploy {
     $script:done.Add("Deploy of $id at $head to $WslDistro ($mode, $($r['action'])); record $recordPath")
 }
 
+# Text recorded in a new project's PROJECT.md: one line of at most 200 characters with no table
+# separator, URL or anything shaped like a key. A rejected value is never printed.
+function Test-BriefText([string]$label, [string]$value) {
+    if (-not $value) { return }
+    if ($value.Length -gt 200 -or $value -match '[\x00-\x1f\x7f|]' -or $value.Trim() -cne $value -or $value -match '://' -or
+        $value -match '\b(sk|pk|rk|or)-[A-Za-z0-9_-]{12,}' -or $value -match '[A-Za-z0-9+/_=-]{32,}') {
+        throw "-$label must be one line of at most 200 characters, without '|', control characters, URLs or anything that looks like a key (value not shown)."
+    }
+}
+
+# The new project's folder: a full path on a local fixed disk that does not exist yet, in an
+# existing parent reached without links, outside every Git checkout, web root and the private
+# output folders. Returns the full path.
+function Resolve-NewDestination {
+    $refuse = "Refusing -Destination: use a full local path such as C:\dev\MyMod (drive letter and backslashes, with no '.', '..', '~1' alias, stream, link or network path)."
+    if ($Destination -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z' -or $Destination -match '~\d') { throw $refuse }
+    $full = [System.IO.Path]::GetFullPath($Destination)
+    if ($full -cne $Destination -or $full.EndsWith('\')) { throw $refuse }
+    $drive = New-Object System.IO.DriveInfo $full.Substring(0, 1)
+    if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) { throw "Refusing -Destination on $($drive.Name): only a local fixed disk is allowed, not a $($drive.DriveType) drive." }
+    if ([int](New-Object System.IO.DirectoryInfo $full).Attributes -ne -1) { throw "Refusing -Destination: $full already exists. new never writes into an existing folder; choose a new one." }
+    foreach ($part in $full.Substring(3).Split('\')) {
+        if (@("htdocs", "wwwroot", "www", "public_html", "inetpub", "custom-mods") -contains $part.ToLowerInvariant()) { throw "Refusing -Destination under '$part': the source copy stays outside every web root." }
+    }
+    $outputs = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "DwemerDynamics")).TrimEnd('\')
+    if ($full.StartsWith($outputs + "\", [System.StringComparison]::OrdinalIgnoreCase)) { throw "Refusing -Destination inside $outputs, which holds builds, deploy bundles and private configs." }
+    $parent = Split-Path -Parent $full
+    if (-not [System.IO.Directory]::Exists($parent)) { throw "The folder $parent does not exist; create it first (new creates only the project folder)." }
+    for ($dir = New-Object System.IO.DirectoryInfo $parent; $dir; $dir = $dir.Parent) {
+        if ($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing -Destination: $($dir.FullName) is a link or junction; choose a folder reached without one." }
+        if (Test-Path -LiteralPath (Join-Path $dir.FullName ".git")) { throw "Refusing -Destination inside the Git checkout $($dir.FullName); each mod is its own repository." }
+    }
+    return $full
+}
+
+# $text with the one occurrence of $old replaced by $new; throws when $old is missing or repeated.
+function Set-Once([string]$text, [string]$old, [string]$new, [string]$file) {
+    $at = $text.IndexOf($old, [System.StringComparison]::Ordinal)
+    if ($at -lt 0 -or $text.IndexOf($old, $at + 1, [System.StringComparison]::Ordinal) -ge 0) {
+        throw "The template's $file does not have exactly one '$old'; new stopped before writing it."
+    }
+    return $text.Substring(0, $at) + $new + $text.Substring($at + $old.Length)
+}
+
+# A stage row of PROJECT.md given its state and latest evidence; the row must still be blank.
+function Set-Stage([string]$text, [string]$stage, [string]$state, [string]$evidence) {
+    $lines = $text.Split("`n")
+    $hits = @(for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i].StartsWith("| $stage ") -and $lines[$i].EndsWith("| not started | |")) { $i } })
+    if ($hits.Count -ne 1) { throw "The template's PROJECT.md has no single blank stage row '$stage'; new stopped before writing it." }
+    $line = $lines[$hits[0]]
+    $lines[$hits[0]] = $line.Substring(0, $line.Length - "| not started | |".Length) + "| $state |" + $(if ($evidence) { " $evidence |" } else { " |" })
+    return $lines -join "`n"
+}
+
+# The reference plan in ports/<engine>/PLAN.md at $head: its action names, and its plan rows with
+# links rewritten from the port folder to the repository root.
+function Get-EnginePlan([string]$head) {
+    $lines = @()
+    try { $lines = Invoke-RepoGit @("show", "$($head):ports/$Engine/PLAN.md") } catch { throw "ports/$Engine/PLAN.md is not in the committed template, so -Engine $Engine has no reference plan." }
+    $base = New-Object System.Uri "http://repo/ports/$Engine/"
+    $rows = New-Object System.Collections.Generic.List[string]
+    $actions = @()
+    $inTable = $false
+    foreach ($line in $lines) {
+        if ($line -cmatch '^Actions: ([A-Za-z0-9_, ]+)$') { $actions = @($Matches[1].Split(",") | ForEach-Object { $_.Trim() }) }
+        if ($line -ceq "| Part | Plan | Fact (citation) or Unknown |") { $inTable = $true; continue }
+        if (-not $inTable -or $line -ceq "|---|---|---|") { continue }
+        if (-not $line.StartsWith("| ")) { $inTable = $false; continue }
+        $rows.Add([regex]::Replace($line, '\]\(([^)#:]+)(#[^)]*)?\)', {
+            param($m)
+            $target = New-Object System.Uri ($base, $m.Groups[1].Value)
+            "](" + $target.AbsolutePath.TrimStart('/') + $m.Groups[2].Value + ")"
+        }))
+    }
+    if ($actions.Count -gt 0 -and -not (Test-ActionNames $actions)) { throw "ports/$Engine/PLAN.md has an invalid Actions line." }
+    return @{ Rows = $rows; Actions = $actions }
+}
+
+# new: see the usage at the top. Everything is checked before the destination is created.
+function Invoke-New {
+    if (-not $Destination -or -not $Id -or -not $Name) { throw "new needs -Destination <full Windows path>, -Id <id> and -Name <name>." }
+    if (-not (Test-ProjectId $Id) -or $Id -ceq "example-server") { throw "-Id must be the new mod's own id: 3-32 lowercase letters, digits and single hyphens, not example-server." }
+    if ($Name -cnotmatch '^[^\x00-\x1f\x7f"\\|<>`]{1,64}\z' -or $Name.Trim() -cne $Name) { throw "-Name must be 1-64 characters without control characters, quotes, backslashes, backticks, '|', '<' or '>', and no space at either end." }
+    foreach ($field in @(@("Game", $Game), @("Feature", $Feature), @("Voice", $Voice), @("LlmProvider", $LlmProvider))) { Test-BriefText $field[0] $field[1] }
+    if ($WslDistro -and $WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "-WslDistro must be made of A-Z a-z 0-9 . _ -" }
+    if ($Engine -and $Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z') { throw "-Engine must be a folder name under ports/, such as elden-ring." }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is not on PATH." }
+    $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
+    if (-not (Test-Path -LiteralPath $tarExe -PathType Leaf)) { throw "$tarExe (part of Windows 10 and later) is missing; new uses it to unpack the copy." }
+
+    $head = (Invoke-RepoGit @("rev-parse", "--verify", "HEAD^{commit}"))[0]
+    if ($head -cnotmatch '^[0-9a-f]{40}\z') { throw "Could not read the committed HEAD." }
+    $template = $null
+    try { $template = (Invoke-RepoGit @("show", "$($head):dwemer-mod.json")) -join "`n" | ConvertFrom-Json } catch { }
+    if (-not ($template -is [System.Management.Automation.PSCustomObject] -and [string]$template.id -ceq "example-server")) {
+        throw "new copies only the template (manifest id example-server at HEAD); this checkout is already a project of its own."
+    }
+    if ($Name -ceq [string]$template.name) { throw "-Name must be the new mod's own name, not the template's." }
+    $plan = $(if ($Engine) { Get-EnginePlan $head } else { $null })
+    $dest = Resolve-NewDestination
+    foreach ($used in @("deploy\$Id", "projects\$Id")) {
+        $path = Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\$used"
+        if ([int](New-Object System.IO.DirectoryInfo $path).Attributes -ne -1) { throw "Refusing -Id ${Id}: $path already exists, so another project has used that id. Choose another id." }
+    }
+
+    # Only plain tracked files at HEAD are copied, and none that is private, a database, a log or output.
+    $tracked = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Invoke-RepoGit @("-c", "core.quotePath=false", "ls-tree", "-r", "--full-tree", "HEAD"))) {
+        if ($line -cnotmatch '^(100644|100755) blob [0-9a-f]{40}\t([^"\t]+)$') { throw "HEAD tracks an entry new does not copy (a link, submodule or quoted name): '$(Get-Printable $line)'. Nothing was created." }
+        $path = $Matches[2]
+        if ($path -cmatch '(^|/)(config/config\.php|config\.json|\.env)$|\.(log|sqlite3?|db|dump|bundle|pem|key|pfx|p12)$|(^|/)(\.git|build|out|node_modules|vendor)/') {
+            throw "HEAD tracks '$(Get-Printable $path)', which looks private or generated; remove it from the template first. Nothing was created."
+        }
+        $tracked.Add($path)
+    }
+    $pending = Invoke-RepoGit @("status", "--porcelain", "--untracked-files=all")
+    if ($pending.Count -gt 0) { Say "WARN" "$($pending.Count) uncommitted or untracked path(s) in this checkout are not copied; new copies only commit $head." }
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("kagrenac-new-" + [System.Guid]::NewGuid().ToString("N"))
+    $null = [System.IO.Directory]::CreateDirectory($temp)
+    $tar = Join-Path $temp "source.tar"
+    try {
+        $null = Invoke-Native { & git -C $repo archive --format=tar -o $tar HEAD }
+        if ($LASTEXITCODE -ne 0) { throw "git archive failed (exit $LASTEXITCODE). Nothing was created." }
+        $entries = @(Invoke-Native { & $tarExe -tf $tar })
+        if ($LASTEXITCODE -ne 0) { throw "tar could not list the archive (exit $LASTEXITCODE). Nothing was created." }
+        $files = @($entries | Where-Object { -not $_.EndsWith("/") } | Sort-Object -CaseSensitive)
+        $expected = @($tracked | Sort-Object -CaseSensitive)
+        if ($files.Count -ne $expected.Count -or @(Compare-Object -CaseSensitive $files $expected).Count -gt 0) {
+            throw "The archive of $head does not hold exactly its $($expected.Count) tracked files. Nothing was created."
+        }
+        if ([int](New-Object System.IO.DirectoryInfo $dest).Attributes -ne -1) { throw "Refusing -Destination: $dest appeared while new was checking. Nothing was written there." }
+        $null = [System.IO.Directory]::CreateDirectory($dest)
+        $null = Invoke-Native { & $tarExe -xf $tar -C $dest }
+        $unpacked = @(Get-ChildItem -LiteralPath $dest -Recurse -File -Force).Count
+        if ($LASTEXITCODE -ne 0 -or $unpacked -ne $expected.Count) {
+            throw "Unpacking into $dest failed (tar exit $LASTEXITCODE, $unpacked of $($expected.Count) files). new does not delete folders; remove $dest yourself and run new again."
+        }
+    } finally {
+        if ([System.IO.File]::Exists($tar)) { [System.IO.File]::Delete($tar) }
+        [System.IO.Directory]::Delete($temp)
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $date = (Get-Date).ToString("yyyy-MM-dd")
+    $short = $head.Substring(0, 12)
+    try {
+        $manifestPath = Join-Path $dest "dwemer-mod.json"
+        $text = [System.IO.File]::ReadAllText($manifestPath, $utf8)
+        $text = Set-Once $text '"id": "example-server"' "`"id`": `"$Id`"" "dwemer-mod.json"
+        $text = Set-Once $text "`"name`": `"$($template.name)`"" "`"name`": `"$Name`"" "dwemer-mod.json"
+        $text = Set-Once $text "`"description`": `"$($template.description)`"" "`"description`": `"$Name, an AI mod made with KAGRENAC AI Mod Maker.`"" "dwemer-mod.json"
+        [System.IO.File]::WriteAllText($manifestPath, $text, $utf8)
+        $saved = [System.IO.File]::ReadAllText($manifestPath, $utf8) | ConvertFrom-Json
+        if ([string]$saved.id -cne $Id -or [string]$saved.name -cne $Name) { throw "dwemer-mod.json did not read back with id $Id and name $Name." }
+
+        $projectPath = Join-Path $dest "PROJECT.md"
+        $text = [System.IO.File]::ReadAllText($projectPath, $utf8)
+        $brief = [ordered]@{
+            "Game, version and modding tools" = $Game
+            "Starting feature (new companion or existing NPC, and what it does)" = $Feature
+            "Mod name" = $Name
+            "Project id and name in ``dwemer-mod.json`` (own values, set before deploy)" = "``$Id``, $Name"
+            "Voice (none, or PocketTTS replies; speech input later?)" = $Voice
+            "LLM provider (name only)" = $LlmProvider
+            "DwemerDistro (the one WSL distro name)" = $WslDistro
+        }
+        foreach ($question in $brief.Keys) {
+            if ($brief[$question]) { $text = Set-Once $text "| $question | |" "| $question | $($brief[$question]) |" "PROJECT.md" }
+        }
+        $missing = @(foreach ($field in @(@("game", $Game), @("starting feature", $Feature))) { if (-not $field[1]) { $field[0] } })
+        $text = Set-Stage $text "1." $(if ($missing.Count -eq 0) { "done" } else { "in progress: " + ($missing -join " and ") + " missing" }) "$date, source: brief given to project.ps1 new"
+        if ($plan) {
+            foreach ($row in $plan.Rows) {
+                $part = $row.Substring(2, $row.IndexOf(" | ", 2) - 2)
+                $text = Set-Once $text "| $part | | |" $row "PROJECT.md"
+            }
+            if ($text.Contains(" | | |`n")) { throw "ports/$Engine/PLAN.md does not fill every plan row of the template's PROJECT.md." }
+            $text = Set-Stage $text "2." "done (reference plan chosen; revise each row where the feature differs)" "$date, source: reference plan from ports/$Engine/PLAN.md, not verified in game"
+        }
+        $text = Set-Stage $text "3." "in progress: own id set; commit, then deploy" ""
+        if ($Voice -match '^(none|no|not wanted)$') { $text = Set-Stage $text "5." "not wanted" "$date, source: brief" }
+        if ($plan -and $plan.Actions.Count -gt 0) {
+            $row = "| 6d. Action ``<name>`` (one row per action) | in-game: that action's own check; a broad `"it works`" does not count | not started | |"
+            $text = Set-Once $text $row (($plan.Actions | ForEach-Object { $row.Replace("``<name>`` (one row per action)", "``$_``") }) -join "`n") "PROJECT.md"
+        }
+        $text = Set-Once $text ("Everything built or private stays outside this repository and every web root. ``<id>`` is the`n" +
+            "id in ``dwemer-mod.json``; the template itself keeps the client build in`n" +
+            "``%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build``.") "Everything built or private stays outside this repository and every web root." "PROJECT.md"
+        $text = Set-Once $text "database ``custom_<id>`` with ``-`` as ``_``" "database ``custom_$($Id.Replace('-', '_'))``" "PROJECT.md"
+        $start = $text.IndexOf("`n## Paths`n", [System.StringComparison]::Ordinal)
+        $end = $text.IndexOf("`n## Decisions`n", [System.StringComparison]::Ordinal)
+        if ($start -lt 0 -or $end -lt $start) { throw "The template's PROJECT.md has no Paths section before Decisions." }
+        $paths = $text.Substring($start, $end - $start).Replace("<id>", $Id)
+        if ($Engine) { $paths = $paths.Replace("<engine>", $Engine) }
+        $text = $text.Substring(0, $start) + $paths + $text.Substring($end)
+        $text = Set-Once $text "| Date | Decision | Reason |`n|---|---|---|`n" ("| Date | Decision | Reason |`n|---|---|---|`n" +
+            "| $date | Started from KAGRENAC AI Mod Maker commit $short with ``project.ps1 new`` | An independent copy with its own id; the template is unchanged |`n") "PROJECT.md"
+        $text = $text.TrimEnd("`n") + "`n| $date | source | ``project.ps1 new`` from template commit $short | $($expected.Count) files copied; id ``$Id`` and name set; Git initialised, nothing committed |`n"
+        [System.IO.File]::WriteAllText($projectPath, $text, $utf8)
+    } catch {
+        throw "$($_.Exception.Message) The copy at $dest is incomplete; new does not delete folders, so remove it yourself and run new again."
+    }
+
+    $null = Invoke-Native { & git init --quiet -b main $dest }
+    if ($LASTEXITCODE -ne 0) { throw "git init failed in $dest (exit $LASTEXITCODE); the files are there, run 'git init -b main' in it yourself." }
+    Say "OK" "Created $Name ($Id) at $dest from template commit $short`: $($expected.Count) files, its own manifest id and name, Git initialised, nothing committed."
+    Say "INFO" "$dest\PROJECT.md holds the brief$(if ($plan) { ", the $Engine reference plan" }), the paths for this id and the stage states; this checkout was not changed."
+    $script:done.Add("New project $Id at $dest (from $short)")
+    $script:manual.Add("Commit the copy yourself after reviewing it: git -C `"$dest`" add -A; git -C `"$dest`" commit -m `"Start $Name from KAGRENAC AI Mod Maker $short`"")
+    $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File `"$dest\scripts\project.ps1`" deploy -WslDistro <name>")
+    $script:manual.Add("Set project_url in the copy's dwemer-mod.json to your own repository when it has one")
+}
+
+# A project with its own id builds the client into its own folder; the template keeps the shared one.
+if (-not $BuildRoot) {
+    $workingId = ""
+    try { $workingId = [string](Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json).id } catch { }
+    $BuildRoot = $(if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\projects\$workingId\client" }
+        else { Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build" })
+}
+
 # Validate an explicit -ServerUrl once, before anything prints or uses it.
 if ($ServerUrl) {
     $validUrl = ConvertTo-BaseUrl $ServerUrl
@@ -945,6 +1207,9 @@ if ($ServerUrl) {
 }
 
 switch ($Command) {
+    "new" {
+        Invoke-New
+    }
     "doctor" {
         Show-Doctor
     }

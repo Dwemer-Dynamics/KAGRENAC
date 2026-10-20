@@ -452,6 +452,10 @@ sudo bash scripts/backup.sh      # database + config to /home/dwemer/example-ai-
 sudo bash scripts/update.sh      # refuses local edits, backs up, fast-forwards, migrates
 ```
 
+The config in a backup is a copy of the standard `config/config.php` itself. Keep every
+private setting in that file (or on the dashboard): a `config/config.php` that only loads
+settings from a file elsewhere is not supported, because no backup captures what it loads.
+
 An install made by `project.ps1 deploy` is updated by running deploy again after a new
 commit: Core backs up and fast-forwards to exactly that commit (`update <id>
 --expect-commit`), and the same commit again keeps config and data untouched. These flags

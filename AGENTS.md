@@ -7,9 +7,10 @@ Follow both when a change touches both.
 
 ## Start of every task
 
-1. Read [PROJECT.md](PROJECT.md) and resume at its first unchecked stage that is ready to
-   work on. If it is blank or incomplete, fill it in yourself from the conversation and the
-   user's earlier instructions; never send the user a form or ask them to confirm what they
+1. Read [PROJECT.md](PROJECT.md) and resume at the first stage in its Stages and readiness
+   table that is not done and is ready to work on; that table is the one current status.
+   If it is blank or incomplete, fill it in yourself from the conversation and the user's
+   earlier instructions; never send the user a form or ask them to confirm what they
    already said. A blocked stage does not freeze the rest: record what blocks it and the
    next action, tell the user, and say which independent stages you continue with.
 2. Follow the route in [docs/getting-started.md](docs/getting-started.md): ask only for what
@@ -50,7 +51,10 @@ Follow both when a change touches both.
   `config/config.php`, database placeholder `example_ai_mod`, service identity
   `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
   and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
-  for a new install); Core then names the database `custom_<id>`. One repository per mod.
+  for a new install); Core then names the database `custom_<id>`. One repository per mod:
+  in the template, start a mod with `scripts/project.ps1 new` (getting-started, New project),
+  which writes an independent copy outside every checkout and web root and leaves the
+  template unchanged; the copy is committed explicitly before its first deploy.
 - `client/`, `docs/` and `ports/` are source only. The server copy in Apache's web root
   contains them because it is one repository; DwemerDistro Core's custom mod web protection
   must be installed before a server install or update (SETUP.md). Never build the client,
@@ -61,6 +65,12 @@ Follow both when a change touches both.
   bundle of the committed HEAD into the named distro and installs through DwemerDistro Core
   (or a named manual install's `update.sh`); it never adopts or repoints an install. Other
   server installs through it stay explicit opt-in for a named WSL checkout.
+- A port with a maintained route builds through it, never a one-off script (Elden Ring:
+  `ports/elden-ring/mod.ps1` `doctor`, then `build`, `assemble`, then `project.ps1 pair` into the
+  runtime). Run its doctor first; record build, runtime and pairing, and each in-game result,
+  in their own PROJECT.md rows. The game build it accepts lives in one file
+  (`ports/elden-ring/game-build.json`); change it only from a fresh read of the installed game,
+  never to make an unknown build pass. The user launches the game; never copy or delete saves.
 - `ports/<engine>/` holds evidence and capability gates. Do not mark a port implemented,
   copy an engine SDK into the repository, or install SDK dependencies without the user's
   explicit request and evidence from that engine.

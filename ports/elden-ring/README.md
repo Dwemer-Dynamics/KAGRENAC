@@ -8,13 +8,46 @@ than starting over; it is tied to one game build, one companion and one fixed ho
 | [client/](client/README.md) | Native me3 DLL: F8 text box, server turn, reply text, optional PocketTTS voice, and orders to the control package through a guarded event-flag mailbox | Built `/W4 /WX` and bridge fixtures passed outside the game; not loaded by me3 or the game |
 | [control/](control/README.md) | Event-script and AI-logic package built from the user's own game files: one companion copy that holds and follows | Full package build verified; not verified in game |
 | `probe/` | Native diagnostic DLL and offline build inspector | Inspector verified offline; DLL not loaded by me3; it controls no actor |
+| [PLAN.md](PLAN.md) | The integration plan for a companion built on this reference; `scripts\project.ps1 new -Engine elden-ring` copies it into the new project | Each row cited; nothing verified in game |
+| `mod.ps1` | The maintained route for a mod: `doctor`, `build`, `assemble` ([below](#build-a-mod-from-this-reference)) | Doctor run on the installed game and tools; assemble exercised on a test build; full build not yet run through it |
+| `game-build.json` | The one accepted `eldenring.exe` (2.7.2.0), read by `mod.ps1`, the package build and the client's game link | Identity read from the installed file, 2026-10-20; not qualified in game |
 
 **Follow and hold** are the reference actions. Each is a request that the game event may
-accept or refuse; neither is verified in game yet. **Attack is unavailable:** the control
-package and client contain an attack path for one fixed hostile, but no target or handler
-is verified in the game, so do not put `attack_hostile` in either allowlist or describe it
-as working until its own in-game check passes
+accept or refuse; neither is verified in game yet. **Attack is unavailable:** a new mod's
+control config leaves it out of the package (`attack_enabled` false). The guarded attack
+path for one fixed hostile can still be built, but no target or handler is verified in the
+game, so do not put `attack_hostile` in either allowlist or describe it as working until its
+own in-game check passes
 ([acceptance](../../docs/engine-packs/elden-ring.md#future-acceptance-for-hold-follow-and-attack)).
+
+## Build a mod from this reference
+
+From your mod's own copy (`scripts\project.ps1 new -Engine elden-ring`), with Windows
+PowerShell 5.1. Large extraction and work folders go under `-Root`; pass one on a disk with
+room (default `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>`).
+
+```powershell
+$er = 'ports\elden-ring\mod.ps1'
+powershell -ExecutionPolicy Bypass -File $er doctor   -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
+powershell -ExecutionPolicy Bypass -File $er build    -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
+powershell -ExecutionPolicy Bypass -File $er assemble -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> `
+  -OutFile <root>\runtime\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]
+```
+
+| Step | Does | Never |
+|---|---|---|
+| `doctor` | Reads `eldenring.exe` (version, size, PE timestamp, SizeOfImage, SHA-256) against `game-build.json`, the game inputs, the tools (control README, Tools), .NET, Visual Studio, me3, and the build and runtime folders; one readiness line each | Writes anything; counts as an in-game result |
+| `build` | Refuses any other game build; `client\build.ps1` into `<root>\elden-ring\client`, `control\build-package.ps1` (with `-ControlConfig`, default the example: follow and hold, attack left out) into a new `<root>\elden-ring\builds\<time>`, with the DLL and every file's SHA-256 in its `build.json` | Installs, downloads, or writes to the game, me3 or a save |
+| `assemble` | Copies one verified build (default the newest) into `<root>\runtime`: `natives\`, `package\` and an offline profile `<id>.me3` with its own save `<id>.sl2`; prints the pair, `profile show` and launch commands. The same build again changes nothing; another build needs `-Replace`, which moves the old assembled files (only if unchanged) into `runtime\superseded\<time>` | Writes or reads `config.json`, launches, copies or deletes saves, uses `start_online` or `disable_arxan` |
+| `pair` | Creates the private `config.json` in the runtime with the mod's own `npc_id`, `npc_name` and voice flag | Overwrites an existing file (kept byte for byte) |
+
+`-Root` must be a local folder outside the repository, every Git checkout and web root, the
+game's install folder and the tools; its `elden-ring` and `runtime` folders must be new or
+already this mod's. Before the first launch, back up the whole save folder
+`%APPDATA%\EldenRing` yourself, then run the printed `me3 launch ... --online false
+--savefile <id>.sl2` command with the game closed. Each PROJECT.md row (6a build, 6b runtime
+and pairing, 6c prototype, 6d each action) needs its own evidence.
 
 Evidence is kept by kind. An earlier prototype of the client was reported by the user as
 generally working in game (box, reply text, voice); that is user-reported and is not proof
@@ -75,7 +108,7 @@ after testing in the game.
 
 | Capability | Stage | Evidence | Status |
 |---|---|---|---|
-| Exact game build and mod loader version | 1 | File 2.7.1.0, file SHA-256 recorded; me3 v0.13.0 (989b522) chosen, not installed; title patch Unknown | Identified, not qualified |
+| Exact game build and mod loader version | 1 | File 2.7.2.0 (Steam build 25827938; 2.7.1.0 before the 2026-10-20 update), file SHA-256 and PE headers in `game-build.json`; me3 v0.13.0 (989b522); title patch Unknown | Identified, not qualified |
 | Offline mod launch with an isolated save | 1 | me3 `savefile` (a copy of an existing save; back up first), offline default (cited); `probe/kagrenac_er_probe.me3.example` | Not tested (no game launch) |
 | Native DLL load through the loader, and its architecture | 2 | x64 DLL built, `kagrenac_probe_init` exported; called only from a separate test process | Built; not loaded by me3 |
 | Game-thread tick or callback | 2 | me3 initializer runs on a spawned loader thread; fromsoftware-rs task interfaces cited for 2.7.1.0, not integrated | Not qualified |

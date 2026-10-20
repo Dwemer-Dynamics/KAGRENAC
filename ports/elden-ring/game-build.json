@@ -1,0 +1,9 @@
+{
+    "_comment": "The one eldenring.exe this port accepts, read by mod.ps1 doctor, control/build-package.ps1 and the native client build (the bridge's build gate). An in-game candidate, not a qualified build. Change it only from a fresh read of the installed file (docs/engine-packs/elden-ring.md, Engine and version); any other file leaves the bridge off and refuses the package build.",
+    "file_version": "2.7.2.0",
+    "steam_build": 25827938,
+    "bytes": 86973008,
+    "sha256": "f9118fea2cfd8fa3901e8060bfadb1552cb2471771ded8a5b662c4e298ffb328",
+    "pe_timestamp": "0x6aabf7e7",
+    "size_of_image": "0x05dfd600"
+}

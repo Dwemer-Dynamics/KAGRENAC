@@ -23,7 +23,11 @@ address from a symbol table.
   the same 16 bridge fixtures and a loopback mock harness (including the identity checks and the
   shipping DLL refusing a host that is not `eldenring.exe`) passed. **Not loaded by me3 or the
   game yet.**
-- Unproven: that the mailbox beacon is unique in real game memory, how the game stores the flag
+- **Live-candidate selection and build 2.7.2.0** (2026-10-20): the bridge now live-checks every
+  beacon candidate and links only to exactly one live one, and takes the accepted game build
+  from `../game-build.json`. Built `/W4 /WX` (shipping and test-host DLLs, clean); the bridge
+  fixtures were not rerun on this source. **Not run in the game.**
+- Unproven: that exactly one beacon candidate in game memory is live, how the game stores the flag
   bits, behaviour in exclusive fullscreen, and whether typing in the box reaches game controls.
 
 ## How it works
@@ -44,13 +48,23 @@ address from a symbol table.
 The control package's mailbox event publishes state in event flags 1042369800-1042369895
 (layout: `../control/kagrenac_control.js.in`). The bridge thread:
 
-- runs only when `eldenring.exe` matches the build recorded in
-  [the engine pack](../../../docs/engine-packs/elden-ring.md): file SHA-256
-  `1a3547101327f65d0c76da2f9190ac0aa66871ea42bae2aecc61e11a8b597891`, PE timestamp
-  `0x6a96b418`, SizeOfImage `0x05e0da00`; any other build leaves the link off;
+- runs only when `eldenring.exe` matches [`../game-build.json`](../game-build.json), which the
+  build compiles in: today file 2.7.2.0, SHA-256
+  `f9118fea2cfd8fa3901e8060bfadb1552cb2471771ded8a5b662c4e298ffb328`, PE timestamp
+  `0x6aabf7e7`, SizeOfImage `0x05dfd600` (an in-game candidate, not a qualified build); any
+  other build, 2.7.1.0 included, leaves the link off (`bridge: off, the game executable is not
+  the recorded build`);
 - scans only committed private read-write memory of its own process (bounded at 16 GB or 120 s
-  per pass, retried with backoff up to 60 s), trusts only a **unique** beacon candidate, and
-  verifies it live by two heartbeat steps before an **arming challenge**;
+  per pass, retried with backoff up to 60 s) and keeps at most 16 distinct beacon candidates
+  (address and bit order); more, a cap, or memory still of the scanned kind that cannot be read
+  ends the pass with none trusted;
+- checks **all** candidates together, read-only, within one 8 s budget: live means two
+  consecutive heartbeat steps with shape and epoch unchanged and the sensors not mid-write; a
+  candidate is ruled out only by a failed shape, epoch or step or no step for 4 s. It links only
+  when **exactly one** is live (0, 2 or more, an unreadable candidate or one still undecided at
+  8 s: no link, nothing written). The live one stays under the same checks until the last poll,
+  and its real last heartbeat carries into the link, before the **arming challenge**. The log
+  line gives raw candidates, live count and the reason, never addresses;
 - reads with `ReadProcessMemory` and writes only its **one command byte** with
   `WriteProcessMemory` (a freed or protected page is a failed call, not a fault): written only
   while zero and not busy (busy barrier), with a nonce the answer must echo;
@@ -77,10 +91,11 @@ other actors and line of sight are `unavailable`.
 A private `config.json`, never in the repository or a web root, read only from the runtime
 folder (parent of `natives/`); there is no fallback location. Create it with `pair`, which
 writes your server's real route and never overwrites an existing file:
-`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> -OutFile <runtime>\config.json`
+`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> -OutFile <runtime>\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]`
 ([getting-started](../../../docs/getting-started.md#deploy-and-pair)), or start
-from [config.example.json](config.example.json). Same loader and fields as the shared client,
-plus two optional native-only fields read once at startup:
+from [config.example.json](config.example.json). `-NpcId`, `-NpcName` and `-VoiceEnabled`
+shape only the new file, so nothing is edited after pairing. Same loader and fields as the
+shared client, plus two optional native-only fields read once at startup:
 
 | Field | Rule |
 |---|---|
@@ -100,6 +115,10 @@ The DLL never reads the server's API keys.
 powershell -ExecutionPolicy Bypass -File ports\elden-ring\client\build.ps1 [-BuildDir <folder>]
 ```
 
+A mod normally builds it through `..\mod.ps1 build`, which uses this script. CMake reads the
+accepted game build from `../game-build.json` (and reconfigures when it changes); the source
+does not compile without it.
+
 Visual Studio 2022 C++ with the Windows SDK, x64, C++17, `/W4 /WX`, static CRT. Links only
 system `winhttp winmm user32 gdi32 bcrypt` with `/DEPENDENTLOADFLAG:0x800`, so those imports
 load from System32, not a same-named DLL in the game folder. Default output:
@@ -115,26 +134,30 @@ has an 8 s line budget and one extra export, `kagrenac_test_show`. **Never put i
 
 ```
 <runtime>\                         outside the repository and any web root
-  kagrenac_elden_ring.me3          copy of kagrenac_elden_ring.me3.example
-  config.json                      private, from config.example.json
+  <id>.me3                         offline profile, own save <id>.sl2
+  config.json                      private, created by pair
   natives\kagrenac_elden_ring.dll  the log appears here
-  package\                         the built control package (or set its path in the profile)
+  package\                         the built control package
+  runtime.json                     what assemble wrote, with SHA-256
 ```
 
-Copy by hand (or have an agent copy validated artifacts), with the game closed: copy only
-`kagrenac_elden_ring.dll` into `natives\`, and **never overwrite an existing `config.json`**. The
-profile uses `optional = false`, so a missing or failing DLL stops the launch rather than
-starting the game without it.
+`ports\elden-ring\mod.ps1 assemble` writes this folder from one verified build
+([Build a mod](../README.md#build-a-mod-from-this-reference)); it never writes `config.json`,
+and the same build again changes nothing. By hand instead: copy only `kagrenac_elden_ring.dll`
+into `natives\`, start the profile from `kagrenac_elden_ring.me3.example`, and **never overwrite
+an existing `config.json`**. The profile uses `optional = false`, so a missing or failing DLL
+stops the launch rather than starting the game without it.
 
-Back up the save folder first, then (you, not this repository):
+Back up the save folder first, then (you, not this repository; assemble prints these with the
+real paths):
 
 ```powershell
-<me3>\bin\me3.exe profile show --file <runtime>\kagrenac_elden_ring.me3
+<me3>\bin\me3.exe profile show --file <runtime>\<id>.me3
 <me3>\bin\me3.exe launch --game eldenring --exe "<Elden Ring>\Game\eldenring.exe" `
-  -p <runtime>\kagrenac_elden_ring.me3 --online false --savefile KagrenacCompanion.sl2
+  -p <runtime>\<id>.me3 --online false --savefile <id>.sl2
 ```
 
-When `KagrenacCompanion.sl2` does not exist yet, me3 creates it on first launch as a copy of
+When `<id>.sl2` does not exist yet, me3 creates it on first launch as a copy of
 your existing save, so a fresh profile does not mean a new character. The save backup is
 mandatory ([engine pack](../../../docs/engine-packs/elden-ring.md#offline-manual-gates-not-yet-run-need-the-user-to-launch)). Offline only, isolated save, no `start_online`, no
 `disable_arxan`. Windowed or borderless is recommended. First checks: the log's first line has the running game's pid and this launch's

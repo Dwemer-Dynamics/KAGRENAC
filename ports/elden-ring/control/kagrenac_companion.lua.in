@@ -10,7 +10,7 @@
 -- game's own approaches to TARGET_LOCALPLAYER), GOAL_COMMON_Turn(life, target, 0, 0, 0),
 -- GOAL_COMMON_Wait(life, TARGET_NONE, 0, 0, 0) and
 -- GOAL_COMMON_AttackTunableSpin(life, anim, target, successDist, turnTime, frontAngle, 0, 0)
--- (aicommon AddTopGoal shape). @ATTACK_ANIM@ is an attack the NPC's own battle goal
+-- (aicommon AddTopGoal shape). ATTACK_ANIM is an attack the NPC's own battle goal
 -- requests. Follow uses TARGET_LOCALPLAYER (21 in ai_define, used by the game's own logic
 -- files); attack uses TARGET_EVENT (20 in ai_define), the one fixed hostile the event script
 -- sets; its approach repeats the target as the fourth argument, as some game battle goals
@@ -21,11 +21,15 @@
 
 local CMD_HOLD = @CMD_HOLD@
 local CMD_FOLLOW = @CMD_FOLLOW@
+-- @ATTACK{@
 local CMD_ATTACK = @CMD_ATTACK@
+-- @}ATTACK@
 local FOLLOW_MIN = @FOLLOW_MIN@
 local FOLLOW_MAX = @FOLLOW_MAX@
+-- @ATTACK{@
 local ATTACK_REACH = @ATTACK_REACH@
 local ATTACK_ANIM = @ATTACK_ANIM@
+-- @}ATTACK@
 
 -- Short top goals per call; when they end the engine calls the logic again, so a new
 -- order is read within a few seconds and no goal chain can grow.
@@ -41,12 +45,14 @@ function @LOGIC_NAME@_Logic(ai)
             ai:AddTopGoal(GOAL_COMMON_Turn, 2, TARGET_LOCALPLAYER, 0, 0, 0)
             ai:AddTopGoal(GOAL_COMMON_Wait, 1, TARGET_NONE, 0, 0, 0)
         end
+    -- @ATTACK{@
     elseif request == CMD_ATTACK then
         if ai:GetDist(TARGET_EVENT) > ATTACK_REACH then
             ai:AddTopGoal(GOAL_COMMON_ApproachTarget, 3, TARGET_EVENT, ATTACK_REACH, TARGET_EVENT, false, -1)
         else
             ai:AddTopGoal(GOAL_COMMON_AttackTunableSpin, 5, ATTACK_ANIM, TARGET_EVENT, ATTACK_REACH, 0, 180, 0, 0)
         end
+    -- @}ATTACK@
     else
         -- Hold, no order (the start), a cleared order or an unknown one: wait.
         ai:AddTopGoal(GOAL_COMMON_Wait, 1, TARGET_NONE, 0, 0, 0)

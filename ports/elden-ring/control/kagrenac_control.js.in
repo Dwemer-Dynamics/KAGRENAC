@@ -227,9 +227,15 @@ Event(@E_BRIDGE_MAILBOX@, Restart, function() {
     GotoIfConditionGroupStateUncompiled(3, FAIL, AND_09);
     GotoIfEventFlag(6, OFF, 0, @F+59@);
     GotoIfEventFlag(6, OFF, 0, @F+60@);
+    // @ATTACK{@
     IfCharacterBackreadStatus(AND_10, @HOSTILE@, ON, 0, 1);
     IfCharacterDeadalive(AND_10, @HOSTILE@, 0, 0, 1);
     GotoIfConditionGroupStateUncompiled(3, FAIL, AND_10);
+    // @}ATTACK@
+    // @NOATTACK{@
+    // Attack is not part of this build: an attack command is refused.
+    GotoUnconditionally(3);
+    // @}NOATTACK@
     Label6();
     SkipIfEventFlag(2, ON, 0, @F+59@);
     SetEventFlag(0, @F+37@, OFF);
@@ -254,7 +260,8 @@ Event(@E_BRIDGE_MAILBOX@, Restart, function() {
 });
 
 // Control: the one owner of the companion's order. Where the event is waiting is the state:
-// hold -> follow -> hold -> attack -> release, one action-button press per step, plus any
+// hold -> follow -> hold -> attack -> release (without attack_enabled: hold -> follow -> hold
+// -> release), one action-button press per step, plus any
 // order the mailbox accepted (pending flag), which restarts the event and is applied at the
 // top. A Talk press always wins: it steps the cycle and drops an order still pending.
 // Release, cancellation, the companion unloading or dying, and every load restart the event,
@@ -349,6 +356,7 @@ Event(@E_CONTROL@, Restart, function() {
     SetEventFlag(0, @F+34@, ON);
     SetEventFlag(0, @F+36@, OFF);
     Label3();
+    // @ATTACK{@
     // Attack only the configured hostile, only while it is loaded and alive now; otherwise
     // this step releases (back to a friendly hold) instead.
     IfCharacterBackreadStatus(AND_04, @HOSTILE@, ON, 0, 1);
@@ -379,6 +387,10 @@ Event(@E_CONTROL@, Restart, function() {
     SkipIfConditionGroupStateCompiled(2, FAIL, AND_01);
     SetEventFlag(0, @F+34@, ON);
     SetEventFlag(0, @F+36@, OFF);
+    // @}ATTACK@
+    // @NOATTACK{@
+    // Attack is not part of this build: the third press releases (back to a friendly hold).
+    // @}NOATTACK@
     Label0();
     // Release, cancel, companion lost or a pending order: restart, which waits for the
     // companion, holds, then applies the pending order if there is one.
