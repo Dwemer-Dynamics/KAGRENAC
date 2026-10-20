@@ -1,0 +1,10 @@
+{
+  "server_url": "http://127.0.0.1:19000/custom-mods/KagrenacServer",
+  "token": "",
+  "session_id": "elden-ring-save-1",
+  "timeout_seconds": 20,
+  "voice_enabled": false,
+  "allowed_actions": [],
+  "npc_id": "companion",
+  "npc_name": "Companion"
+}
