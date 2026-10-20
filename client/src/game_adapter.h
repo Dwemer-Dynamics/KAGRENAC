@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <vector>
 
 // What the game tells the AI about the current moment.
 struct GameContext {
@@ -17,6 +18,11 @@ struct GameContext {
     // Engine-specific marker of this NPC instance, e.g. a handle or load count. Captured with
     // the request and compared by isSameNpc() before a reply or action is applied.
     unsigned long long npcInstance = 0;
+    // Optional (protocol 1 addition): the actions the game can run right now, sent as
+    // "offered_actions" only when offerActions is set. The server then offers and returns only
+    // names that are also in its allowlist; an empty list means none.
+    bool offerActions = false;
+    std::vector<std::string> offeredActions;
 };
 
 // Every method is called from the game's main thread only (see the loop in main.cpp).

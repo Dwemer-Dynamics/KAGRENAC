@@ -40,9 +40,11 @@ another engine.
 | NPC display name | stable NPC ID, names | | |
 | NPC instance marker for `isSameNpc()` | `isSameNpc()` | | |
 | Context sources (location, time of day, ...) | context entries | | |
+| Live observation sources: what can be read, on which thread, how fresh | context entries | | |
 | Text input from the player | recon (dialogue) | | |
 | Subtitle or message display | subtitle display | | |
 | NPC follow behaviour | one handler per action | | |
+| Bridge from plugin code to the engine's action or script mechanism | one handler per action | | |
 | Save, load and new-game hooks; a stable save identity | `session_id` per save; cancel on load | | |
 | Hooks for the four event types, if any | events | | |
 | Private config location (server URL, token) | private `config.json` | | |
@@ -70,6 +72,8 @@ no retries, main-thread apply).
 | `GameAdapter` for the engine | | | |
 | Plugin glue: load, tick drain, unload, quit | | | |
 | Typed dialogue to subtitle | | | |
+| Observation snapshot: source, time, `unavailable` for unread values | | | |
+| Action capability gate: target, instance check, preconditions, observed result | | | |
 | `follow_player` handler | | | |
 | Other authorized actions | | | |
 | Game events and their bounds | | | |

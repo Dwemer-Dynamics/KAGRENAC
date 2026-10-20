@@ -40,7 +40,10 @@ return [
     // newest first. 100-100000. Independent of history_limit and checkpoints.
     'event_log_limit' => 10000,
 
-    // The only actions the server will ever return. The game checks its own list too.
+    // The only actions the server will ever return. The game checks its own list too, and a
+    // game that sends offered_actions narrows this list per turn (PROTOCOL.md). Known names:
+    // follow_player, hold_position, attack_hostile (all act on the request's npc.id). Add a
+    // name only once the game has a handler for it.
     'allowed_actions' => ['follow_player'],
 
     // OPTIONAL VOICE. Off by default. The game always gets text first. Start the matching

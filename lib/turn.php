@@ -30,6 +30,26 @@ function require_context(mixed $context): array
     return $clean;
 }
 
+// The optional "offered_actions" list (protocol 1 addition): the action names the game can run
+// right now, at most 8. Missing means the game did not say (the allowlist alone applies); an
+// empty list means it can run none. Anything else, including null, is refused rather than read as missing.
+function require_offered_actions(array $input): ?array
+{
+    if (!array_key_exists('offered_actions', $input)) {
+        return null;
+    }
+    $offered = $input['offered_actions'];
+    if (!is_array($offered) || !array_is_list($offered) || count($offered) > 8) {
+        fail(400, 'bad_request', 'offered_actions must be a list of at most 8 action names.');
+    }
+    foreach ($offered as $name) {
+        if (!is_string($name) || !preg_match('/^[A-Za-z0-9_]{1,40}$/D', $name)) {
+            fail(400, 'bad_request', 'offered_actions must hold action names (1-40 of A-Z a-z 0-9 _).');
+        }
+    }
+    return array_values(array_unique($offered));
+}
+
 // $turn holds npc_name, player_name, text and context. $eventType is set when an explicit
 // event.php dialogue request started this turn; it is logged, the pipeline is the same.
 function run_turn(array $config, float $started, string $requestId, string $sessionId, string $npcId,
@@ -38,6 +58,11 @@ function run_turn(array $config, float $started, string $requestId, string $sess
     trace_id($requestId);
     $historyLimit = max(0, min(50, (int)($config['history_limit'] ?? 10)));
     $allowedActions = $config['allowed_actions'] ?? ['follow_player'];
+    // The game's offered_actions can only narrow the allowlist: the prompt offers, and
+    // extract_actions() returns, names in both.
+    if (isset($turn['offered_actions'])) {
+        $allowedActions = array_values(array_intersect(is_array($allowedActions) ? $allowedActions : [], $turn['offered_actions']));
+    }
     $memorySettings = memory_settings($config);
     $db = db_connect($config);
     require_schema($db);
@@ -140,7 +165,7 @@ function run_turn(array $config, float $started, string $requestId, string $sess
 
     // 7. Ask the model. This can be slow, so it happens outside any transaction.
     try {
-        $raw = generate_reply($llm, $turn, $history, $knowledge, $profile);
+        $raw = generate_reply($llm, $turn, $history, $knowledge, $profile, $allowedActions);
     } catch (Throwable $error) {
         app_log($error->getMessage());
         $logged('failed', ['error_code' => 'llm_unavailable']);

@@ -51,6 +51,16 @@ expect "mock reply" 200 'Smokey heard you say: hello' "$(post turn.php "$(turn_j
 expect "follow allowed" 200 '"actions":[{"name":"follow_player","args":{"target_id":"npc_smoke"}}]' "$(post turn.php "$(turn_json "r-$RUN-3" 'follow me')" "$TOKEN")"
 expect "dance rejected" 200 '"actions":[],"rejected_actions":["dance"]' "$(post turn.php "$(turn_json "r-$RUN-4" 'dance for me')" "$TOKEN")"
 expect "duplicate id" 409 'duplicate_request' "$(post turn.php "$(turn_json "r-$RUN-4" 'dance for me')" "$TOKEN")"
+# offer_json <request_id> <text> <offered_actions JSON>: a turn whose game offers only these actions.
+offer_json() {
+    printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","npc":{"id":"npc_smoke","name":"Smokey"},"player":{"name":"Tester"},"text":"%s","offered_actions":%s}' "$1" "$RUN" "$2" "$3"
+}
+expect "offered narrowed" 200 '"actions":[{"name":"follow_player","args":{"target_id":"npc_smoke"}}]' "$(post turn.php "$(offer_json "o-$RUN-1" 'follow me' '["follow_player","hold_position"]')" "$TOKEN")"
+expect "offered excludes" 200 '"actions":[],"rejected_actions":["follow_player"]' "$(post turn.php "$(offer_json "o-$RUN-2" 'follow me' '["hold_position"]')" "$TOKEN")"
+expect "offered empty" 200 '"actions":[],"rejected_actions":["follow_player"]' "$(post turn.php "$(offer_json "o-$RUN-3" 'follow me' '[]')" "$TOKEN")"
+expect "offered bad name" 400 'offered_actions' "$(post turn.php "$(offer_json "o-$RUN-4" 'follow me' '["follow player"]')" "$TOKEN")"
+expect "offered not list" 400 'offered_actions' "$(post turn.php "$(offer_json "o-$RUN-5" 'follow me' '{"a":"follow_player"}')" "$TOKEN")"
+expect "offered too many" 400 'offered_actions' "$(post turn.php "$(offer_json "o-$RUN-6" 'follow me' '["a","b","c","d","e","f","g","h","i"]')" "$TOKEN")"
 # result_json <request_id> <status>: what the client says it did with follow_player.
 result_json() {
     printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","npc_id":"npc_smoke","results":[{"name":"follow_player","status":"%s"}]}' "$1" "$RUN" "$2"
@@ -61,13 +71,16 @@ expect "result changed" 409 'already_reported' "$(post result.php "$(result_json
 expect "result not returned" 409 'action_not_returned' "$(post result.php "$(result_json "r-$RUN-4" handled)" "$TOKEN")"
 expect "result unknown" 404 'unknown_request' "$(post result.php "$(result_json "r-$RUN-unknown" handled)" "$TOKEN")"
 expect "result bad status" 400 'bad_request' "$(post result.php "$(result_json "r-$RUN-3" done)" "$TOKEN")"
-# event_json <request_id> <respond>: one game event for the smoke NPC.
+# event_json <request_id> <respond> [extra fields]: one game event for the smoke NPC.
 event_json() {
-    printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","type":"item_given","npc":{"id":"npc_smoke","name":"Smokey"},"player":{"name":"Tester"},"text":"The tester hands over a lantern.","respond":%s}' "$1" "$RUN" "$2"
+    printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","type":"item_given","npc":{"id":"npc_smoke","name":"Smokey"},"player":{"name":"Tester"},"text":"The tester hands over a lantern.","respond":%s%s}' "$1" "$RUN" "$2" "${3:-}"
 }
 expect "event log only" 200 '"respond":false,"logged":true' "$(post event.php "$(event_json "e-$RUN-1" false)" "$TOKEN")"
 expect "event duplicate" 409 'duplicate_request' "$(post event.php "$(event_json "e-$RUN-1" false)" "$TOKEN")"
 expect "event respond" 200 'Smokey heard you say: Game event (item_given)' "$(post event.php "$(event_json "e-$RUN-2" true)" "$TOKEN")"
+expect "event offered" 200 '"actions":[]' "$(post event.php "$(event_json "e-$RUN-3" true ',"offered_actions":[]')" "$TOKEN")"
+expect "event offered bad" 400 'offered_actions' "$(post event.php "$(event_json "e-$RUN-4" true ',"offered_actions":["bad name"]')" "$TOKEN")"
+expect "event log ignores offered" 200 '"logged":true' "$(post event.php "$(event_json "e-$RUN-5" false ',"offered_actions":["bad name"]')" "$TOKEN")"
 expect "cancel" 200 '"generation":' "$(post cancel.php "$CANCEL" "$TOKEN")"
 
 # Tracing (optional protocol 1 request ids). Decision always answers 200; voice may be on or off,

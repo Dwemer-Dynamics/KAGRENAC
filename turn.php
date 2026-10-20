@@ -17,6 +17,7 @@ $turn = [
     'player_name' => require_text($input['player']['name'] ?? null, 'player.name', 64),
     'text' => require_text($input['text'] ?? null, 'text', 1000),
     'context' => require_context($input['context'] ?? []),
+    'offered_actions' => require_offered_actions($input),
 ];
 
 run_turn($config, $started, $requestId, $sessionId, $npcId, $turn);
