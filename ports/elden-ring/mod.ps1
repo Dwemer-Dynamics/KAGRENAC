@@ -91,6 +91,16 @@ function Native([scriptblock] $run) {
     try { & $run 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $saved }
 }
 
+# Git's stdout in the repository, as lines; stderr is dropped so it is never counted as output.
+# $null when git is missing or fails.
+function Get-GitLines([string[]] $gitArgs) {
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) { return $null }
+    $saved = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $lines = @(& git -C $RepoRoot @gitArgs 2>$null | ForEach-Object { "$_" }) } finally { $ErrorActionPreference = $saved }
+    if ($LASTEXITCODE -ne 0) { return $null }
+    return , $lines
+}
+
 # eldenring.exe compared with game-build.json. Returns @{ Ok; Lines }; reads the file only.
 function Test-GameBuild([string] $dir) {
     $exe = Join-Path $dir 'eldenring.exe'
@@ -284,16 +294,26 @@ function Invoke-Doctor {
     $builds = Get-Builds $port
     $readyBuild = 'none yet (run build)'
     if ($builds.Count) {
-        $b = Get-Content -LiteralPath (Join-Path $builds[0].FullName 'build.json') -Raw | ConvertFrom-Json
-        $readyBuild = "$($builds[0].Name) for $($b.game.file_version), attack $(if ($b.attack_enabled) { 'built (guarded, unavailable)' } else { 'left out' })"
-        if ([string] $b.game.sha256 -cne [string] $game.sha256) { Say 'WARN' "the newest build $($builds[0].Name) is for another game build; build again"; $readyBuild += ' (stale)' }
+        $b = $null
+        try { $b = Get-Content -LiteralPath (Join-Path $builds[0].FullName 'build.json') -Raw | ConvertFrom-Json } catch { }
+        if ($b -isnot [Management.Automation.PSCustomObject]) {
+            Fail "$($builds[0].FullName)\build.json is not readable JSON; build again (assemble refuses that build)"
+            $readyBuild = "$($builds[0].Name): unreadable build.json"
+        } else {
+            $readyBuild = "$($builds[0].Name) for $($b.game.file_version), attack $(if ($b.attack_enabled) { 'built (guarded, unavailable)' } else { 'left out' })"
+            if ([string] $b.game.sha256 -cne [string] $game.sha256) { Say 'WARN' "the newest build $($builds[0].Name) is for another game build; build again"; $readyBuild += ' (stale)' }
+        }
     }
     $rt = Join-Path $out 'runtime'
     $readyRuntime = 'not assembled (run assemble)'
     $readyPair = 'no config.json yet (run pair after assemble)'
     if (Test-Path -LiteralPath (Join-Path $rt 'runtime.json')) {
-        $r = Get-Content -LiteralPath (Join-Path $rt 'runtime.json') -Raw | ConvertFrom-Json
-        $readyRuntime = "assembled from build $($r.build) at $rt"
+        $r = $null
+        try { $r = Get-Content -LiteralPath (Join-Path $rt 'runtime.json') -Raw | ConvertFrom-Json } catch { }
+        if ($r -isnot [Management.Automation.PSCustomObject]) {
+            Fail "$rt\runtime.json is not readable JSON; assemble refuses this runtime. Move the assembled files out of $rt yourself (keep config.json, your private pairing, in place) and assemble again"
+            $readyRuntime = "unreadable runtime.json at $rt"
+        } else { $readyRuntime = "assembled from build $($r.build) at $rt" }
     }
     $cfg = Join-Path $rt 'config.json'
     if (Test-Path -LiteralPath $cfg -PathType Leaf) {
@@ -309,7 +329,7 @@ function Invoke-Doctor {
     Write-Host "  - Build: $readyBuild"
     Write-Host "  - Runtime: $readyRuntime"
     Write-Host "  - Pairing: $readyPair"
-    Write-Host "  - Isolated save ${saveName}: $(if ($saves.Count) { 'exists (the game was launched with this profile before)' } else { 'not created yet; me3 creates it from an existing save on first launch, so back up first' })"
+    Write-Host "  - Isolated save ${saveName}: $(if ($saves.Count) { "file present in $($saves[0].FullName) (presence only; not evidence that the game or the mod ran)" } else { 'not created yet; me3 creates it from an existing save on first launch, so back up first' })"
     Write-Host '  - Server, LLM and voice: scripts\project.ps1 doctor -WslDistro <name> and the dashboard tests'
     Write-Host '  - In game: not verified; each action needs its own in-game check'
 }
@@ -360,9 +380,11 @@ function Invoke-Build {
         if ((Sha256 $f) -cne [string] $p.Value) { Refuse "$f does not match package.json" }
         $files["control/package/$($p.Name)"] = [string] $p.Value
     }
-    $commit = @(Native { & git -C $RepoRoot rev-parse --verify -q 'HEAD^{commit}' })
-    $commit = if ($LASTEXITCODE -eq 0 -and $commit.Count -eq 1) { $commit[0] } else { 'none (nothing committed yet)' }
-    $dirty = @(Native { & git -C $RepoRoot status --porcelain --untracked-files=all }).Count
+    # Provenance only: building from uncommitted files stays allowed (deploy has its own clean gate).
+    $head = Get-GitLines @('rev-parse', '--verify', '-q', 'HEAD^{commit}')
+    $commit = if ($null -ne $head -and $head.Count -eq 1 -and $head[0] -cmatch '^[0-9a-f]{40}$') { $head[0] } else { 'unknown' }
+    $status = Get-GitLines @('status', '--porcelain', '--untracked-files=all')
+    $dirty = if ($null -ne $status) { $status.Count } else { 'unknown' }
     Assert-NoLink (Join-Path $dir 'build.json') 'output'
     New-File (Join-Path $dir 'build.json') ((([ordered]@{
         schema_version = 1; id = $id; name = $name; built_at = (Get-Date).ToString('s')
@@ -374,7 +396,9 @@ function Invoke-Build {
         files = $files
     }) | ConvertTo-Json -Depth 4) + "`n")
     Say 'OK' "Built $stamp in $dir for $($g.Version): $dllName and the control package (attack $(if ($pkg.attack_enabled) { 'built, guarded, still unavailable' } else { 'left out' })); not loaded by me3 or the game."
-    if ($dirty) { Say 'WARN' "$dirty uncommitted path(s) in the source at build time; build.json records it." }
+    if ($commit -ceq 'unknown') { Say 'WARN' 'The source commit is unknown (git missing or failed, or nothing committed yet); build.json records it as unknown.' }
+    if ($dirty -is [string]) { Say 'WARN' 'Whether the source had uncommitted paths is unknown (git status failed); build.json records it as unknown, not as clean.' }
+    elseif ($dirty) { Say 'WARN' "$dirty uncommitted path(s) in the source at build time; build.json records it." }
     Say 'INFO' ('Next: powershell -ExecutionPolicy Bypass -File ports\elden-ring\mod.ps1 assemble' + (Get-RouteArgs $out) + ' -GameDir "' + (Full $GameDir) + '"')
 }
 
@@ -429,7 +453,7 @@ function Invoke-Assemble {
     Assert-NoLink $record 'runtime'
     foreach ($rel in @($copies.Keys) + $profileName) { Assert-NoLink (Join-Path $rt $rel.Replace('/', '\')) 'runtime' }
     if (Test-Path -LiteralPath $record) {
-        try { $old = Get-Content -LiteralPath $record -Raw | ConvertFrom-Json } catch { Refuse "$record is not readable; move the runtime away yourself" }
+        try { $old = Get-Content -LiteralPath $record -Raw | ConvertFrom-Json } catch { Refuse "$record is not readable; move the assembled files out of $rt yourself (keep config.json, your private pairing, in place) and assemble again" }
         if ($old.schema_version -ne 1 -or [string] $old.id -cne $id) { Refuse "$rt is not a runtime of $id; choose another -Root" }
         $oldNames = Get-RecordedFiles $old.files $record @("natives/$dllName", $profileName) 'package'
         $changed = @(foreach ($p in $old.files.PSObject.Properties) {
@@ -437,7 +461,7 @@ function Invoke-Assemble {
             Assert-NoLink $f 'runtime'
             if (-not (Test-Path -LiteralPath $f -PathType Leaf) -or (Sha256 $f) -cne [string] $p.Value) { $p.Name }
         })
-        if ($changed.Count) { Refuse "$rt was changed since it was assembled ($($changed -join ', ')); nothing was written. Move the runtime away yourself, or restore those files" }
+        if ($changed.Count) { Refuse "$rt was changed since it was assembled ($($changed -join ', ')); nothing was written. Move the assembled files out of $rt yourself (keep config.json, your private pairing, in place), or restore those files" }
         if ([string] $old.build -ceq $stamp) {
             Say 'OK' "Already assembled from build $stamp in $rt; every assembled file matches, nothing was written."
         } elseif (-not $Replace) {
@@ -453,13 +477,14 @@ function Invoke-Assemble {
                 Assert-NoLink $from 'runtime'
                 Assert-NoLink $to 'runtime'
                 [void] [IO.Directory]::CreateDirectory((Split-Path $to -Parent))
-                [IO.File]::Move($from, $to)
+                try { [IO.File]::Move($from, $to) }
+                catch { Refuse "moving $rel into $aside stopped ($($_.Exception.Message)). Files moved so far are in $aside; nothing was deleted and config.json was not touched. Move the remaining assembled files and runtime.json out of $rt yourself (keep config.json, your private pairing, in place) and assemble again" }
             }
             Say 'INFO' "Moved the files assembled from build $($old.build) into $aside (nothing deleted)."
         }
     } elseif (Test-Path -LiteralPath $rt) {
         $other = @(Get-ChildItem -LiteralPath $rt -Force | Where-Object { -not ($_.Name -ceq 'config.json' -and -not $_.PSIsContainer) })
-        if ($other.Count) { Refuse "$rt holds files this route did not assemble ($($other[0].Name)); nothing was written. Choose another -Root" }
+        if ($other.Count) { Refuse "$rt holds files this route did not assemble ($($other[0].Name)); nothing was written. If an earlier assemble stopped partway, move everything except config.json (your private pairing) out of $rt yourself and assemble again; otherwise choose another -Root" }
     }
     if (-not (Test-Path -LiteralPath $record)) {
         $written = [ordered]@{}
@@ -469,7 +494,7 @@ function Invoke-Assemble {
             [void] [IO.Directory]::CreateDirectory((Split-Path $to -Parent))
             [IO.File]::Copy((Join-Path $dir $copies[$rel].Replace('/', '\')), $to, $false)
             $written[$rel] = Sha256 $to
-            if ($written[$rel] -cne [string] $b.files.($copies[$rel])) { Refuse "$to did not copy intact; move the runtime away and assemble again" }
+            if ($written[$rel] -cne [string] $b.files.($copies[$rel])) { Refuse "$to did not copy intact; move the files assembly wrote out of $rt yourself (keep config.json, your private pairing, in place) and assemble again" }
         }
         Assert-NoLink (Join-Path $rt $profileName) 'runtime'
         New-File (Join-Path $rt $profileName) $profileText

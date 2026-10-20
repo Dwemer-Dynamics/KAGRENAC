@@ -8,7 +8,9 @@
 # registers or adopts a folder, never resets a checkout or rewrites a private config, never
 # chmods recursively and prints no config, token or PHP output. When the web server cannot
 # save a Core-managed install's config/config.php, it runs that commit's scripts/install.sh,
-# which repairs only the config folder's, file's and lock's ownership and mode.
+# which sets the config folder's, file's and lock's ownership and mode (contents kept), and
+# also confirms the database and applies pending migrations. Core's install and update set
+# the read-only ownership again, so a later deploy repairs it again.
 # Exit codes: 0 deployed and verified; 1 refused or failed before the mod folder changed;
 # 3 the mod folder changed but a later step or check failed (backup and recovery are printed).
 set -euo pipefail
@@ -50,7 +52,7 @@ recovery() {
         say INFO "Code is never moved back automatically and database changes are not reversed; restore from the backup by hand if needed."
     fi
     if [ "$prepare" = 1 ]; then
-        say INFO "scripts/install.sh may have changed the owner, group and mode of config/, config.php and config.php.lock (never their contents). Run deploy again to finish, or: sudo bash $folder/scripts/install.sh"
+        say INFO "scripts/install.sh may have changed the owner, group and mode of config/, config.php and config.php.lock (never their contents) and applied pending migrations. Run deploy again to finish, or: sudo bash $folder/scripts/install.sh"
     fi
 }
 
@@ -142,7 +144,7 @@ prepare_config() {
     [ ! -L "$folder/config" ] && [ ! -L "$config" ] && [ ! -L "$config.lock" ] ||
         fail "config/, config.php or its lock is a symbolic link; it is not repaired."
     standard_config || fail "$config is not a standard config (it loads settings from elsewhere, or dwemer cannot read it); it is not repaired. Keep every setting in config/config.php itself, or repair it yourself."
-    stage "Preparing config/ for dashboard saves with scripts/install.sh of $sha (owner, group and mode only; contents kept)."
+    stage "Preparing config/ for dashboard saves with scripts/install.sh of $sha (owner, group and mode; it also confirms the database and applies pending migrations; contents kept)."
     before="$(config_hash "$config")"
     lock="$(stat -c %d:%i -- "$config.lock" 2>/dev/null || echo none)"
     prepare=1 changed=1
@@ -160,6 +162,7 @@ prepare_config() {
     fi
     prepared=repaired
     say OK "Repaired: $WEB_USER can now save the private config from the dashboard (owner, group and mode changed; contents and lock kept)."
+    say INFO "The launcher's Update and '$CORE update' set config/ read-only for $WEB_USER again; run deploy again after them."
 }
 
 # Imports the bundle into the project's private bare cache and moves its offered branches to

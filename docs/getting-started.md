@@ -160,11 +160,20 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   and writes a private deployment record (backup and retry steps) next to the bundle.
 - Checks, as `www-data`, that the dashboard can save `config/config.php`. If not (Core
   leaves `config/` readable but not writable by `www-data`), it runs that commit's
-  `scripts/install.sh`, which sets only the owner, group and mode of `config/`, the config
-  and its lock (SETUP.md, Who can read what), keeps their contents, and checks again. The
-  output and the deployment record say `config ok` or `config repaired`. Only the standard
-  `config/config.php` is supported; one that loads settings from another file is refused
-  before Core backs anything up.
+  `scripts/install.sh`, which sets the owner, group and mode of `config/`, the config and
+  its lock to `www-data:dwemer`, `2770` and `660` (SETUP.md, Who can read what), and also
+  confirms the database and applies pending migrations (normally none right after Core's
+  update). Deploy checks that the config's contents (SHA-256) and the lock file stay the
+  same, and checks saving again. The output and the deployment record say `config ok` or
+  `config repaired`. Only the standard `config/config.php` is supported; one that loads
+  settings from another file is refused before Core backs anything up.
+- This repair does not last through Core: the launcher's **Update** and
+  `ddistro_custom_mod update` set Core's read-only ownership again. Run
+  `project.ps1 deploy -WslDistro <name>` again afterwards to repair it; `doctor -WslDistro
+  <name>` reports when the dashboard cannot save.
+- After the repair, change settings on the dashboard, or from an agent through the existing
+  `config_update()` in `lib/config_writer.php` run as the config's owner `www-data`, never
+  as `dwemer` (saving refuses a config it does not own).
 - Running it again at the same commit reports the code as already deployed; when the config
   can already be saved it changes nothing (no Core update, backup, installer or migrations),
   so config and data are kept. A new commit is backed up and fast-forwarded; the private
@@ -210,7 +219,11 @@ Explicit opt-ins for an **existing** manual WSL server checkout you name:
   there as `dwemer` (add `-ServerUrl` if your port or route differs).
 
 `doctor -WslDistro <name> -WslServerPath <checkout>` also checks that checkout and whether its
-private config exists (without reading it); a stopped distro is reported and skipped. The
+private config exists (without reading it); a stopped distro is reported and skipped. With
+`-WslServerPath`, or in a project with its own id (its `/custom-mods/<id>` install), it also
+checks as `www-data` whether the dashboard can save the private config, using that install's
+`lib/config_writer.php` without reading the config; a FAIL there means run `deploy` again. In
+the template (`example-server`) it guesses no install. The
 opt-ins, `pair` and `deploy` may start the distro they name.
 
 Doctor checks health and exposure at `-ServerUrl`, else the shared client config's

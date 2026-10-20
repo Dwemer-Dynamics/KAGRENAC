@@ -22,7 +22,9 @@
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
 #           other status is unverified, and both are problems. With -WslDistro <name>, check
 #           that one distro's DwemerDistro tool, Apache, PostgreSQL and web protection, only if
-#           it is already running (it never starts a distro). Ends with a readiness summary;
+#           it is already running (it never starts a distro), and, for -WslServerPath or this
+#           project's own /custom-mods/<id> install, whether www-data can save its private config
+#           (the config is not read). Ends with a readiness summary;
 #           the LLM and PocketTTS are only reported as answering or not, never as working.
 #           Exit 0 means no FAIL or UNVERIFIED line was detected; WARN, SKIP and unchecked
 #           items still need action, and it never means the AI is ready. Changes nothing.
@@ -58,7 +60,9 @@
 #           example-server for a new install, never adopts, repoints or resets anything, and
 #           never rewrites the private config. After deploy it checks the exact commit, www-data
 #           access (a Core install's config/ that the dashboard cannot save is repaired by that
-#           commit's scripts/install.sh), health and HTTP 403 for source and config paths on every Apache listener
+#           commit's scripts/install.sh, which also confirms the database and applies pending
+#           migrations; Core's Update sets it read-only again, so deploy again after one),
+#           health and HTTP 403 for source and config paths on every Apache listener
 #           serving the route, then writes a private deployment record (with the backup and
 #           retry steps) next to the bundle. The same commit again reports already deployed.
 #           -ServerUrl only changes where Windows checks health (default: the route on the
@@ -396,7 +400,18 @@ function Show-Doctor {
                 if ($LASTEXITCODE -eq 0) { Say "OK" "Server private config exists (contents not read)." } else { Say "INFO" "No config/config.php yet; scripts/install.sh creates it." }
                 if (Test-ProtectedFolder $WslServerPath) { Say "OK" "$protectedSite has Core's full folder and file denials for $WslServerPath (rules read only; the HTTP 403 checks are the evidence)." }
                 else { Say "WARN" "$protectedSite does not fully deny $WslServerPath's .git, client, ports, docs, config, lib, sql, scripts, config.json and .env; have Core's setup-web protect this route or add equivalent Apache rules." }
+                Show-ConfigSaves $WslServerPath
             }
+        }
+    } elseif ($WslDistro -and (Test-ProjectId $workingId) -and $workingId -cne "example-server") {
+        # This project's own Core route, from its manifest id; the template guesses no mod.
+        $ownPath = "/var/www/html/custom-mods/$workingId"
+        if (-not $script:distroRunning) {
+            Say "SKIP" "Dashboard saves in $ownPath were not checked: $WslDistro is not confirmed running."
+        } else {
+            $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -d $ownPath }
+            if ($LASTEXITCODE -ne 0) { Say "SKIP" "No install of $workingId at $ownPath in $WslDistro yet ('deploy' makes it); dashboard saves were not checked." }
+            else { Show-ConfigSaves $ownPath }
         }
     }
     Show-AiServices
@@ -406,6 +421,35 @@ function Show-Doctor {
     Write-Host "  - KagrenacServer: $script:serverState"
     Write-Host "  - LLM: not tested by doctor ($script:llmState). Ready only after the dashboard LLM page's Send test returns a reply."
     Write-Host "  - Voice (PocketTTS): not tested by doctor ($script:ttsState). Ready only after the dashboard Voice page's Speak is heard."
+}
+
+# Whether the dashboard can save the install's private config, judged as www-data by that
+# install's own lib/config_writer.php. It only checks files, ownership and modes; the config is
+# never read or loaded. Called only for a running distro; changes nothing.
+function Show-ConfigSaves([string]$path) {
+    $null = Invoke-Native { & wsl.exe -d $WslDistro -u www-data -e test -r "$path/lib/config_writer.php" }
+    if ($LASTEXITCODE -ne 0) {
+        $script:failures++
+        Say "UNVERIFIED" "Dashboard saves in $path were not checked: www-data cannot read its lib/config_writer.php (an older install, or no access)."
+        return
+    }
+    # No double quotes: Windows PowerShell 5.1 does not escape them for native arguments.
+    $php = 'require $argv[1] . ''/lib/config_writer.php''; foreach (config_write_problems($argv[1] . ''/config/config.php'') as $p) echo $p, PHP_EOL;'
+    $out = @(Invoke-Native { & wsl.exe -d $WslDistro -u www-data -e php -d display_errors=0 -d log_errors=0 -r $php $path })
+    $code = $LASTEXITCODE
+    $problems = @($out | Where-Object { $_ -cmatch '^[\x20-\x7e]{1,300}$' })
+    if ($code -ne 0) {
+        $script:failures++
+        Say "UNVERIFIED" "Dashboard saves in $path were not checked: www-data could not run lib/config_writer.php (php exit $code)."
+    } elseif ($problems.Count -ne @($out | Where-Object { "$_" -ne "" }).Count) {
+        $script:failures++
+        Say "UNVERIFIED" "Dashboard saves in $path were not checked: lib/config_writer.php printed output this script cannot safely show."
+    } elseif ($problems.Count -eq 0) {
+        Say "OK" "www-data can save $path/config/config.php from the dashboard (file checks only; contents not read)."
+    } else {
+        foreach ($p in $problems) { Say "INFO" "Dashboard save, as www-data: $p" }
+        Fail "The dashboard cannot save $path/config/config.php. Run 'project.ps1 deploy -WslDistro $WslDistro' to repair it (also after the launcher's Update or 'ddistro_custom_mod update'); for a manual install run 'sudo bash $path/scripts/install.sh'."
+    }
 }
 
 # Reports the WSL distros with their state, and checks the one named by -WslDistro only when
@@ -1197,9 +1241,11 @@ function Invoke-New {
 }
 
 # A project with its own id builds the client into its own folder; the template keeps the shared one.
+$workingId = ""
+try { $workingId = [string](Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json).id } catch { }
+# A project with its own id serves its own route; the template keeps KagrenacServer.
+if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { $defaultUrl = "http://127.0.0.1:19000/custom-mods/$workingId" }
 if (-not $BuildRoot) {
-    $workingId = ""
-    try { $workingId = [string](Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json).id } catch { }
     $BuildRoot = $(if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\projects\$workingId\client" }
         else { Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build" })
 }
