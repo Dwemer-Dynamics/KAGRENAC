@@ -118,8 +118,91 @@ function Test-WslServerPath([string]$path) {
     }
 }
 
+# Apache sections of a site file as @{ Type; Arg; Parent; Denied }, in file order. Denied is
+# true only for a section whose every Require line is 'Require all denied'; a grant, another
+# Require form or no Require leaves it false. Comments are skipped.
+function Get-SiteSections([string[]]$lines) {
+    $sections = New-Object System.Collections.ArrayList
+    $stack = New-Object System.Collections.Stack
+    foreach ($raw in $lines) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith("#")) { continue }
+        if ($line -match '^<([A-Za-z]+)\s+"?([^">]*?)"?\s*>$') {
+            $parent = if ($stack.Count -gt 0) { $stack.Peek() } else { $null }
+            $section = @{ Type = $Matches[1]; Arg = $Matches[2]; Parent = $parent; Requires = 0; Denies = 0 }
+            $null = $sections.Add($section)
+            $stack.Push($section)
+        } elseif ($line -match '^</[A-Za-z]+>$') {
+            if ($stack.Count -gt 0) { $null = $stack.Pop() }
+        } elseif ($line -match '^Require\b' -and $stack.Count -gt 0) {
+            $section = $stack.Peek()
+            $section.Requires++
+            if ($line -cmatch '^Require\s+all\s+denied$') { $section.Denies++ }
+        }
+    }
+    foreach ($section in $sections) { $section.Denied = ($section.Requires -gt 0 -and $section.Denies -eq $section.Requires) }
+    return , $sections
+}
+
+# Apache regex sections match case-sensitively; an invalid pattern matches nothing.
+function Test-SiteMatch([string]$pattern, [string]$value) {
+    try { return [regex]::IsMatch($value, $pattern) } catch { return $false }
+}
+
+# Whether the last of $candidates that matches $value (and has Require lines) denies it, the way
+# Apache's later sections override earlier ones. A plain Location matches by prefix.
+function Test-LastDenies($candidates, [string]$value) {
+    $denied = $false
+    foreach ($section in $candidates) {
+        if ($section.Requires -eq 0) { continue }
+        $hit = if ($section.Type -ceq "Location") { $value.StartsWith($section.Arg, [System.StringComparison]::Ordinal) } else { Test-SiteMatch $section.Arg $value }
+        if ($hit) { $denied = $section.Denied }
+    }
+    return $denied
+}
+
+# Whether the site text denies, for the server folder $path, everything Core's setup-web
+# denies: .git, client/ports/docs/config/lib/sql/scripts as folders and URLs, and config.json
+# and .env as files and URLs. Each probe must be denied by the last matching section, so old
+# three-folder rules, rules for a similar name, and grants after the denials do not count.
+function Test-SiteProtects([string[]]$lines, [string]$path) {
+    $rel = $path.Substring("/var/www/html/".Length)
+    $sections = Get-SiteSections $lines
+    $dirs = @($sections | Where-Object { $_.Type -ceq "DirectoryMatch" -and $null -eq $_.Parent })
+    $vhost = @($sections | Where-Object { $_.Type -ceq "VirtualHost" -and $null -eq $_.Parent })
+    if ($vhost.Count -ne 1) { return $false }
+    $locations = @($sections | Where-Object { ($_.Type -ceq "Location" -or $_.Type -ceq "LocationMatch") -and $_.Parent -eq $vhost[0] })
+    foreach ($folder in @(".git", "client", "ports", "docs", "config", "lib", "sql", "scripts")) {
+        if (-not (Test-LastDenies $dirs "$path/$folder")) { return $false }
+        if (-not (Test-LastDenies $dirs "$path/$folder/sub")) { return $false }
+        foreach ($url in @("/$rel/$folder", "/$rel/$folder/", "/$rel/$folder/x")) {
+            if (-not (Test-LastDenies $locations $url)) { return $false }
+        }
+    }
+    foreach ($file in @("config.json", ".env")) {
+        $files = @($sections | Where-Object { $_.Type -ceq "FilesMatch" -and $null -ne $_.Parent -and $dirs -contains $_.Parent -and (Test-SiteMatch $_.Parent.Arg $path) })
+        if (-not (Test-LastDenies $files $file)) { return $false }
+        foreach ($url in @("/$rel/$file", "/$rel/sub/$file")) {
+            if (-not (Test-LastDenies $locations $url)) { return $false }
+        }
+    }
+    return $true
+}
+
+# The Core site file's lines, read once without root; $null when it is missing or unreadable.
+function Get-ProtectedSite {
+    if (-not $script:siteRead) {
+        $script:siteRead = $true
+        $script:siteLines = @(Invoke-Native { & wsl.exe -d $WslDistro -e cat $protectedSite })
+        if ($LASTEXITCODE -ne 0) { $script:siteLines = $null }
+    }
+    return $script:siteLines
+}
+
+# Whether Core's generated rules protect $path (a fixed route or one named to setup-web).
 function Test-ProtectedFolder([string]$path) {
-    return $path -cmatch '^/var/www/html/(custom-mods/(KagrenacServer|example-server)|ExampleServer)$'
+    $lines = Get-ProtectedSite
+    return ($null -ne $lines -and (Test-SiteProtects $lines $path))
 }
 
 # Distro names from 'wsl -l -q' (all) or 'wsl --list --running --quiet' (running): names
@@ -147,14 +230,14 @@ function Require-WslTarget {
     # spaces or shell characters, so $1 needs no quotes (Windows PowerShell mangles embedded quotes).
     Invoke-Native { & wsl.exe -d $WslDistro -e sh -c 'test -d $1 && ! test -L $1 && test -d $1/.git && test -f $1/dwemer-mod.json && test -f $1/scripts/install.sh' sh $WslServerPath } | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
-        throw "No server checkout at $WslServerPath in $WslDistro (it must be an existing Git clone, not a link). This script never copies source into WSL; clone it there as SETUP.md describes."
+        throw "No server checkout at $WslServerPath in $WslDistro (it must be an existing Git clone, not a link). Put the committed project there with this script's 'deploy' or clone it as SETUP.md describes; this check copies and adopts nothing."
     }
 }
 
+# Whether Core's current rules are present, judged on its fixed KagrenacServer route; the
+# -WslServerPath folder is checked separately. A missing site file means "not protected".
 function Test-WebProtection {
-    # -s: a missing site file means "not protected", not an error.
-    $null = Invoke-Native { & wsl.exe -d $WslDistro -e grep -qsF "(client|ports|docs)" $protectedSite }
-    return ($LASTEXITCODE -eq 0)
+    return (Test-ProtectedFolder "/var/www/html/custom-mods/KagrenacServer")
 }
 
 function Get-HttpStatus([string]$url) {
@@ -284,7 +367,8 @@ function Show-Doctor {
                 Say "OK" "Server checkout found at $WslServerPath in $WslDistro."
                 $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -f "$WslServerPath/config/config.php" }
                 if ($LASTEXITCODE -eq 0) { Say "OK" "Server private config exists (contents not read)." } else { Say "INFO" "No config/config.php yet; scripts/install.sh creates it." }
-                if (-not (Test-ProtectedFolder $WslServerPath)) { Say "WARN" "$WslServerPath is not a folder Core's web protection knows; add equivalent Apache rules for its .git/, client/, docs/ and ports/." }
+                if (Test-ProtectedFolder $WslServerPath) { Say "OK" "$protectedSite has Core's full folder and file denials for $WslServerPath (rules read only; the HTTP 403 checks are the evidence)." }
+                else { Say "WARN" "$protectedSite does not fully deny $WslServerPath's .git, client, ports, docs, config, lib, sql, scripts, config.json and .env; have Core's setup-web protect this route or add equivalent Apache rules." }
             }
         }
     }
@@ -871,11 +955,11 @@ switch ($Command) {
             if ($WslServerPath -ceq "/var/www/html/custom-mods/example-server") {
                 throw "Refusing: /custom-mods/example-server is managed by the DwemerDistro launcher, which never runs scripts/install.sh. Use the launcher's Update instead."
             }
-            if (-not (Test-ProtectedFolder $WslServerPath)) {
-                throw "Refusing: $WslServerPath is not covered by DwemerDistro Core's web protection. Add equivalent Apache rules for its .git/, client/, docs/ and ports/, then run 'sudo bash scripts/install.sh' there yourself."
-            }
             if (-not (Test-WebProtection)) {
                 throw "Refusing: Core web protection rules are missing from $protectedSite. Update DwemerDistro Core and run 'sudo ddistro_custom_mod setup-web' first (SETUP.md, Before you install)."
+            }
+            if (-not (Test-ProtectedFolder $WslServerPath)) {
+                throw "Refusing: $WslServerPath is not fully covered by DwemerDistro Core's web protection in $protectedSite. Have Core's setup-web protect this route (or add equivalent Apache rules for its .git, client, ports, docs, config, lib, sql, scripts, config.json and .env), then run 'sudo bash scripts/install.sh' there yourself."
             }
             Say "INFO" "Running the existing installer in $WslDistro`:$WslServerPath (keeps an existing config and database)."
             Invoke-Native { & wsl.exe -d $WslDistro -u root -e bash "$WslServerPath/scripts/install.sh" } | ForEach-Object { Write-Host $_ }
