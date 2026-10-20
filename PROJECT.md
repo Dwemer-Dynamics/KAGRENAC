@@ -51,7 +51,7 @@ does not stop the others.
 | 1. Brief: game, starting feature, mod name | source: the Brief rows above | not started | |
 | 2. Integration plan; each Unknown researched, with an option chosen | source: every plan row cited, or Unknown with an option chosen | not started | |
 | 3. DwemerDistro: own id committed, deployed | build: `project.ps1 deploy -WslDistro <name>` reported the commit deployed (health ok, exposure probes HTTP 403). Doctor output is diagnostic only; pairing is part of 6b | not started | |
-| 4. LLM | provider: the dashboard **Send test** returned a real reply from the chosen provider (nothing has to answer on port 1234 unless that is the provider) | not started | |
+| 4. LLM | provider: the dashboard **Send test**, or a real `turn.php` turn (same server path), returned a real reply from the chosen provider (nothing has to answer on port 1234 unless that is the provider) | not started | |
 | 5. Voice | user-reported or in-game: a PocketTTS reply heard on the dashboard **Speak** test or in the game (a generated WAV is not heard); or `not wanted` | not started | |
 | 6a. Game-side build | build: the port's preflight passed and its build finished into the folders under Paths (Elden Ring: `mod.ps1 doctor`, then `mod.ps1 build` exit 0 with its `build.json`) | not started | |
 | 6b. Game-side runtime, paired | build: the runtime folder assembled from that build (Elden Ring: `mod.ps1 assemble`) and `project.ps1 pair` wrote its private `config.json`; nothing launched yet | not started | |
