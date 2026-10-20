@@ -1,10 +1,12 @@
-# KAGRENAC AI Mod Maker developer wrapper for the Windows development copy. It only reuses the
-# existing scripts: client\scripts\build.ps1 on Windows, and (explicit opt-in) the server's
-# scripts/install.sh and scripts/smoke.sh inside an existing WSL server checkout.
-# It installs no prerequisites, copies no source into WSL, resets no database, generates no
-# client config and starts no background services. It never prints tokens or keys.
+# KAGRENAC AI Mod Maker developer wrapper for the Windows development copy. It reuses the
+# existing scripts: client\scripts\build.ps1 on Windows, (explicit opt-in) the server's
+# scripts/install.sh and scripts/smoke.sh inside an existing WSL server checkout, and for
+# 'deploy' scripts/project-runtime.sh with DwemerDistro Core or a manual install's update.sh.
+# It installs no prerequisites and resets no database. Only 'deploy' moves source into WSL (a
+# Git bundle of the committed HEAD); client config is generated only through 'pair'. It starts
+# no background services and never prints tokens or keys.
 #
-# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <doctor|setup|check> [options]
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <doctor|setup|check|pair|deploy> [options]
 #   doctor  Report tools, WSL distros and their state, client build, client config (no secrets)
 #           and server health (ok and service identity only). On a healthy server, probe .git/
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
@@ -20,14 +22,44 @@
 #   check   PHP lint of the server files and shell syntax with local tools, then the client
 #           build. With -RunSmoke -WslDistro <name> -WslServerPath <path>, also run
 #           scripts/smoke.sh there.
+#   pair    -WslDistro <name> -WslServerPath <existing checkout> -OutFile <full Windows path>
+#           [-ServerUrl <base URL>] [-SessionId <id>] [-AllowedActions <name,...>]
+#           Run that checkout's scripts/pair_client.php as dwemer (this may start the named
+#           distro) into a private folder made for this run, read the file once over
+#           \\wsl.localhost, and save it as a new private client config: the file is created
+#           empty, limited to you, SYSTEM and Administrators (no inherited access) and checked
+#           before the token is written, then compared with the source by SHA-256. The URL is
+#           -ServerUrl, or port 19000 plus the checkout's route (pass -ServerUrl if Apache uses
+#           another CUSTOM_MODS_PORT). An existing -OutFile is never overwritten: if it is private
+#           and holds the same URL, token and session it is reported as already paired and kept
+#           as it is; otherwise pair refuses. The token and file contents are never printed.
+#   deploy  -WslDistro <name> [-WslServerPath <existing manual install>] [-ServerUrl <base URL>]
+#           Deploy the committed HEAD (the checkout must have no uncommitted or untracked files)
+#           under the id in its dwemer-mod.json: a Git bundle of exactly HEAD goes to a private
+#           folder (%LOCALAPPDATA%\DwemerDynamics\Kagrenac\deploy\<id>), then scripts/
+#           project-runtime.sh runs as root in that distro. It needs DwemerDistro Core with
+#           'setup-web --protect-project' and 'update --expect-commit' (else: Update Distro),
+#           protects /custom-mods/<id> first, and installs or updates only through Core from the
+#           private cache /home/dwemer/.local/share/kagrenac/<id>/source.git, or for an existing
+#           manual install through that folder's scripts/update.sh. It refuses the template id
+#           example-server for a new install, never adopts, repoints or resets anything, and
+#           never rewrites the private config. After deploy it checks the exact commit, www-data
+#           access, health and HTTP 403 for source and config paths on every Apache listener
+#           serving the route, then writes a private deployment record (with the backup and
+#           retry steps) next to the bundle. The same commit again reports already deployed.
+#           -ServerUrl only changes where Windows checks health (default: the route on the
+#           custom mods listener that WSL verified).
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("doctor", "setup", "check")]
+    [ValidateSet("doctor", "setup", "check", "pair", "deploy")]
     [string]$Command,
     [string]$BuildRoot = (Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build"),
     [string]$ServerUrl = "",
     [string]$WslDistro = "",
     [string]$WslServerPath = "",
+    [string]$OutFile = "",
+    [string]$SessionId = "",
+    [string[]]$AllowedActions = @(),
     [switch]$RunServerInstaller,
     [switch]$RunSmoke,
     [switch]$SkipBuild
@@ -415,6 +447,409 @@ function Get-RouteUrl {
     return "http://127.0.0.1:19000" + $WslServerPath.Substring("/var/www/html".Length)
 }
 
+# The client config destination: a full path on a local fixed disk, outside this repository
+# and any other Git checkout, in an existing folder with no links or junctions above it. An
+# existing entry there must be a plain file. Returns the full path.
+function Resolve-PairOutFile {
+    $refuse = "Refusing -OutFile: use a full local path such as C:\Users\<you>\KagrenacClient\config.json (drive letter and backslashes, with no '.', '..', stream, link or network path)."
+    if ($OutFile -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z') { throw $refuse }
+    $full = [System.IO.Path]::GetFullPath($OutFile)
+    if ($full -ne $OutFile -or $full.EndsWith('\')) { throw $refuse }
+    $drive = New-Object System.IO.DriveInfo $full.Substring(0, 1)
+    if ($drive.DriveType -ne [System.IO.DriveType]::Fixed) { throw "Refusing -OutFile on $($drive.Name): only a local fixed disk is allowed, not a $($drive.DriveType) drive." }
+    $repoFull = [System.IO.Path]::GetFullPath($repo).TrimEnd('\')
+    if ($full.StartsWith($repoFull + "\", [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing -OutFile inside the repository; the token must stay outside source and web folders."
+    }
+    $parent = Split-Path -Parent $full
+    if (-not [System.IO.Directory]::Exists($parent)) { throw "The folder $parent does not exist; create it first (pair creates no folders)." }
+    for ($dir = New-Object System.IO.DirectoryInfo $parent; $dir; $dir = $dir.Parent) {
+        if ($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing -OutFile: $($dir.FullName) is a link or junction; choose a folder reached without one." }
+        if (Test-Path -LiteralPath (Join-Path $dir.FullName ".git")) { throw "Refusing -OutFile inside the Git checkout $($dir.FullName); the token must stay outside source and web folders." }
+    }
+    # FileInfo.Attributes is -1 only when nothing is there; a dangling link still has attributes.
+    $attributes = (New-Object System.IO.FileInfo $full).Attributes
+    if ([int]$attributes -ne -1 -and ($attributes -band ([System.IO.FileAttributes]::Directory -bor [System.IO.FileAttributes]::ReparsePoint))) {
+        throw "Refusing -OutFile: $full exists and is a folder or link, not a plain file. Nothing was changed."
+    }
+    return $full
+}
+
+# The only identities allowed on the client config: the current user, SYSTEM, Administrators.
+function Get-PrivateSids {
+    return @(@([System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value, "S-1-5-18", "S-1-5-32-544") | Select-Object -Unique)
+}
+
+# Replaces only the DACL (never owner or audit, which would need SeSecurityPrivilege): no
+# inherited entries, full control for exactly the private identities.
+function Set-PrivateAcl([System.IO.FileInfo]$file) {
+    $security = New-Object System.Security.AccessControl.FileSecurity
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in Get-PrivateSids) {
+        $identity = New-Object System.Security.Principal.SecurityIdentifier $sid
+        $security.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($identity, "FullControl", "Allow")))
+    }
+    $file.SetAccessControl($security)
+}
+
+# True only for a protected DACL with one non-inherited Allow FullControl entry per private identity.
+function Test-PrivateAcl([System.IO.FileInfo]$file) {
+    $acl = $file.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+    if (-not $acl.AreAccessRulesProtected) { return $false }
+    $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+    $sids = Get-PrivateSids
+    if ($rules.Count -ne $sids.Count) { return $false }
+    $seen = @()
+    foreach ($rule in $rules) {
+        if ($rule.IsInherited -or $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or
+            $rule.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl) { return $false }
+        $seen += $rule.IdentityReference.Value
+    }
+    return (@($sids | Where-Object { $seen -notcontains $_ }).Count -eq 0)
+}
+
+# A plain file of at most 64 KiB, read into memory. Callers never print the bytes.
+function Read-SmallFile([string]$path) {
+    if ((Get-Item -LiteralPath $path -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "$path is a link, not a plain file." }
+    $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    try {
+        if ($stream.Length -gt 65536) { throw "$path is larger than 64 KiB, so it is not a client config." }
+        $bytes = New-Object byte[] $stream.Length
+        $read = 0
+        while ($read -lt $bytes.Length) {
+            $n = $stream.Read($bytes, $read, $bytes.Length - $read)
+            if ($n -le 0) { throw "$path changed while it was read." }
+            $read += $n
+        }
+        return ,$bytes
+    } finally { $stream.Dispose() }
+}
+
+# A JSON object from UTF-8 bytes, or $null. Parser errors are dropped unseen: they can quote the text.
+function ConvertFrom-PairJson([byte[]]$bytes) {
+    $value = $null
+    try { $value = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes) | ConvertFrom-Json } catch { return $null }
+    if ($value -is [System.Management.Automation.PSCustomObject]) { return $value }
+    return $null
+}
+
+# 1-8 different action names (case-sensitive) of 1-40 characters A-Z a-z 0-9 _, as in PROTOCOL.md.
+function Test-ActionNames([object[]]$names) {
+    if ($names.Count -lt 1 -or $names.Count -gt 8) { return $false }
+    $unique = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($name in $names) {
+        if (-not ($name -is [string] -and $name -cmatch '^[A-Za-z0-9_]{1,40}\z' -and $unique.Add($name))) { return $false }
+    }
+    return $true
+}
+
+function Get-Sha256([byte[]]$bytes) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return [System.Convert]::ToBase64String($sha.ComputeHash($bytes)) } finally { $sha.Dispose() }
+}
+
+# Creates $path (it must not exist) empty, makes and checks it private, and only then writes
+# $bytes and compares the copy by SHA-256. On any failure the file this call created is deleted.
+function Write-PrivateFile([string]$path, [byte[]]$bytes) {
+    $stream = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    $ok = $false
+    try {
+        $file = New-Object System.IO.FileInfo $path
+        Set-PrivateAcl $file
+        if (-not (Test-PrivateAcl $file)) { throw "$path could not be limited to you, SYSTEM and Administrators; it was removed and nothing was written." }
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Position = 0
+        $copy = New-Object byte[] $bytes.Length
+        $read = 0
+        while ($read -lt $copy.Length) {
+            $n = $stream.Read($copy, $read, $copy.Length - $read)
+            if ($n -le 0) { break }
+            $read += $n
+        }
+        $same = ($read -eq $bytes.Length -and $stream.Length -eq $bytes.Length -and (Get-Sha256 $copy) -ceq (Get-Sha256 $bytes))
+        [System.Array]::Clear($copy, 0, $copy.Length)
+        if (-not $same) { throw "The copy at $path did not match the source (SHA-256); it was removed." }
+        $ok = $true
+    } finally {
+        $stream.Dispose()
+        if (-not $ok) { [System.IO.File]::Delete($path) }
+    }
+}
+
+# pair: see the usage at the top. Validates everything on Windows before touching WSL.
+function Invoke-Pair {
+    if ($PSVersionTable.PSEdition -ne "Desktop") { throw "pair uses the Windows PowerShell file permission API; run it with powershell.exe, not pwsh." }
+    $outPath = Resolve-PairOutFile
+    if ($SessionId -and $SessionId -cnotmatch '^[A-Za-z0-9_.:-]{1,64}\z') { throw "-SessionId must be 1-64 characters of A-Z a-z 0-9 _ . : -" }
+    # -AllowedActions a,b arrives as one string through -File and as a list otherwise.
+    $actions = @()
+    if ($AllowedActions.Count -gt 0) {
+        $actions = ($AllowedActions -join ",").Split(",")
+        if (-not (Test-ActionNames $actions)) { throw "-AllowedActions must be 1-8 different names of 1-40 characters A-Z a-z 0-9 _, separated by commas." }
+    }
+    if ($WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "pair needs -WslDistro <name> made of A-Z a-z 0-9 . _ - (it is also used in the \\wsl.localhost path)." }
+    $existing = [int](New-Object System.IO.FileInfo $outPath).Attributes -ne -1
+    if ($existing -and -not (Test-PrivateAcl (New-Object System.IO.FileInfo $outPath))) {
+        throw "$outPath already exists and is not private to you, SYSTEM and Administrators. Nothing was changed; choose a new -OutFile, or delete that file yourself if it is not needed."
+    }
+    Require-WslTarget
+    $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -f "$WslServerPath/scripts/pair_client.php" }
+    if ($LASTEXITCODE -ne 0) { throw "$WslServerPath/scripts/pair_client.php is missing in $WslDistro; update that checkout first." }
+    $url = Get-RouteUrl
+
+    # A new 0700 folder owned by dwemer under the sticky /tmp, as pair_client.php requires.
+    $made = @(Invoke-Native { & wsl.exe -d $WslDistro -u dwemer -e mktemp -d /tmp/kagrenac-pair.XXXXXXXX })
+    if ($LASTEXITCODE -ne 0 -or $made.Count -ne 1 -or $made[0] -cnotmatch '^/tmp/kagrenac-pair\.[A-Za-z0-9]{8}$') {
+        throw "Could not create a private temporary folder as dwemer in $WslDistro (mktemp exit $LASTEXITCODE)."
+    }
+    $folder = $made[0]
+    $source = $null
+    $sourcePath = $null
+    try {
+        $phpArgs = @("$WslServerPath/scripts/pair_client.php", "--out", "$folder/client.json", "--base-url", $url)
+        if ($SessionId) { $phpArgs += @("--session-id", $SessionId) }
+        if ($actions.Count -gt 0) { $phpArgs += @("--allowed-actions", ($actions -join ",")) }
+        $output = @(Invoke-Native { & wsl.exe -d $WslDistro -u dwemer -e php @phpArgs })
+        $code = $LASTEXITCODE
+        if ($code -ne 0) {
+            # pair_client.php's own refusals only; PHP errors can quote config lines, so they stay hidden.
+            $output | Where-Object { $_ -cmatch '^pair_client: [\x20-\x7e]{1,400}$' } | ForEach-Object { Say "INFO" $_ }
+            throw "scripts/pair_client.php failed (exit $code); any other output is not shown because it may contain private values. Nothing was written on Windows."
+        }
+        foreach ($root in @("\\wsl.localhost\$WslDistro", "\\wsl$\$WslDistro")) {
+            $candidate = $root + $folder.Replace("/", "\") + "\client.json"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $sourcePath = $candidate; break }
+        }
+        if (-not $sourcePath) { throw "The new file in $WslDistro`:$folder could not be reached over \\wsl.localhost; nothing was written on Windows." }
+        $source = Read-SmallFile $sourcePath
+        $config = ConvertFrom-PairJson $source
+        $valid = $config -and $config.server_url -is [string] -and $config.server_url -ceq $url -and
+            $config.token -is [string] -and $config.token.Length -ge 16 -and
+            $config.session_id -is [string] -and $(if ($SessionId) { $config.session_id -ceq $SessionId } else { $config.session_id -cmatch '^[A-Za-z0-9_.:-]{1,64}\z' }) -and
+            $config.timeout_seconds -is [int] -and $config.voice_enabled -is [bool] -and $config.allowed_actions -is [array] -and
+            (Test-ActionNames @($config.allowed_actions)) -and ($actions.Count -eq 0 -or ($config.allowed_actions -join ",") -ceq ($actions -join ","))
+        if (-not $valid) { throw "scripts/pair_client.php wrote a file that is not the expected client config (contents not shown); nothing was written on Windows." }
+
+        if ($existing) {
+            $old = $null
+            $oldBytes = Read-SmallFile $outPath
+            try { $old = ConvertFrom-PairJson $oldBytes } finally { [System.Array]::Clear($oldBytes, 0, $oldBytes.Length) }
+            if (-not $old) { throw "$outPath already exists and is not a JSON client config (contents not shown). Nothing was changed; choose a new -OutFile, or move that file away yourself." }
+            $differ = @(foreach ($name in @("server_url", "token", "session_id")) { if (-not ($old.$name -is [string] -and $old.$name -ceq $config.$name)) { $name } })
+            if ($differ.Count -gt 0) {
+                throw ("$outPath already holds a different pairing (different {0}; values not shown). Nothing was changed; choose a new -OutFile, or move that file away yourself and pair again." -f ($differ -join ", "))
+            }
+            Say "OK" "Already paired: $outPath is private and has this server's URL ($url), token and session $($config.session_id). Its voice, timeout and action settings were kept; nothing was written."
+            if ($actions.Count -gt 0) { Say "INFO" "-AllowedActions was not applied to the existing file; edit its allowed_actions yourself if needed." }
+            $script:done.Add("Pairing checked: $outPath already paired with $url")
+            return
+        }
+
+        Write-PrivateFile $outPath $source
+        $again = Read-SmallFile $sourcePath
+        try { $same = (Get-Sha256 $again) -ceq (Get-Sha256 $source) } finally { [System.Array]::Clear($again, 0, $again.Length) }
+        if (-not $same) { [System.IO.File]::Delete($outPath); throw "The source in WSL changed during the copy; $outPath was removed. Run pair again." }
+        Say "OK" "Paired: wrote $outPath for $url, session $($config.session_id) (private to you, SYSTEM and Administrators; contents not shown)."
+        Say "INFO" "It holds this server's token. Keep it next to KagrenacClient.exe as config.json, then run: KagrenacClient.exe --health"
+        $script:done.Add("Private client config $outPath paired with $url")
+    } finally {
+        if ($source) { [System.Array]::Clear($source, 0, $source.Length) }
+        # Remove only this run's file (a regular mode-0600 file) and then its folder if empty.
+        $null = Invoke-Native { & wsl.exe -d $WslDistro -u dwemer -e sh -c 'test -f $1/client.json && ! test -L $1/client.json && test $(stat -c %a $1/client.json) = 600 && rm -- $1/client.json; rmdir -- $1' sh $folder }
+        if ($LASTEXITCODE -ne 0) { Say "WARN" "Could not remove the temporary folder $folder in $WslDistro; delete it there yourself (it may hold the token)." }
+    }
+}
+
+# Git in this checkout; returns the output lines and throws on failure.
+function Invoke-RepoGit([string[]]$gitArgs) {
+    $out = @(Invoke-Native { & git -C $repo @gitArgs })
+    if ($LASTEXITCODE -ne 0) { throw "git $($gitArgs[0]) failed in $repo (exit $LASTEXITCODE)." }
+    return ,$out
+}
+
+# The deploy folder for one project: private (you, SYSTEM, Administrators; protected and
+# inherited by everything created inside) before anything is written, outside this repository
+# and reached without links. An existing folder must already be private.
+function Get-DeployDir([string]$id) {
+    if ($env:LOCALAPPDATA -cnotmatch '^[A-Za-z]:\\') { throw "LOCALAPPDATA is not a local folder, so the private deploy folder cannot be made." }
+    $base = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\deploy"))
+    if ($base.StartsWith([System.IO.Path]::GetFullPath($repo).TrimEnd('\') + "\", [System.StringComparison]::OrdinalIgnoreCase)) { throw "Refusing a deploy folder inside the repository." }
+    $null = [System.IO.Directory]::CreateDirectory($base)
+    for ($dir = New-Object System.IO.DirectoryInfo $base; $dir; $dir = $dir.Parent) {
+        if ($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing the deploy folder: $($dir.FullName) is a link or junction." }
+    }
+    $path = Join-Path $base $id
+    $info = New-Object System.IO.DirectoryInfo $path
+    if ([int]$info.Attributes -eq -1) {
+        $security = New-Object System.Security.AccessControl.DirectorySecurity
+        $security.SetAccessRuleProtection($true, $false)
+        foreach ($sid in Get-PrivateSids) {
+            $security.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier $sid), "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow")))
+        }
+        $null = [System.IO.Directory]::CreateDirectory($path, $security)
+        $info.Refresh()
+    }
+    $isPrivate = $info.Exists -and -not ($info.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+    if ($isPrivate) {
+        $acl = $info.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+        $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+        $sids = Get-PrivateSids
+        $isPrivate = $acl.AreAccessRulesProtected -and $rules.Count -eq $sids.Count -and
+            @($rules | Where-Object { -not $_.IsInherited -and $_.AccessControlType -eq "Allow" -and $_.FileSystemRights -eq "FullControl" -and
+                $_.InheritanceFlags -eq "ContainerInherit, ObjectInherit" -and $_.PropagationFlags -eq "None" -and $sids -contains $_.IdentityReference.Value } |
+                ForEach-Object { $_.IdentityReference.Value } | Select-Object -Unique).Count -eq $sids.Count
+    }
+    if (-not $isPrivate) { throw "$path is not a private folder (only you, SYSTEM and Administrators, not a link). Nothing was exported; fix or remove it yourself." }
+    return $path
+}
+
+# Throws unless the file is a valid bundle whose only ref is HEAD at exactly $head.
+function Test-Bundle([string]$file, [string]$head) {
+    $heads = @(Invoke-Native { & git -C $repo bundle list-heads $file })
+    $listed = $LASTEXITCODE
+    $null = Invoke-Native { & git -C $repo bundle verify --quiet $file }
+    if ($listed -ne 0 -or $LASTEXITCODE -ne 0 -or $heads.Count -ne 1 -or $heads[0] -cne "$head HEAD") {
+        throw "$file is not a complete bundle of exactly $head. Nothing was deployed; move that file away yourself if it is not needed."
+    }
+}
+
+# One bundle per commit: written under a new name, checked, made private, then renamed (never
+# over an existing file). An existing bundle for the commit is checked and reused.
+function Export-Bundle([string]$dir, [string]$id, [string]$head) {
+    $bundle = Join-Path $dir "$id-$head.bundle"
+    if ([int](New-Object System.IO.FileInfo $bundle).Attributes -eq -1) {
+        $partial = Join-Path $dir ("partial-{0}.bundle" -f [System.Guid]::NewGuid().ToString("N"))
+        try {
+            $null = Invoke-Native { & git -C $repo bundle create --quiet $partial HEAD }
+            if ($LASTEXITCODE -ne 0) { throw "git bundle create failed (exit $LASTEXITCODE); nothing was deployed." }
+            Test-Bundle $partial $head
+            Set-PrivateAcl (New-Object System.IO.FileInfo $partial)
+            [System.IO.File]::Move($partial, $bundle)
+        } finally {
+            if ([System.IO.File]::Exists($partial)) { [System.IO.File]::Delete($partial) }
+        }
+        Say "OK" "Exported commit $head to $bundle."
+    } else {
+        Say "INFO" "Reusing the bundle for this commit: $bundle"
+    }
+    $file = New-Object System.IO.FileInfo $bundle
+    if (($file.Attributes -band ([System.IO.FileAttributes]::Directory -bor [System.IO.FileAttributes]::ReparsePoint)) -or -not (Test-PrivateAcl $file)) {
+        throw "$bundle is not a private plain file. Nothing was deployed; move it away yourself."
+    }
+    Test-Bundle $bundle $head
+    return $bundle
+}
+
+function ConvertTo-WslPath([string]$path) {
+    $out = @(Invoke-Native { & wsl.exe -d $WslDistro -u root --exec wslpath -u $path })
+    if ($LASTEXITCODE -ne 0 -or $out.Count -ne 1 -or $out[0] -cnotmatch '^/[^\x00-\x1f]+$') {
+        throw "Could not translate $path into a path inside $WslDistro (wslpath exit $LASTEXITCODE). Nothing was deployed."
+    }
+    return $out[0]
+}
+
+# Creates the record (never over an existing file), then reads it back and checks the fields
+# that identify the deployment before success is reported.
+function Write-DeployRecord([string]$path, [System.Collections.Specialized.OrderedDictionary]$fields) {
+    Write-PrivateFile $path ((New-Object System.Text.UTF8Encoding($false)).GetBytes(($fields | ConvertTo-Json -Depth 3)))
+    $saved = ConvertFrom-PairJson (Read-SmallFile $path)
+    foreach ($name in @("id", "commit", "mode", "folder", "database")) {
+        if (-not $saved -or -not ($saved.$name -is [string]) -or $saved.$name -cne $fields[$name]) {
+            throw "The deployment record $path did not read back as written ($name). The deploy itself finished; do not rely on that record."
+        }
+    }
+}
+
+# deploy: see the usage at the top. Everything on Windows is checked before WSL is used.
+function Invoke-Deploy {
+    if ($PSVersionTable.PSEdition -ne "Desktop") { throw "deploy uses the Windows PowerShell permission API; run it with powershell.exe, not pwsh." }
+    if ($WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "deploy needs -WslDistro <name> made of A-Z a-z 0-9 . _ -" }
+    if ($WslServerPath) { Test-WslServerPath $WslServerPath }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is not on PATH." }
+
+    $head = (Invoke-RepoGit @("rev-parse", "--verify", "HEAD^{commit}"))[0]
+    if ($head -cnotmatch '^[0-9a-f]{40}\z') { throw "Could not read the committed HEAD." }
+    $pending = Invoke-RepoGit @("status", "--porcelain", "--untracked-files=all")
+    if ($pending.Count -gt 0) {
+        throw ("Refusing: {0} uncommitted or untracked path(s), for example '{1}'. deploy sends only the committed HEAD; commit, ignore or move them yourself first. Nothing was exported." -f $pending.Count, (Get-Printable $pending[0]))
+    }
+    # WSL runs these two from this checkout, so they must be the committed bytes (LF, unchanged).
+    foreach ($file in @("scripts/project-runtime.sh", "scripts/update.sh")) {
+        $blob = (Invoke-RepoGit @("rev-parse", "$($head):$file"))[0]
+        if ((Invoke-RepoGit @("hash-object", "--no-filters", "--", $file))[0] -cne $blob) {
+            throw "$file on disk is not byte-identical to commit $head (line endings or a hidden local change); scripts must be checked out with LF as .gitattributes says. Nothing was exported."
+        }
+    }
+    $manifest = $null
+    try { $manifest = (Invoke-RepoGit @("show", "$($head):dwemer-mod.json")) -join "`n" | ConvertFrom-Json } catch { }
+    $id = $(if ($manifest -is [System.Management.Automation.PSCustomObject]) { [string]$manifest.id } else { "" })
+    if ($id -cnotmatch '^[a-z][a-z0-9-]{1,30}[a-z0-9]\z' -or $id.Contains("--")) { throw "dwemer-mod.json at $head has no valid id (3-32 lowercase letters, digits, single hyphens)." }
+    $healthPath = [string]$manifest.health_path
+    if ($healthPath -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}\z' -or $healthPath.Contains("..")) { throw "dwemer-mod.json at $head has no valid health_path." }
+    $folder = $(if ($WslServerPath) { $WslServerPath } else { "/var/www/html/custom-mods/$id" })
+
+    $exportDir = Get-DeployDir $id
+    $bundle = Export-Bundle $exportDir $id $head
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($bundle)
+    try { $bundleHash = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString("x2") }) } finally { $stream.Dispose(); $sha.Dispose() }
+
+    $distros = Get-WslNames @("-l", "-q")
+    if ($null -eq $distros -or $distros.Code -ne 0 -or $distros.Names -notcontains $WslDistro) {
+        throw "WSL distro '$WslDistro' was not found (run 'wsl -l -q'). The bundle was kept in $exportDir; nothing was deployed."
+    }
+    $wslArgs = @("-d", $WslDistro, "-u", "root", "--exec", "bash", (ConvertTo-WslPath (Join-Path $repo "scripts\project-runtime.sh")),
+        "deploy", $id, $head, (ConvertTo-WslPath $bundle), $bundleHash)
+    if ($WslServerPath) { $wslArgs += $WslServerPath }
+    Say "INFO" "Deploying $id at $head to $folder in $WslDistro (runs as root; this may start the distro)."
+    $result = $null
+    Invoke-Native { & wsl.exe @wslArgs } | ForEach-Object {
+        if ($_ -cmatch '^\[(STAGE|OK|INFO|WARN|FAIL)\] ([\x20-\x7e]{1,400})$') { Say $Matches[1] $Matches[2] }
+        elseif ($_ -cmatch '^RESULT( [a-z]+=[\x21-\x7e]+){11}$') { $result = $_ }
+    }
+    $code = $LASTEXITCODE
+    if ($code -ne 0) {
+        $state = $(if ($code -eq 3) { "changed the mod but did not finish; use the backup and recovery lines above" } else { "stopped before the mod changed" })
+        throw "Deploy in $WslDistro $state (exit $code). No deployment record was written."
+    }
+    $r = @{}
+    if ($result) { foreach ($pair in $result.Split(" ") | Select-Object -Skip 1) { $kv = $pair.Split("=", 2); $r[$kv[0]] = $kv[1] } }
+    $mode = [string]$r["mode"]
+    if ($r["id"] -cne $id -or $r["commit"] -cne $head -or $r["folder"] -cne $folder -or $mode -cnotmatch '^(new|restore|local|remote|manual)\z' -or
+        ($mode -ne "manual" -and $r["database"] -cne ("custom_" + $id.Replace("-", "_"))) -or [string]$r["database"] -cnotmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}\z') {
+        throw "WSL did not confirm exactly $id at $head in $folder. No deployment record was written; run doctor and deploy again."
+    }
+
+    $checkUrl = $(if ($ServerUrl) { $ServerUrl } else { ConvertTo-BaseUrl $r["url"] })
+    $health = Get-HttpStatus "$checkUrl/$healthPath"
+    $h = $null
+    if ($health.Status -eq 200) { try { $h = $health.Body | ConvertFrom-Json } catch { } }
+    $reachable = $h -is [System.Management.Automation.PSCustomObject] -and $h.ok -is [bool] -and $h.ok
+    $recovery = @(
+        $(if ($mode -eq "manual") { "Backup from scripts/update.sh: $($r['backup']). Restore it by hand as SETUP.md section 6 describes." }
+          else { "Core backup from before this deploy: $($r['backup']) (private config and database dump, root only)." }),
+        $(if ($mode -eq "manual") { "Retry: run project.ps1 deploy again with the same -WslServerPath." }
+          else { "Retry or finish: wsl -d $WslDistro -u root --exec ddistro_custom_mod update $id --expect-commit $head" }),
+        "Code is never moved back automatically and database changes are never reversed; the previous commit was $($r['previous'])."
+    )
+    $recordPath = Join-Path $exportDir ("deployment-{0}-{1}.json" -f [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssfffZ"), $head.Substring(0, 12))
+    Write-DeployRecord $recordPath ([ordered]@{
+        schema_version = 1; id = $id; commit = $head; branch = $r["branch"]; mode = $mode; action = $r["action"]
+        distro = $WslDistro; folder = $r["folder"]; database = $r["database"]; url = $checkUrl; reachable_from_windows = [bool]$reachable
+        previous_commit = $r["previous"]; protected = $r["protected"]; backup = $r["backup"]
+        bundle = $bundle; bundle_sha256 = $bundleHash; deployed_at = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); recovery = $recovery
+    })
+    $recovery | ForEach-Object { Say "INFO" $_ }
+    if (-not $reachable) {
+        Fail "Deployed in $WslDistro, but $checkUrl/$healthPath did not answer ok from Windows (HTTP $($health.Status)); pass -ServerUrl if Windows reaches it elsewhere. Record: $recordPath"
+        return
+    }
+    $what = $(if ($r["action"] -eq "already") { "Already at commit" } else { "Deployed ($($r['action']), $mode)" })
+    Say "OK" "$what $head for $id in $WslDistro`:$($r['folder']), healthy at $checkUrl. Record: $recordPath"
+    $script:done.Add("Deploy of $id at $head to $WslDistro ($mode, $($r['action'])); record $recordPath")
+}
+
 # Validate an explicit -ServerUrl once, before anything prints or uses it.
 if ($ServerUrl) {
     $validUrl = ConvertTo-BaseUrl $ServerUrl
@@ -450,7 +885,7 @@ switch ($Command) {
             $manual.Add("Server install inside WSL: SETUP.md section 1 (or pass -RunServerInstaller -WslDistro <name> -WslServerPath <existing checkout>)")
         }
         $manual.Add("Core web protection before any server install or update: SETUP.md, Before you install")
-        $manual.Add("Pairing: SETUP.md section 3, Connect them (run scripts/pair_client.php in the WSL server copy, output outside the web root, and copy it next to KagrenacClient.exe as config.json); this script never writes client config")
+        $manual.Add("Pairing: SETUP.md section 3, Connect them (run scripts/pair_client.php in the WSL server copy, output outside the web root, and copy it next to KagrenacClient.exe as config.json), or run this script's 'pair'; setup never writes client config")
     }
     "check" {
         Invoke-StaticChecks
@@ -466,6 +901,12 @@ switch ($Command) {
         }
         $manual.Add("Migrations twice (php scripts/migrate.php) in WSL; this script runs no database operations")
         $manual.Add("Console smoke checks: client/README.md, Smoke checks")
+    }
+    "pair" {
+        Invoke-Pair
+    }
+    "deploy" {
+        Invoke-Deploy
     }
 }
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Updates this git checkout: refuse local edits, back up, fast-forward, migrate.
-# Usage: sudo bash scripts/update.sh
+# Usage: sudo bash scripts/update.sh [--app-dir <checkout>] [--bundle <file> --commit <sha>]
+#   --app-dir updates that checkout instead of the one holding this script (project.ps1 deploy
+#   runs the new version from Windows this way). --bundle with --commit fast-forwards to exactly
+#   that commit from a Git bundle instead of fetching the upstream; all other steps are the same.
 # config/config.php is untracked, so git never touches it; an update that would start
 # tracking it, or any other file you have locally but git does not track, is refused.
 # Exit codes: 0 updated, 1 refused or failed before anything changed, 3 code updated but
@@ -9,8 +12,26 @@ set -euo pipefail
 
 # Everything runs inside main() so bash has read the whole script before git changes it.
 main() {
-    local app_dir app_owner upstream incoming path backup_line backup_dir status
-    app_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    local app_dir="" bundle="" commit="" app_owner upstream incoming path backup_line backup_dir status
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --app-dir|--bundle|--commit)
+                [ $# -ge 2 ] || { echo "$1 needs a value." >&2; exit 1; }
+                case "$1" in --app-dir) app_dir="$2" ;; --bundle) bundle="$2" ;; *) commit="$2" ;; esac
+                shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    if [ -z "$app_dir" ]; then
+        app_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    elif [[ $app_dir != /* ]] || [ ! -d "$app_dir/.git" ] || [ "$(cd "$app_dir" && pwd -P)" != "$app_dir" ]; then
+        echo "Refusing to update: --app-dir must be the absolute path of a checkout, without links." >&2
+        exit 1
+    fi
+    if [ -n "$bundle$commit" ] && { [[ ! $commit =~ ^[0-9a-f]{40}$ ]] || [ ! -f "$bundle" ] || [ -L "$bundle" ]; }; then
+        echo "Refusing to update: --bundle needs a plain bundle file and --commit a full commit id." >&2
+        exit 1
+    fi
     app_owner="$(stat -c %U "$app_dir")"
     cd /
     as_owner() { sudo -u "$app_owner" "$@"; }
@@ -24,11 +45,19 @@ main() {
         echo "Keep your changes in your own fork, and settings in config/config.php." >&2
         exit 1
     fi
-    if ! upstream="$(as_owner git -C "$app_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
+    if [ -n "$bundle" ]; then
+        as_owner git -C "$app_dir" fetch --quiet --no-tags "$bundle" HEAD
+        if [ "$(as_owner git -C "$app_dir" rev-parse FETCH_HEAD)" != "$commit" ]; then
+            echo "Refusing to update: the bundle's HEAD is not $commit." >&2
+            exit 1
+        fi
+        upstream="$commit"
+    elif ! upstream="$(as_owner git -C "$app_dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)"; then
         echo "Refusing to update: this branch has no upstream to update from." >&2
         exit 1
+    else
+        as_owner git -C "$app_dir" fetch --quiet
     fi
-    as_owner git -C "$app_dir" fetch --quiet
     if ! as_owner git -C "$app_dir" merge-base --is-ancestor HEAD "$upstream"; then
         echo "Refusing to update: $upstream is not a fast-forward of this checkout. Merge by hand." >&2
         exit 1
