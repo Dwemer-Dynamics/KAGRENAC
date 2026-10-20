@@ -158,8 +158,17 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   names the database `custom_<id>` (dashes become underscores).
 - Checks the commit, `www-data` access, health and HTTP 403 for source and config paths,
   and writes a private deployment record (backup and retry steps) next to the bundle.
-- Running it again at the same commit reports it as already deployed and changes nothing,
-  so config and data are kept. A new commit is backed up and fast-forwarded; the private config is never rewritten.
+- Checks, as `www-data`, that the dashboard can save `config/config.php`. If not (Core
+  leaves `config/` readable but not writable by `www-data`), it runs that commit's
+  `scripts/install.sh`, which sets only the owner, group and mode of `config/`, the config
+  and its lock (SETUP.md, Who can read what), keeps their contents, and checks again. The
+  output and the deployment record say `config ok` or `config repaired`. Only the standard
+  `config/config.php` is supported; one that loads settings from another file is refused
+  before Core backs anything up.
+- Running it again at the same commit reports the code as already deployed; when the config
+  can already be saved it changes nothing (no Core update, backup, installer or migrations),
+  so config and data are kept. A new commit is backed up and fast-forwarded; the private
+  config's contents are never rewritten.
 
 `deploy -WslDistro <name> -WslServerPath <existing manual install>` updates that manual
 install through its own `scripts/update.sh` instead. Deploy never adopts or repoints a
@@ -172,6 +181,15 @@ saves a new private client config. Put `-OutFile` outside every repository and w
 example the game-side runtime folder. If the file already exists with the same URL, token and
 session it is kept byte for byte as "already paired" (the identity and voice options shape
 only a new file); anything else is refused, never overwritten.
+
+`-AllowedActions` sets only the client's list; pair cannot change the server. The server
+returns only names in its own `allowed_actions`, so enable each intended action there as
+well: `follow_player` on the dashboard **Settings** page, and any other (such as
+`hold_position`) by adding it to `allowed_actions` in the private `config/config.php`
+(Settings keeps names it does not list). An action missing on either side is refused.
+With `-NpcId` or `-NpcName` the file is a game client's config: leave it in the game
+runtime and check it with the port's launch steps and its engine pack's acceptance, not
+`KagrenacClient.exe`.
 
 **What a backup holds.** Each deploy's Core backup, and `scripts/backup.sh` for a manual
 install, take the database dump and the install's standard private `config/config.php`

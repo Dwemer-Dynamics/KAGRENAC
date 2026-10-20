@@ -57,7 +57,8 @@
 #           manual install through that folder's scripts/update.sh. It refuses the template id
 #           example-server for a new install, never adopts, repoints or resets anything, and
 #           never rewrites the private config. After deploy it checks the exact commit, www-data
-#           access, health and HTTP 403 for source and config paths on every Apache listener
+#           access (a Core install's config/ that the dashboard cannot save is repaired by that
+#           commit's scripts/install.sh), health and HTTP 403 for source and config paths on every Apache listener
 #           serving the route, then writes a private deployment record (with the backup and
 #           retry steps) next to the bundle. The same commit again reports already deployed.
 #           -ServerUrl only changes where Windows checks health (default: the route on the
@@ -770,7 +771,12 @@ function Invoke-Pair {
         try { $same = (Get-Sha256 $again) -ceq (Get-Sha256 $source) } finally { [System.Array]::Clear($again, 0, $again.Length) }
         if (-not $same) { [System.IO.File]::Delete($outPath); throw "The source in WSL changed during the copy; $outPath was removed. Run pair again." }
         Say "OK" "Paired: wrote $outPath for $url, session $($config.session_id) (private to you, SYSTEM and Administrators; contents not shown)."
-        Say "INFO" "It holds this server's token. Keep it next to KagrenacClient.exe as config.json, then run: KagrenacClient.exe --health"
+        if ($NpcId -or $NpcName) {
+            Say "INFO" "It holds this server's token. Leave it in the game runtime where it was written; check it with your port's launch steps and its engine pack's acceptance (ports/<engine>/README.md), not KagrenacClient.exe."
+        } else {
+            Say "INFO" "It holds this server's token. Keep it next to KagrenacClient.exe as config.json, then run: KagrenacClient.exe --health"
+        }
+        Say "INFO" "pair sets only the client's allowed_actions ($(@($config.allowed_actions) -join ', ')). The server returns only actions in its own allowed_actions: enable the same ones there (dashboard Settings for follow_player; others in config/config.php's allowed_actions)."
         $script:done.Add("Private client config $outPath paired with $url")
     } finally {
         if ($source) { [System.Array]::Clear($source, 0, $source.Length) }
@@ -930,7 +936,7 @@ function Invoke-Deploy {
     $result = $null
     Invoke-Native { & wsl.exe @wslArgs } | ForEach-Object {
         if ($_ -cmatch '^\[(STAGE|OK|INFO|WARN|FAIL)\] ([\x20-\x7e]{1,400})$') { Say $Matches[1] $Matches[2] }
-        elseif ($_ -cmatch '^RESULT( [a-z]+=[\x21-\x7e]+){11}$') { $result = $_ }
+        elseif ($_ -cmatch '^RESULT( [a-z]+=[\x21-\x7e]+){12}$') { $result = $_ }
     }
     $code = $LASTEXITCODE
     if ($code -ne 0) {
@@ -941,6 +947,7 @@ function Invoke-Deploy {
     if ($result) { foreach ($pair in $result.Split(" ") | Select-Object -Skip 1) { $kv = $pair.Split("=", 2); $r[$kv[0]] = $kv[1] } }
     $mode = [string]$r["mode"]
     if ($r["id"] -cne $id -or $r["commit"] -cne $head -or $r["folder"] -cne $folder -or $mode -cnotmatch '^(new|restore|local|remote|manual)\z' -or
+        [string]$r["config"] -cnotmatch $(if ($mode -eq "manual") { '^unchecked\z' } else { '^(ok|repaired)\z' }) -or
         ($mode -ne "manual" -and $r["database"] -cne ("custom_" + $id.Replace("-", "_"))) -or [string]$r["database"] -cnotmatch '^[A-Za-z_][A-Za-z0-9_]{0,62}\z') {
         throw "WSL did not confirm exactly $id at $head in $folder. No deployment record was written; run doctor and deploy again."
     }
@@ -961,7 +968,7 @@ function Invoke-Deploy {
     Write-DeployRecord $recordPath ([ordered]@{
         schema_version = 1; id = $id; commit = $head; branch = $r["branch"]; mode = $mode; action = $r["action"]
         distro = $WslDistro; folder = $r["folder"]; database = $r["database"]; url = $checkUrl; reachable_from_windows = [bool]$reachable
-        previous_commit = $r["previous"]; protected = $r["protected"]; backup = $r["backup"]
+        previous_commit = $r["previous"]; protected = $r["protected"]; backup = $r["backup"]; config_permissions = $r["config"]
         bundle = $bundle; bundle_sha256 = $bundleHash; deployed_at = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"); recovery = $recovery
     })
     $recovery | ForEach-Object { Say "INFO" $_ }
@@ -969,9 +976,10 @@ function Invoke-Deploy {
         Fail "Deployed in $WslDistro, but $checkUrl/$healthPath did not answer ok from Windows (HTTP $($health.Status)); pass -ServerUrl if Windows reaches it elsewhere. Record: $recordPath"
         return
     }
-    $what = $(if ($r["action"] -eq "already") { "Already at commit" } else { "Deployed ($($r['action']), $mode)" })
-    Say "OK" "$what $head for $id in $WslDistro`:$($r['folder']), healthy at $checkUrl. Record: $recordPath"
-    $script:done.Add("Deploy of $id at $head to $WslDistro ($mode, $($r['action'])); record $recordPath")
+    $what = $(if ($r["action"] -eq "already") { "Code already at commit" } else { "Deployed ($($r['action']), $mode)" })
+    $prep = $(if ($r["config"] -eq "repaired") { "; config permissions repaired by scripts/install.sh" } else { "" })
+    Say "OK" "$what $head for $id in $WslDistro`:$($r['folder'])$prep, healthy at $checkUrl. Record: $recordPath"
+    $script:done.Add("Deploy of $id at $head to $WslDistro ($mode, $($r['action']), config $($r['config'])); record $recordPath")
 }
 
 # Text recorded in a new project's PROJECT.md: one line of at most 200 characters with no table

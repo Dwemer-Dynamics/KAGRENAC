@@ -6,7 +6,9 @@
 # through DwemerDistro Core (ddistro_custom_mod) only, fed from one private bare cache per
 # project; an existing manual folder goes through scripts/update.sh of <commit>. It never
 # registers or adopts a folder, never resets a checkout or rewrites a private config, never
-# chmods recursively and prints no config, token or PHP output.
+# chmods recursively and prints no config, token or PHP output. When the web server cannot
+# save a Core-managed install's config/config.php, it runs that commit's scripts/install.sh,
+# which repairs only the config folder's, file's and lock's ownership and mode.
 # Exit codes: 0 deployed and verified; 1 refused or failed before the mod folder changed;
 # 3 the mod folder changed but a later step or check failed (backup and recovery are printed).
 set -euo pipefail
@@ -44,8 +46,11 @@ recovery() {
     if [ "$mode" = manual ]; then
         say INFO "Backup from scripts/update.sh: ${backup:-none}. Restore it by hand as SETUP.md section 6 describes; nothing is rolled back automatically."
     else
-        say INFO "Core backup from before this deploy: ${backup:-none (new install)}. Retry by running deploy again, or: sudo $CORE update $id --expect-commit $sha"
+        say INFO "Core backup from before this deploy: ${backup:-none (Core made none in this run)}. Retry by running deploy again, or: sudo $CORE update $id --expect-commit $sha"
         say INFO "Code is never moved back automatically and database changes are not reversed; restore from the backup by hand if needed."
+    fi
+    if [ "$prepare" = 1 ]; then
+        say INFO "scripts/install.sh may have changed the owner, group and mode of config/, config.php and config.php.lock (never their contents). Run deploy again to finish, or: sudo bash $folder/scripts/install.sh"
     fi
 }
 
@@ -99,6 +104,63 @@ for k in ("state", "repository", "local_source", "folder", "database", "branch",
 }
 
 config_hash() { if [ -f "$1" ] && [ ! -L "$1" ]; then sha256sum < "$1" | cut -d' ' -f1; else echo none; fi; }
+
+# A standard private config only returns settings. One that includes, evaluates or reads another
+# file is not supported: Core's backup copies the file, not what it loads. Read as dwemer, never run.
+standard_config() {
+    as_app php -r '$code = @file_get_contents($argv[1]);
+if ($code === false) exit(2);
+foreach (token_get_all($code) as $t) {
+    if (is_array($t) && (in_array($t[0], [T_INCLUDE, T_INCLUDE_ONCE, T_REQUIRE, T_REQUIRE_ONCE, T_EVAL], true)
+        || (in_array($t[0], [T_STRING, T_NAME_FULLY_QUALIFIED], true)
+            && in_array(strtolower(ltrim($t[1], "\\")), ["file_get_contents", "parse_ini_file", "getenv", "fopen", "file"], true)))) exit(1);
+}' "$config" >/dev/null 2>&1
+}
+
+# What would stop a dashboard save, as the web server sees it (the deployed lib/config_writer.php).
+# Prints one problem per line; nothing means saving works.
+web_config_problems() {
+    local out status=0
+    out="$(runuser -u "$WEB_USER" -- env -i PATH="$PATH" LANG=C.UTF-8 php -d display_errors=0 -r '
+require $argv[1] . "/lib/config_writer.php";
+foreach (config_write_problems($argv[1] . "/config/config.php") as $p) echo $p, "\n";' "$folder" 2>/dev/null)" || status=$?
+    printf '%s\n' "$out" | grep -E '^[[:print:]]{1,300}$' || true
+    [ "$status" -eq 0 ] || echo "$WEB_USER could not run the config check in $folder/lib/config_writer.php."
+}
+
+# Runs this commit's scripts/install.sh when the web server cannot save the private config, and
+# checks the contents and the lock file stay the same. Sets prepared to ok or repaired.
+prepare_config() {
+    local problems before lock out status=0
+    problems="$(web_config_problems)"
+    if [ -z "$problems" ]; then
+        prepared=ok
+        say OK "$WEB_USER can already save the private config from the dashboard; scripts/install.sh was not run."
+        return
+    fi
+    printf '%s\n' "$problems" | sed 's/^/[INFO] Before: /'
+    [ ! -L "$folder/config" ] && [ ! -L "$config" ] && [ ! -L "$config.lock" ] ||
+        fail "config/, config.php or its lock is a symbolic link; it is not repaired."
+    standard_config || fail "$config is not a standard config (it loads settings from elsewhere, or dwemer cannot read it); it is not repaired. Keep every setting in config/config.php itself, or repair it yourself."
+    stage "Preparing config/ for dashboard saves with scripts/install.sh of $sha (owner, group and mode only; contents kept)."
+    before="$(config_hash "$config")"
+    lock="$(stat -c %d:%i -- "$config.lock" 2>/dev/null || echo none)"
+    prepare=1 changed=1
+    out="$(env -i PATH="$PATH" LANG=C.UTF-8 bash "$folder/scripts/install.sh" 2>&1)" || status=$?
+    # Only its own fixed lines; PHP and database errors can quote config or connection details.
+    printf '%s\n' "$out" | grep -E '^(ERROR: |Keeping existing config|Database [a-z0-9_]{1,63} already exists|Created database |applied: |schema ready for )[[:print:]]{0,300}$' |
+        sed 's/^/[INFO] install.sh: /' || true
+    [ "$status" -eq 0 ] || fail "scripts/install.sh stopped (exit $status) while preparing config/."
+    [ "$(config_hash "$config")" = "$before" ] || fail "The private config's contents changed while preparing config/."
+    [ "$(stat -c %d:%i -- "$config.lock" 2>/dev/null || echo none)" = "$lock" ] || fail "The config lock file was replaced while preparing config/."
+    problems="$(web_config_problems)"
+    if [ -n "$problems" ]; then
+        printf '%s\n' "$problems" | sed 's/^/[INFO] After: /'
+        fail "$WEB_USER still cannot save the private config after scripts/install.sh."
+    fi
+    prepared=repaired
+    say OK "Repaired: $WEB_USER can now save the private config from the dashboard (owner, group and mode changed; contents and lock kept)."
+}
 
 # Imports the bundle into the project's private bare cache and moves its offered branches to
 # the commit, fast-forward only and all at once; HEAD names the default branch for Core.
@@ -188,7 +250,7 @@ main() {
     [ "$(id -u)" -eq "$ROOT_UID" ] || { say FAIL "Run as root (project.ps1 deploy does this)."; exit 1; }
     [ "${1:-}" = deploy ] && [ $# -ge 5 ] && [ $# -le 6 ] || { say FAIL "Usage: project-runtime.sh deploy <id> <commit> <bundle> <bundle-sha256> [<manual folder>]"; exit 1; }
     id=$2 sha=$3 bundle=$4 bundle_hash=$5 manual=${6:-} mode="" backup="" previous="" cache=""
-    tmp="" core_out=""
+    tmp="" core_out="" prepare=0 prepared=unchecked folder=""
     umask 077
     cd /
     [[ $id =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ && $id != *--* ]] || fail "Unsupported project id."
@@ -290,6 +352,15 @@ main() {
             fail "Core installed $id from ${reg[1]} (branch $branch), which does not publish $sha or did not answer within 60 seconds. Publish it there first; deploy does not repoint or adopt a remote install."
     fi
     before_hash="$(config_hash "$config")"
+    if [ "$mode" != manual ]; then
+        # Checked before Core backs up or changes anything.
+        [ "$config_path" = config/config.php ] ||
+            fail "Deploy prepares only the standard private config config/config.php, not $config_path; change setup.config_path in dwemer-mod.json."
+        if [ "$before_hash" != none ]; then
+            standard_config ||
+                fail "$config is not a standard config (it loads settings from elsewhere, or dwemer cannot read it). Core's backup would not hold those settings; keep every setting in config/config.php itself, then deploy again."
+        fi
+    fi
 
     case "$route" in
         /custom-mods/KagrenacServer|/ExampleServer) say INFO "$route is covered by Core's built-in web protection." ;;
@@ -305,7 +376,7 @@ main() {
     local action=updated status=0
     if [ "$previous" = "$sha" ] && { [ "$mode" = manual ] || [ "${reg[0]}" = ready ]; }; then
         action=already
-        say OK "$folder is already at commit $sha; nothing was updated, backed up or migrated."
+        say OK "The code in $folder is already at commit $sha; it was not updated, backed up or migrated again."
     elif [ "$mode" = manual ]; then
         stage "Updating the manual install with its scripts/update.sh (backup, fast-forward, migrations)."
         local out
@@ -348,6 +419,7 @@ main() {
         read_registry
         [ "${reg[0]}" = ready ] && [ "${reg[6]}" = "$sha" ] || fail "Core does not report $id ready at $sha."
         database=${reg[4]}
+        prepare_config
     else
         database="$(as_app php "$folder/scripts/database-name.php" 2>/dev/null || true)"
         [[ $database =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]] || fail "Could not read the manual install's database name."
@@ -367,9 +439,9 @@ main() {
     serving="$(printf '%s\n' "$http" | sed -n 's/^SERVING //p')"
     local port=${serving%% *} p
     for p in $serving; do if [ "$p" -ge 19000 ] && [ "$p" -le 19999 ]; then port=$p; break; fi; done
-    printf 'RESULT mode=%s action=%s id=%s commit=%s branch=%s folder=%s database=%s url=%s backup=%s previous=%s protected=%s\n' \
+    printf 'RESULT mode=%s action=%s id=%s commit=%s branch=%s folder=%s database=%s url=%s backup=%s previous=%s protected=%s config=%s\n' \
         "$mode" "$action" "$id" "$sha" "$branch" "$folder" "$database" "http://127.0.0.1:$port$route" \
-        "${backup:-none}" "${previous:-none}" "${protect:-built-in}"
+        "${backup:-none}" "${previous:-none}" "${protect:-built-in}" "$prepared"
 }
 
 main "$@"

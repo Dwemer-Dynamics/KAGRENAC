@@ -40,7 +40,14 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <na
 | `doctor` | Reads `eldenring.exe` (version, size, PE timestamp, SizeOfImage, SHA-256) against `game-build.json`, the game inputs, the tools (control README, Tools), .NET, Visual Studio, me3, and the build and runtime folders; one readiness line each | Writes anything; counts as an in-game result |
 | `build` | Refuses any other game build; `client\build.ps1` into `<root>\elden-ring\client`, `control\build-package.ps1` (with `-ControlConfig`, default the example: follow and hold, attack left out) into a new `<root>\elden-ring\builds\<time>`, with the DLL and every file's SHA-256 in its `build.json` | Installs, downloads, or writes to the game, me3 or a save |
 | `assemble` | Copies one verified build (default the newest) into `<root>\runtime`: `natives\`, `package\` and an offline profile `<id>.me3` with its own save `<id>.sl2`; prints the pair, `profile show` and launch commands. The same build again changes nothing; another build needs `-Replace`, which moves the old assembled files (only if unchanged) into `runtime\superseded\<time>` | Writes or reads `config.json`, launches, copies or deletes saves, uses `start_online` or `disable_arxan` |
-| `pair` | Creates the private `config.json` in the runtime with the mod's own `npc_id`, `npc_name` and voice flag | Overwrites an existing file (kept byte for byte) |
+| `pair` | Creates the private `config.json` in the runtime with the mod's own `npc_id`, `npc_name`, voice flag and client allowlist | Overwrites an existing file (kept byte for byte); enables actions on the server |
+
+`pair -AllowedActions` sets only the client's list. Also enable the same actions in the
+server's `allowed_actions`: `follow_player` on the dashboard **Settings** page, and
+`hold_position` by adding it to `allowed_actions` in the server's private `config/config.php`
+([getting-started, Deploy and pair](../../docs/getting-started.md#deploy-and-pair)). Leave
+`config.json` in the runtime; the check is the launch below and the engine pack's
+acceptance, not `KagrenacClient.exe`.
 
 `-Root` must be a local folder outside the repository, every Git checkout and web root, the
 game's install folder and the tools; its `elden-ring` and `runtime` folders must be new or
