@@ -16,7 +16,7 @@
 #           PROJECT.md (with -Engine, the plan from ports/<engine>/PLAN.md), and run 'git init'
 #           there. It refuses an existing destination, an id already used by a deploy or build
 #           folder, and any source that is not the template. It commits nothing and never
-#           changes this checkout; commit the copy yourself before its first deploy.
+#           changes this checkout; review and commit the copy before its first deploy.
 #   doctor  Report tools, WSL distros and their state, client build, client config (no secrets)
 #           and server health (ok and service identity only). On a healthy server, probe .git/
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
@@ -36,7 +36,7 @@
 #   check   PHP lint of the server files and shell syntax with local tools, then the client
 #           build. With -RunSmoke -WslDistro <name> -WslServerPath <path>, also run
 #           scripts/smoke.sh there.
-#   pair    -WslDistro <name> -WslServerPath <existing checkout> -OutFile <full Windows path>
+#   pair    -WslDistro <name> [-WslServerPath <existing checkout>] -OutFile <full Windows path>
 #           [-ServerUrl <base URL>] [-SessionId <id>] [-AllowedActions <name,...>]
 #           [-NpcId <id>] [-NpcName <name>] [-VoiceEnabled]
 #           Run that checkout's scripts/pair_client.php as dwemer (this may start the named
@@ -94,6 +94,11 @@
 #           custom mods listener that WSL verified).
 #   -BuildRoot defaults to %LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\client for a
 #   project with its own id, and to %LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build in the template.
+#   New ports: -Engine accepts an engine without a reference plan and leaves planning open.
+#   -Destination accepts either slash style. configure/pair -AllowedActions none explicitly
+#   writes an empty list (no -Build needed). pair defaults to the own-id server route.
+#   New port builds/runtimes may use schema 2 (docs/PORT_BUILD_RECORDS.md); legacy Elden Ring
+#   keeps its specialized checks. Other server defaults and existing pairing stay unchanged.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
     [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy")]
@@ -129,6 +134,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $env:WSL_UTF8 = "1"
+. (Join-Path $PSScriptRoot 'port-build.ps1')
 
 $repo = Split-Path -Parent $PSScriptRoot
 $defaultUrl = "http://127.0.0.1:19000/custom-mods/KagrenacServer"
@@ -374,7 +380,7 @@ function Show-NativeRoute([string]$name) {
     } elseif (Test-Path -LiteralPath (Join-Path $repo "ports\$name\mod.ps1") -PathType Leaf) {
         Say "INFO" "Next for the game side: powershell -ExecutionPolicy Bypass -File ports\$name\mod.ps1 doctor (options in ports/$name/README.md), then its build and assemble; assemble prints the 'project.ps1 pair' command that writes the runtime's private config.json."
     } else {
-        Say "WARN" "ports/$name has no maintained route (mod.ps1); follow ports/$name/README.md for its build and pairing."
+        Say "WARN" "ports/$name has no maintained route (mod.ps1); qualify its PLAN.md using docs/ENGINE_PLANNING.md, then implement its build and pairing route."
     }
 }
 
@@ -847,6 +853,14 @@ function Read-JsonRecord([string]$path) {
 # attack_enabled, supported actions and package files, and a DLL carrying that control config's
 # hash. Returns @{ Actions; Attack; DllSha }: candidates, none qualified in game. Throws otherwise.
 function Get-BuildActions([string]$dir) {
+    # New ports use one data-only contract; the existing Elden Ring checks below stay intact.
+    $candidate = $dir.Replace('/', '\')
+    if ($candidate -cmatch '^[A-Za-z]:\\') {
+        $record = Read-JsonRecord (Join-Path $candidate 'build.json')
+        if ($record -and ($record.schema_version -eq 2 -or $record.kind -ceq 'kagrenac-port-build')) {
+            return Get-GenericPortBuild $candidate
+        }
+    }
     $usage = "-Build must be the full local path of one build folder, <root>\elden-ring\builds\<yyyyMMdd-HHmmss>, made by ports\elden-ring\mod.ps1 build."
     if ($dir -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z') { throw $usage }
     $full = [System.IO.Path]::GetFullPath($dir).TrimEnd('\')
@@ -910,7 +924,7 @@ function Assert-BuildActions($record, [string[]]$actions, [string]$list) {
     }
     Say "INFO" "Build $(Split-Path -Leaf $record.Dir) supports $($actions -join ', ') (its records and files checked; candidates, none qualified in game)."
     if ($actions -ccontains "attack_hostile") {
-        Say "WARN" "attack_hostile is built guarded but unavailable until its own in-game acceptance (ports/elden-ring/README.md); keep it out of both allowlists until then."
+        Say "WARN" "attack_hostile is a candidate, not qualified gameplay behavior. Follow this port's target and acceptance checks before using it."
     }
 }
 
@@ -921,6 +935,7 @@ function Get-RuntimeBuild([string]$configPath) {
     $record = Join-Path $folder "runtime.json"
     if ([int](New-Object System.IO.FileInfo $record).Attributes -eq -1) { return $null }
     $r = Read-JsonRecord $record
+    if ($r -and $r.schema_version -eq 2) { return Get-GenericPortRuntime $folder $r }
     $dll = "natives/kagrenac_elden_ring.dll"
     if (-not $r -or $r.schema_version -isnot [int] -or $r.schema_version -ne 1 -or [string]$r.id -cne $workingId -or
         [string]$r.build -cnotmatch '^\d{8}-\d{6}\z' -or [string]$r.build_dir -cnotmatch '^[A-Za-z]:\\' -or (Split-Path -Leaf ([string]$r.build_dir)) -cne [string]$r.build -or
@@ -938,7 +953,7 @@ function Get-RuntimeBuild([string]$configPath) {
 # only those that build supports; a game client config without either, follow_player only; a
 # console client config, any valid names as before.
 function Assert-PairActions([string[]]$actions, [string]$outPath) {
-    $requested = @(if ($actions.Count -gt 0) { $actions } else { "follow_player" })
+    $requested = @(if ($AllowedActions.Count -gt 0) { $actions } else { "follow_player" })
     $runtime = Get-RuntimeBuild $outPath
     if ($Build -or $runtime) {
         $record = Get-BuildActions $(if ($Build) { $Build } else { $runtime.Dir })
@@ -984,21 +999,21 @@ function Invoke-Configure {
     }
     $actions = @()
     if ($AllowedActions.Count -gt 0) {
-        $actions = ($AllowedActions -join ",").Split(",")
-        if (-not (Test-ActionNames $actions)) { throw "-AllowedActions must be 1-8 different names of 1-40 characters A-Z a-z 0-9 _, separated by commas." }
-        if ([bool]$Build -eq [bool]$ConsoleClient) {
+        $actions = @(if (($AllowedActions -join ',') -cne 'none') { ($AllowedActions -join ',').Split(',') })
+        if ($actions.Count -gt 0 -and -not (Test-ActionNames $actions)) { throw "-AllowedActions must be 'none' or 1-8 different action names." }
+        if (($actions.Count -gt 0 -and [bool]$Build -eq [bool]$ConsoleClient) -or ($Build -and $ConsoleClient)) {
             throw "-AllowedActions needs exactly one of -Build <build folder> (a verified native build of this project) or -ConsoleClient (the console client, whose one handler is follow_player)."
         }
         if ($ConsoleClient) {
             $unsupported = @($actions | Where-Object { $_ -cne "follow_player" })
             if ($unsupported.Count) { throw "Refusing -AllowedActions $($unsupported -join ','): the console client handles only follow_player (client/src/main.cpp). Nothing was changed." }
-        } else {
+        } elseif ($Build) {
             Assert-BuildActions (Get-BuildActions $Build) $actions "-AllowedActions"
         }
     } elseif ($Build -or $ConsoleClient) {
         throw "-Build and -ConsoleClient only go with -AllowedActions."
     }
-    if (-not $LlmProvider -and -not $Tts -and $actions.Count -eq 0 -and -not $TestProviders) {
+    if (-not $LlmProvider -and -not $Tts -and $AllowedActions.Count -eq 0 -and -not $TestProviders) {
         throw "configure needs -LlmProvider, -Tts, -AllowedActions or -TestProviders (usage at the top of scripts\project.ps1)."
     }
     # Voice is enabled only for a PocketTTS that answers; answering is still not a speech test.
@@ -1020,7 +1035,7 @@ function Invoke-Configure {
     if ($ReuseProviderFrom) { $phpArgs += @("--reuse-llm-key-from", $ReuseProviderFrom) }
     if ($Tts) { $phpArgs += @("--tts", $Tts) }
     if ($TtsVoice) { $phpArgs += @("--tts-voice", $TtsVoice) }
-    if ($actions.Count -gt 0) { $phpArgs += @("--allowed-actions", ($actions -join ",")) }
+    if ($AllowedActions.Count -gt 0) { $phpArgs += @("--allowed-actions", $(if ($actions.Count) { $actions -join ',' } else { 'none' })) }
     if ($TestProviders) { $phpArgs += @("--test-providers", "--base-url", (Get-RouteUrl)) }
     Say "INFO" ("Configuring $WslServerPath in $WslDistro as www-data (this may start the distro)" + $(if ($TestProviders) { ", then one provider test (a paid provider may charge for it)." } else { "." }))
     $result = $null
@@ -1054,8 +1069,8 @@ function Invoke-Pair {
     # -AllowedActions a,b arrives as one string through -File and as a list otherwise.
     $actions = @()
     if ($AllowedActions.Count -gt 0) {
-        $actions = ($AllowedActions -join ",").Split(",")
-        if (-not (Test-ActionNames $actions)) { throw "-AllowedActions must be 1-8 different names of 1-40 characters A-Z a-z 0-9 _, separated by commas." }
+        $actions = @(if (($AllowedActions -join ',') -cne 'none') { ($AllowedActions -join ',').Split(',') })
+        if ($actions.Count -gt 0 -and -not (Test-ActionNames $actions)) { throw "-AllowedActions must be 'none' or 1-8 different action names." }
     }
     if ($NpcId -and $NpcId -cnotmatch '^[A-Za-z0-9_.:-]{1,64}\z') { throw "-NpcId must be 1-64 characters of A-Z a-z 0-9 _ . : -" }
     if ($NpcName -and ($NpcName -cnotmatch '^[^\x00-\x1f\x7f]{1,64}\z' -or $NpcName.Trim(' ') -cne $NpcName)) { throw "-NpcName must be 1-64 characters without control characters or a space at either end." }
@@ -1065,6 +1080,9 @@ function Invoke-Pair {
         throw "$outPath already exists and is not private to you, SYSTEM and Administrators. Nothing was changed; choose a new -OutFile, or delete that file yourself if it is not needed."
     }
     Assert-PairActions $actions $outPath
+    if (-not $WslServerPath -and (Test-ProjectId $workingId) -and $workingId -cne 'example-server') {
+        $script:WslServerPath = "/var/www/html/custom-mods/$workingId"
+    }
     Require-WslTarget
     $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -f "$WslServerPath/scripts/pair_client.php" }
     if ($LASTEXITCODE -ne 0) { throw "$WslServerPath/scripts/pair_client.php is missing in $WslDistro; update that checkout first." }
@@ -1081,7 +1099,7 @@ function Invoke-Pair {
     try {
         $phpArgs = @("$WslServerPath/scripts/pair_client.php", "--out", "$folder/client.json", "--base-url", $url)
         if ($SessionId) { $phpArgs += @("--session-id", $SessionId) }
-        if ($actions.Count -gt 0) { $phpArgs += @("--allowed-actions", ($actions -join ",")) }
+        if ($AllowedActions.Count -gt 0) { $phpArgs += @("--allowed-actions", $(if ($actions.Count) { $actions -join ',' } else { 'none' })) }
         if ($NpcId) { $phpArgs += @("--npc-id", $NpcId) }
         if ($NpcName) { $phpArgs += @("--npc-name", $NpcName) }
         if ($VoiceEnabled) { $phpArgs += @("--voice-enabled", "true") }
@@ -1099,12 +1117,14 @@ function Invoke-Pair {
         if (-not $sourcePath) { throw "The new file in $WslDistro`:$folder could not be reached over \\wsl.localhost; nothing was written on Windows." }
         $source = Read-SmallFile $sourcePath
         $config = ConvertFrom-PairJson $source
+        $expectedActions = @(if ($AllowedActions.Count -gt 0) { $actions } else { 'follow_player' })
         $valid = $config -and $config.server_url -is [string] -and $config.server_url -ceq $url -and
             $config.token -is [string] -and $config.token.Length -ge 16 -and
             $config.session_id -is [string] -and $(if ($SessionId) { $config.session_id -ceq $SessionId } else { $config.session_id -cmatch '^[A-Za-z0-9_.:-]{1,64}\z' }) -and
             $config.timeout_seconds -is [int] -and $config.voice_enabled -is [bool] -and $config.voice_enabled -eq [bool]$VoiceEnabled -and
             $config.allowed_actions -is [array] -and
-            (Test-ActionNames @($config.allowed_actions)) -and ($actions.Count -eq 0 -or ($config.allowed_actions -join ",") -ceq ($actions -join ",")) -and
+            ($config.allowed_actions.Count -eq 0 -or (Test-ActionNames @($config.allowed_actions))) -and
+            (($config.allowed_actions -join ',') -ceq ($expectedActions -join ',')) -and
             $(if ($NpcId) { $config.npc_id -is [string] -and $config.npc_id -ceq $NpcId } else { $null -eq $config.npc_id }) -and
             $(if ($NpcName) { $config.npc_name -is [string] -and $config.npc_name -ceq $NpcName } else { $null -eq $config.npc_name })
         if (-not $valid) { throw "scripts/pair_client.php wrote a file that is not the expected client config (contents not shown); nothing was written on Windows." }
@@ -1119,7 +1139,7 @@ function Invoke-Pair {
                 throw ("$outPath already holds a different pairing (different {0}; values not shown). Nothing was changed; choose a new -OutFile, or move that file away yourself and pair again." -f ($differ -join ", "))
             }
             Say "OK" "Already paired: $outPath is private and has this server's URL ($url), token and session $($config.session_id). Its voice, timeout and action settings were kept; nothing was written."
-            $ignored = @(foreach ($given in @(@("-AllowedActions", ($actions.Count -gt 0)), @("-NpcId", [bool]$NpcId), @("-NpcName", [bool]$NpcName), @("-VoiceEnabled", [bool]$VoiceEnabled))) { if ($given[1]) { $given[0] } })
+            $ignored = @(foreach ($given in @(@("-AllowedActions", ($AllowedActions.Count -gt 0)), @("-NpcId", [bool]$NpcId), @("-NpcName", [bool]$NpcName), @("-VoiceEnabled", [bool]$VoiceEnabled))) { if ($given[1]) { $given[0] } })
             if ($ignored.Count -gt 0) { Say "INFO" "$($ignored -join ', ') only shape a new file and were not applied; the existing file was kept byte for byte." }
             $script:done.Add("Pairing checked: $outPath already paired with $url")
             return
@@ -1135,7 +1155,8 @@ function Invoke-Pair {
         } else {
             Say "INFO" "It holds this server's token. Keep it next to KagrenacClient.exe as config.json, then run: KagrenacClient.exe --health"
         }
-        Say "INFO" "pair sets only the client's allowed_actions ($(@($config.allowed_actions) -join ', ')). The server returns only actions in its own allowed_actions: set the same ones with 'project.ps1 configure -WslDistro $WslDistro -AllowedActions $(@($config.allowed_actions) -join ',')' and -Build <build folder> (a native build) or -ConsoleClient (follow_player only)."
+        $actionArg = $(if ($config.allowed_actions.Count) { $config.allowed_actions -join ',' } else { 'none' })
+        Say "INFO" "pair sets only the client's allowed_actions. Set the server to match with 'project.ps1 configure -WslDistro $WslDistro -AllowedActions $actionArg'. Nonempty lists need -Build <build folder> or -ConsoleClient (follow_player only); none needs neither."
         $script:done.Add("Private client config $outPath paired with $url")
     } finally {
         if ($source) { [System.Array]::Clear($source, 0, $source.Length) }
@@ -1355,6 +1376,7 @@ function Test-BriefText([string]$label, [string]$value) {
 # existing parent reached without links, outside every Git checkout, web root and the private
 # output folders. Returns the full path.
 function Resolve-NewDestination {
+    $Destination = $Destination.Replace('/', '\')
     $refuse = "Refusing -Destination: use a full local path such as C:\dev\MyMod (drive letter and backslashes, with no '.', '..', '~1' alias, stream, link or network path)."
     if ($Destination -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z' -or $Destination -match '~\d') { throw $refuse }
     $full = [System.IO.Path]::GetFullPath($Destination)
@@ -1399,7 +1421,9 @@ function Set-Stage([string]$text, [string]$stage, [string]$state, [string]$evide
 # links rewritten from the port folder to the repository root.
 function Get-EnginePlan([string]$head) {
     $lines = @()
-    try { $lines = Invoke-RepoGit @("show", "$($head):ports/$Engine/PLAN.md") } catch { throw "ports/$Engine/PLAN.md is not in the committed template, so -Engine $Engine has no reference plan." }
+    $null = Invoke-Native { & git -C $repo cat-file -e "$($head):ports/$Engine/PLAN.md" 2>$null }
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $lines = Invoke-RepoGit @("show", "$($head):ports/$Engine/PLAN.md")
     $base = New-Object System.Uri "http://repo/ports/$Engine/"
     $rows = New-Object System.Collections.Generic.List[string]
     $actions = @()
@@ -1522,6 +1546,12 @@ function Invoke-New {
             # A copied reference plan is only a starting point: the agent checks each row against the
             # starting feature and marks the stage done itself. Stages 3 to 5 do not wait for it.
             $text = Set-Stage $text "2." "in progress: reference plan copied, not yet checked against the starting feature; the agent revises each row that differs, then marks this done" "$date, source: reference plan from ports/$Engine/PLAN.md, not checked against this brief or verified in game"
+        } elseif ($Engine) {
+            $text = Set-Stage $text '2.' 'not started: survey the installed game and qualify the integration before mod code' "$date, source: no reference plan for $Engine; follow docs/ENGINE_PLANNING.md"
+            $port = Join-Path $dest "ports\$Engine"
+            [void][System.IO.Directory]::CreateDirectory($port)
+            [System.IO.File]::WriteAllText((Join-Path $port 'PLAN.md'),
+                "# $Engine integration plan`n`nNo reference plan ships for this engine. Start with [Engine planning](../../docs/ENGINE_PLANNING.md).`n`nRecord the installed build, loader, documented hooks, save/offline strategy, selected architecture, unknowns and first acceptance test here. No game support or action is qualified yet.`n", $utf8)
         }
         $text = Set-Stage $text "3." "in progress: own id set; commit, then deploy" ""
         if ($Voice -match '^(none|no|not wanted)$') { $text = Set-Stage $text "5." "not wanted" "$date, source: brief" }
@@ -1552,7 +1582,7 @@ function Invoke-New {
     Say "OK" "Created $Name ($Id) at $dest from template commit $short`: $($expected.Count) files, its own manifest id and name, Git initialised, nothing committed."
     Say "INFO" "$dest\PROJECT.md holds the brief$(if ($plan) { ", the $Engine reference plan" }), the paths for this id and the stage states; this checkout was not changed."
     $script:done.Add("New project $Id at $dest (from $short)")
-    $script:manual.Add("Commit the copy yourself after reviewing it: git -C $(ConvertTo-PsLiteral $dest) add -A; git -C $(ConvertTo-PsLiteral $dest) commit -m $(ConvertTo-PsLiteral "Start $Name from KAGRENAC AI Mod Maker $short")")
+    $script:manual.Add("Agent: review the independent copy and commit it before deploy, within the user's existing authorization: git -C $(ConvertTo-PsLiteral $dest) add -A; git -C $(ConvertTo-PsLiteral $dest) commit -m $(ConvertTo-PsLiteral "Start $Name from KAGRENAC AI Mod Maker $short")")
     $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File $(ConvertTo-PsLiteral "$dest\scripts\project.ps1") deploy -WslDistro <name>")
     $script:manual.Add("Set project_url in the copy's dwemer-mod.json to your own repository when it has one")
 }

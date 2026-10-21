@@ -1,5 +1,15 @@
 # Agent playbook: turn the template into a real mod
 
+Use the current coding agent for build, tests and a separate actual-diff review. Read
+[Engine planning](ENGINE_PLANNING.md) before choosing an integration, and consult the
+[primary-source tool catalogue](research/MODDING_TOOLS.md) for investigation leads. A loader,
+asset editor and runtime action bridge are distinct capabilities. No particular external
+coding service is required. Keep the per-mod `docs/KAGRENAC_FLOW_REVIEW.md` current.
+Use one repository by default; document an optional user-chosen split through
+[Repository layout](getting-started.md#repository-layout). Before ending a pass, follow the
+[handoff checklist](ENGINE_PLANNING.md#end-of-pass-handoff) so the next chat sees the actual
+architecture, completed checks and remaining game mechanisms.
+
 The deep reference for a full engine port. Start with the route in
 [getting-started.md](getting-started.md): the brief and the integration plan in
 [PROJECT.md](../PROJECT.md) come first, and this staged prompt carries the plan through to a

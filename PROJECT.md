@@ -21,6 +21,14 @@ permission.
 
 ## Integration plan (required before building mod code)
 
+First follow [Engine planning](docs/ENGINE_PLANNING.md). Record the installation survey,
+selected loader/tool versions and primary sources, the chosen architecture, bounded probes
+for unknowns and a five-minute acceptance sequence in `ports/<engine>/PLAN.md`. The agent
+checks the plan against this brief before game-port implementation; independent server and
+provider setup can proceed. Use the current coding agent for build, tests and a separate
+diff review, unless the user explicitly chooses delegation. Record flow friction in
+`docs/KAGRENAC_FLOW_REVIEW.md`.
+
 Each row: the chosen mechanism, and whether it is a cited fact (SDK file, doc or game data)
 or Unknown. For an Unknown, note the bounded research (where, and when to stop) and the
 options offered.
@@ -76,6 +84,11 @@ in the game-side rows; record it here when you use one.
 | Server copy and database in the DwemerDistro | `/var/www/html/custom-mods/<id>`, database `custom_<id>` with `-` as `_` |
 
 ## Decisions
+
+Record the repository layout here: one repo by default, or a user-chosen client/server
+split with its build/deploy plan. Keep the current architecture and stage results aligned
+with actual files. Report server-ready, port-built and gameplay-verified separately;
+uncommitted code and interrupted checks remain explicit pending work.
 
 | Date | Decision | Reason |
 |---|---|---|

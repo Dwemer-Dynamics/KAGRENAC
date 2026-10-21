@@ -16,6 +16,41 @@ The rules for threads, stale replies and actions are in [AGENTS.md](../../AGENTS
 [START_HERE, Cancellation and stale replies](../../START_HERE.md#10-cancellation-and-stale-replies).
 Every recipe assumes them.
 
+## Script engines and an external helper
+
+Use this route when the game exposes entity/callback APIs but not safe HTTP or dynamic WAV
+playback. First qualify the script API, I/O permissions and lifecycle from the installed
+documentation ([Engine planning](../ENGINE_PLANNING.md)). A script sandbox may require the
+user to enable a specific mod-menu setting. Never assume an edited setting persists.
+
+- The game script owns all entity reads, input, subtitles and action handlers, on documented
+  callbacks. Capture a bounded awareness snapshot when the user sends a line; no model calls
+  from a world update. Unknown values stay unavailable.
+- A small external helper reuses `client/src/ai_client.cpp` and `config.cpp` for HTTP/cancel
+  and optional voice. It never reads or writes game memory. Build it for the host independently
+  of the game's bitness. Audio played by the helper is audible, not positional NPC audio.
+- Use a bounded data-only mailbox or another qualified transport. Limit size, values and
+  outstanding work; never evaluate Lua or model text received over it. Publish whole requests
+  and reject partial/colliding records. Never put credentials in game scripts or mailbox files.
+- Carry request, run/save, generation and NPC-instance identities through every step. Check
+  them before display, actions and voice. A pause, death, player/NPC replacement, new save or
+  cancel invalidates old work. Restore controls even when the player entity changes.
+- Wait for the old server cancel before accepting a new turn for that NPC/session. Drop a
+  stale turn with a matching error so the game releases its pending input state promptly.
+- Play audio only while its matching subtitle/instance is still current. A heartbeat must
+  work at low frame rates and stop when game updates stop. Check freshness with bounded clocks.
+- The port provides `doctor`, `build`, `assemble`, `install`, `start`, `stop` (and optional
+  `restart`) through its maintained route. Start helpers hidden with logs, one instance per
+  runtime. Stop the specific helper gracefully; never kill unrelated processes. Do not launch
+  the game automatically. Print full pair/configure and first-launch instructions.
+- Use [generic build/runtime records](../PORT_BUILD_RECORDS.md) to gate action setup. Repeat
+  build, pairing, install and start/stop to verify stable hashes and private config preservation.
+
+**Check now:** existing shared-client checks if that code changed, parser/identity/cancel
+probes appropriate to the port, build hashes, helper health and repeated lifecycle commands.
+**Engine only:** actual script I/O, input focus, awareness, each action, pause/death/continue,
+replacement and audible voice. Keep those distinct from successful mock/provider tests.
+
 ## Plugin lifecycle and shutdown
 
 **Seam.** `runInteractive()` in `client/src/main.cpp` is the model for plugin glue: one mailbox,

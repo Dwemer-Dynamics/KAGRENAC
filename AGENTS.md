@@ -7,6 +7,13 @@ Follow both when a change touches both.
 
 ## Start of every task
 
+Use the user's chosen coding agent for implementation, tests and a separate review of the
+actual diff. There is no mandatory external worker or model-specific setup. Delegate only
+when the user asks. Follow [Engine planning](docs/ENGINE_PLANNING.md) before game-port code;
+use [the tool catalogue](docs/research/MODDING_TOOLS.md) as leads, never compatibility proof.
+Track first-run/repeat friction in the mod's `docs/KAGRENAC_FLOW_REVIEW.md` with evidence,
+minimal proposed fixes and generic versus engine-specific scope. Preserve the original brief.
+
 1. Read [PROJECT.md](PROJECT.md) and resume at the first stage in its Stages and readiness
    table that is not done and is ready to work on; that table is the one current status.
    If it is blank or incomplete, fill it in yourself from the conversation and the user's
@@ -35,8 +42,8 @@ Follow both when a change touches both.
    to test it authorize that test, and no other paid call. Keys go on the dashboard **API
    keys** page or in the private `config/config.php`, never in chat; pair with
    `project.ps1 pair` so the user never copies a token. Set the provider, voice and server
-   allowlist with `project.ps1 configure` (actions only against a verified `-Build` or with
-   `-ConsoleClient`; a key is reused only from a config the user names with
+   allowlist with `project.ps1 configure` (nonempty actions only against a verified `-Build`
+   or with `-ConsoleClient`; `-AllowedActions none` needs neither; a key is reused only from a config the user names with
    `-ReuseProviderFrom`); its `-TestProviders` is one such authorized test. Reuse a provider the user already
    configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
    `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
@@ -47,6 +54,10 @@ Follow both when a change touches both.
    Report evidence by kind: source, build, fixture, provider, user-reported, in game. A
    user's broad "it works" is user-reported and never proof of each action; an action is
    usable only after its own in-game check.
+7. Before ending a build pass, reconcile PROJECT.md, the port plan and the flow review with
+   the actual files and validation. Record uncommitted artifacts and interrupted work. Give
+   server-ready, port-built and gameplay-verified separate results; a completed chat does not
+   mean a completed mod. Leave one concrete next probe for each critical engine blocker.
 
 ## Layout and copies
 
@@ -54,15 +65,25 @@ Follow both when a change touches both.
   `config/config.php`, database placeholder `example_ai_mod`, service identity
   `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
   and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
-  for a new install); Core then names the database `custom_<id>`. One repository per mod:
+  for a new install); Core then names the database `custom_<id>`. Default to one repository per mod:
   in the template, start a mod with `scripts/project.ps1 new` (getting-started, New project),
   which writes an independent copy outside every checkout and web root and leaves the
   template unchanged; the copy is committed explicitly before its first deploy.
+- Offer a separate game-client repository and server repository as an optional layout when
+  discussing independent maintenance or when the user asks. Keep the single-repository
+  default without adding a setup question. Record the choice in PROJECT.md Decisions before
+  creating a split. The current `new` command creates one repo; a split needs an explicit
+  plan for shared protocol/client sources, build paths, deploy and pairing. Do not pretend
+  there is a split-repo CLI switch or split an existing project without a request. See
+  [Repository layout](docs/getting-started.md#repository-layout).
 - `client/`, `docs/` and `ports/` are source only. The server copy in Apache's web root
   contains them because it is one repository; DwemerDistro Core's custom mod web protection
   must be installed before a server install or update (SETUP.md). Never build the client,
   write a client `config.json` or put build output inside the server copy or the
   repository; builds go outside both (the client script defaults to `%LOCALAPPDATA%`).
+- New ports use the data-only [generic build record](docs/PORT_BUILD_RECORDS.md) for action
+  configuration and pairing; keep game-specific install/runtime checks in the port's route.
+  `-AllowedActions none` explicitly disables actions while conversation is being qualified.
 - `scripts/project.ps1` is a thin Windows wrapper over the existing scripts. Keep it free of
   dependency installation, database resets and background services. `deploy` sends only a
   bundle of the committed HEAD into the named distro and installs through DwemerDistro Core
