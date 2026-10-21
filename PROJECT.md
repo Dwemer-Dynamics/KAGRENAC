@@ -23,7 +23,9 @@ permission.
 
 The agent fills this from the conversation before engine-port code, following
 [Gameplay design](docs/GAMEPLAY_DESIGN.md); it is not a form for the user. One short answer
-per row. A basic manual mod needs only a few words in each.
+per row. A basic manual mod needs only a few words in each. JEV in "Decision and stakes"
+today only picks which NPC answers a player's line (`decision.php`); other JEV choices are
+planned.
 
 | Design question | Answer |
 |---|---|

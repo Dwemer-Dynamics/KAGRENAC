@@ -51,8 +51,9 @@ Work through these in order and write one short answer per row in PROJECT.md.
 4. **Real observations.** Only values that the integration plan cites, each with its source
    and freshness. Anything the game cannot read, or read too long ago, is `unavailable`.
 5. **A bounded decision with stakes.** What can turn out differently, why the player cares,
-   and who decides: a rule, the engine, JEV choosing from ids the engine offers, or the
-   dialogue model. One decision per exchange.
+   and who decides: a rule, the engine, JEV choosing from ids the engine offers (today: only
+   which NPC answers a player's line; other choices are planned), or the dialogue model. One
+   decision per exchange.
 6. **Legal engine actions.** Existing handlers only, each with its target, instance check
    and preconditions ([Awareness and actions](feature-recipes/PORT_RECIPES.md#awareness-and-actions)).
 7. **An outcome the player sees or hears.** A subtitle, a voice line, a movement or a changed
@@ -111,14 +112,18 @@ game thread.
 Start with **one** automatic interaction and keep it bounded:
 
 - **Player input comes first.** Send an ambient turn through the player's runtime and session
-  only while no player turn is pending. When the player speaks, `cancel()` drops the ambient
-  turn locally at once; its late results and pending voice are discarded locally, but text
-  already presented or actions already executed are not undone. `submitTurn()` then refuses
-  that NPC until `tick()` has processed the server's cancel answer or failure. Meanwhile the
-  port keeps at most one pending player line and stays responsive, then submits it once as a
-  new request. It never replays the old HTTP request or the ambient turn. If that submit is
-  refused or fails, show it; never lose the player's line silently. "First" means ambient
-  speech never queues ahead of the player; it does not bypass the server's cancel ordering.
+  only while no player turn is pending. When the player speaks, submit the line with
+  `submitTurn()`: it replaces the pending ambient turn or voice at once (same NPC: the
+  player's turn makes the ambient one stale on the server; another NPC: the runtime queues
+  the old turn's cancel itself). Late ambient results and voice are discarded locally, but
+  text already presented or actions already executed are not undone. If `submitTurn()` is
+  refused, or the port called `cancel()` first and that queued a server cancel (a turn, not
+  only its voice, was pending and a cancel slot was free), the port keeps at most one pending
+  player line, stays responsive, and submits it once after `tick()` lets it. A voice-only
+  `cancel()` is local and needs no wait. The port never replays the old HTTP request or the
+  ambient turn. If that submit is refused or fails, show it; never lose the player's line
+  silently. "First" means ambient speech never queues ahead of the player; it does not bypass
+  the server's cancel ordering.
 - **Cancel limits.** The generation fence (`cancel.php`, `409 stale`) only stops a save that
   has not yet committed. It cannot undo an ambient reply already saved to history, and an old
   request that reaches the server after the cancel starts a new, current generation. Muting
