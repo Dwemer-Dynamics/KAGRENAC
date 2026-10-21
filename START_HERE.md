@@ -106,7 +106,7 @@ client's `server_url`. Keep it on loopback or a trusted local network:
   the dashboard can change settings and API keys, restore checkpoints and create backups.
 - The token travels over **plain HTTP**.
 - The checkout lives **inside Apache's web root**. When Apache runs PHP correctly, the
-  private `config/config.php` only returns an array and `lib/` files only define functions,
+  private `config/config.php` only returns an array and `lib/` files only declare functions and classes,
   so requesting them prints nothing; endpoints and `health.php` do print their responses.
   If PHP is not enabled for the folder, Apache may serve PHP source as text, which is why
   `scripts/smoke.sh` checks the config. Nothing in this repository stops Apache from serving

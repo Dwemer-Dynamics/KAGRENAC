@@ -14,6 +14,7 @@
 
 require_once __DIR__ . '/app.php';
 require_once __DIR__ . '/llm.php';
+require_once __DIR__ . '/dialogue_history.php';
 require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/audit.php';
 
@@ -275,12 +276,10 @@ function memory_add_candidates(\PgSql\Connection $db, string $sessionId, string 
 }
 
 // The last $limit history lines of this session and NPC, oldest first, or null on error.
+// Kept for older callers; DialogueHistory owns the query.
 function memory_history(\PgSql\Connection $db, string $sessionId, string $npcId, int $limit): ?array
 {
-    $result = db_try($db,
-        'SELECT role, text FROM (SELECT id, role, text FROM ex_turns WHERE session_id = $1 AND npc_id = $2 ORDER BY id DESC LIMIT $3) recent ORDER BY id',
-        [$sessionId, $npcId, max(1, $limit)]);
-    return $result === null ? null : pg_fetch_all($result);
+    return (new DialogueHistory($db))->tryRecent($sessionId, $npcId, max(1, $limit));
 }
 
 // Regenerates the summary and adds a diary entry from the current history. Calls the model

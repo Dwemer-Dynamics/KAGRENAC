@@ -3,6 +3,9 @@
 // by llm.mode: openai, openrouter, local or dwemerllm (see CONNECTORS.md).
 // The model asks for game actions with tags like [ACTION:follow_player].
 // Only names in the allowlist are offered in the prompt and returned; nothing here executes anything.
+// The known actions' hints and target rules come from ActionCatalog (lib/action_catalog.php).
+
+require_once __DIR__ . '/action_catalog.php';
 
 const MAX_REPLY_CHARS = 1000;
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
@@ -128,17 +131,7 @@ function actions_prompt(array $allowedActions): string
             . 'do that yet. Use no tags.';
     }
     // When to use each known action; only allowed ones are described.
-    $known = [
-        'follow_player' => 'only when you agree to follow the player',
-        'hold_position' => 'only when you agree to stay where you are',
-        'attack_hostile' => 'only when you agree to attack; the game alone picks the one hostile it knows, you cannot name a target',
-    ];
-    $hints = '';
-    foreach ($known as $name => $when) {
-        if (in_array("[ACTION:$name]", $tags, true)) {
-            $hints .= " Use [ACTION:$name] $when.";
-        }
-    }
+    $hints = ActionCatalog::promptHints($tags);
     return 'You may ask the game for these actions by ending your reply with the tag: ' . implode(', ', $tags) . '.'
         . $hints . ' Use at most one of them per reply. A tag is only a request that the game may refuse or fail: '
         . 'speak of it as something you will try or ask for, never promise it will happen and never say it is done '
@@ -197,12 +190,14 @@ function llm_chat(array $llm, array $messages, int $maxTokens): string
 }
 
 // The actions whose actor is the NPC the request named: they get it as args.target_id.
-const NPC_TARGET_ACTIONS = ['follow_player', 'hold_position', 'attack_hostile'];
+// Kept for older callers; ActionCatalog owns the list.
+define('NPC_TARGET_ACTIONS', ActionCatalog::requestNpcTargetNames());
 
 // Splits raw model text into [clean reply, allowed actions, rejected action names].
-// $targetId is the NPC the request explicitly named. The NPC_TARGET_ACTIONS get it as
-// args.target_id (an optional protocol 1 field), so the target always comes from the request,
-// never from model text or an NPC selection result. The tag itself carries no arguments.
+// $targetId is the NPC the request explicitly named. Known actions that act on it
+// (ActionCatalog::request()) get it as args.target_id (an optional protocol 1 field), so the
+// target always comes from the request, never from model text or an NPC selection result.
+// The tag itself carries no arguments; allowed custom names are returned without args.
 function extract_actions(string $raw, array $allowedActions, ?string $targetId = null): array
 {
     preg_match_all('/\[ACTION:\s*([A-Za-z0-9_]{1,40})\s*\]/', $raw, $matches);
@@ -210,11 +205,7 @@ function extract_actions(string $raw, array $allowedActions, ?string $targetId =
     $rejected = [];
     foreach (array_unique($matches[1]) as $name) {
         if (in_array($name, $allowedActions, true)) {
-            $action = ['name' => $name];
-            if (in_array($name, NPC_TARGET_ACTIONS, true) && $targetId !== null) {
-                $action['args'] = ['target_id' => $targetId];
-            }
-            $actions[] = $action;
+            $actions[] = ActionCatalog::request($name, $targetId);
         } else {
             $rejected[] = $name;
         }

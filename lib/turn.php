@@ -7,6 +7,8 @@
 
 require_once __DIR__ . '/app.php';
 require_once __DIR__ . '/llm.php';
+require_once __DIR__ . '/action_catalog.php';
+require_once __DIR__ . '/dialogue_history.php';
 require_once __DIR__ . '/knowledge.php';
 require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/profiles.php';
@@ -57,7 +59,7 @@ function run_turn(array $config, float $started, string $requestId, string $sess
 {
     trace_id($requestId);
     $historyLimit = max(0, min(50, (int)($config['history_limit'] ?? 10)));
-    $allowedActions = $config['allowed_actions'] ?? ['follow_player'];
+    $allowedActions = $config['allowed_actions'] ?? ActionCatalog::DEFAULT_ALLOWED;
     // The game's offered_actions can only narrow the allowlist: the prompt offers, and
     // extract_actions() returns, names in both.
     if (isset($turn['offered_actions'])) {
@@ -66,6 +68,7 @@ function run_turn(array $config, float $started, string $requestId, string $sess
     $memorySettings = memory_settings($config);
     $db = db_connect($config);
     require_schema($db);
+    $dialogue = new DialogueHistory($db);
 
     // Every outcome after validation is logged (lib/events.php), outside any transaction.
     // "complete" means the server finished this turn, not that the game received or ran it.
@@ -108,11 +111,7 @@ function run_turn(array $config, float $started, string $requestId, string $sess
     $event['provider'] = event_provider(['llm' => $llm]);
 
     // 4. Load the most recent history for this NPC, oldest first.
-    $history = pg_fetch_all(db_query($db,
-        'SELECT role, text FROM (
-            SELECT id, role, text FROM ex_turns WHERE session_id = $1 AND npc_id = $2 ORDER BY id DESC LIMIT $3
-         ) recent ORDER BY id',
-        [$sessionId, $npcId, $historyLimit]));
+    $history = $dialogue->recent($sessionId, $npcId, $historyLimit);
 
     // 5. Optional vector search: one embedding call for the player's line, outside any
     //    transaction and never retried. Any failure falls back to the keyword search alone.
@@ -188,14 +187,7 @@ function run_turn(array $config, float $started, string $requestId, string $sess
         $logged(event_stale_status($db, $sessionId, $npcId, $generation), ['error_code' => 'stale']);
         fail(409, 'stale', 'This turn was cancelled or replaced by a newer turn.');
     }
-    db_query($db,
-        "INSERT INTO ex_turns (session_id, npc_id, role, text) VALUES ($1, $2, 'player', $3), ($1, $2, 'npc', $4)",
-        [$sessionId, $npcId, $turn['text'], $reply]);
-    db_query($db,
-        'DELETE FROM ex_turns WHERE session_id = $1 AND npc_id = $2 AND id NOT IN (
-            SELECT id FROM ex_turns WHERE session_id = $1 AND npc_id = $2 ORDER BY id DESC LIMIT $3
-         )',
-        [$sessionId, $npcId, $historyLimit]);
+    $dialogue->appendExchange($sessionId, $npcId, $turn['text'], $reply, $historyLimit);
     db_query($db, 'COMMIT');
     $eventLogged = $logged('complete');
 
