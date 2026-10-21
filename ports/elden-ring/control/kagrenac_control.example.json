@@ -1,0 +1,23 @@
+{
+    "_comment": "Gatefront first test. Companion: Godrick Soldier c4311_9021 in m60_42_37_00 (think 43111100: logic 10000, battle goal 431000; NpcParam 43111110 team 48; no talk script). Hostile: Man-Bat c4200_9005 in m60_42_36_00 (NpcParam 42000010 team 6). Control team 47 = the team of the game's spirit-summon NpcParam rows; hostile_team_type must equal the hostile's own team. build-package.ps1 re-reads all of these from the user's own files and refuses on any mismatch.",
+    "companion_entity": 1042370200,
+    "companion_msb": "m60_42_37_00",
+    "hostile_entity": 1042360215,
+    "hostile_msb": "m60_42_36_00",
+    "hostile_team_type": 6,
+    "original_ai_id": 43111100,
+    "original_team_type": 48,
+    "control_ai_id": 43111190,
+    "control_team_type": 47,
+    "logic_id": 431990,
+    "event_control": 1042378801,
+    "action_button_param": 6000,
+    "command_hold": 9100,
+    "command_follow": 9101,
+    "command_attack": 9102,
+    "follow_min": 2.0,
+    "follow_max": 4.0,
+    "attack_reach": 3.0,
+    "attack_animation": 3000,
+    "attack_lease_seconds": 60
+}

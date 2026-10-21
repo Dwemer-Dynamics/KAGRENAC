@@ -2,6 +2,9 @@
 
 Copied from [ENGINE_PACK.md](ENGINE_PACK.md). Scope: the native diagnostic probe in
 [ports/elden-ring/](../../ports/elden-ring/README.md), not dialogue, voice or protocol work.
+The separate event-script route for hold, follow and attack is in
+[ports/elden-ring/control/](../../ports/elden-ring/control/README.md); its package builds
+and verifies in full from the user's own files, and it is not tested in game.
 Sources were read on 2026-10-19 through the GitHub API at the pins below; nothing was
 downloaded into the repository or installed, and no source code was copied. Three
 projects were examined. fromsoftware-rs explicitly handles the installed file version
@@ -71,12 +74,13 @@ access actors or game state, write memory, hook, start threads or use the networ
 | Log failure visibility | `Log` in `probe_dll.cpp` | Tested outside the game | 2026-10-19: with the log path blocked, one OutputDebugString line "cannot open kagrenac_er_probe.log (error 5)" |
 | Game-thread callback | none | Not integrated, not qualified | Potentially available through fromsoftware-rs tasks (cited); the probe integrates no game backend |
 | Player, companion, hostile identity | none | Not integrated, not qualified | Potentially available through fromsoftware-rs actor interfaces (cited); the probe has no actor access |
-| Hold, follow, attack | none | Blocked | No NPC command mechanism found; logged as `unsupported (no qualified game-thread/actor/action backend integrated; nothing sent to the game)` |
+| Hold, follow, attack (native) | none | Not integrated, not qualified | No NPC command mechanism found in the three native sources; the probe logs `unsupported (no qualified game-thread/actor/action backend integrated; nothing sent to the game)` |
+| Hold, follow, attack (event route) | `ports/elden-ring/control` ([README](../../ports/elden-ring/control/README.md)) | Implemented; full package build verified; not tested in game | 2026-10-19: Lua 5.0.3 contract tests 8 pass. Full `build-package.ps1` run (Windows PowerShell 5.1, example config), exit 0, `package.json` read back: merge-events `ok`, original 253 events to 254, collateral empty, only event 1042378801 (68 instructions) and `InitializeEvent(0, 1042378801, 0)` at index 0 of event 0 added, `--expect-teams 48 47` matched; pack `ok`, LUAINFO goal 431990 `kagrenac431990_Logic` valid, cloned think row 43111190 differs only in `logicId`. Rerun to `package-ready-20261019` (exit 0, same three hashes): id 1042378801 free in the original `m60_42_36_00`/`m60_42_37_00` event files, every team command on 1042370200 (`entity_ok`), luabnd order kept. Hashes in the [control README](../../ports/elden-ring/control/README.md#build). Nothing installed or loaded |
 
 ## Future acceptance for hold, follow and attack
 
-Not implemented. A future backend counts an action as caused by the command only when all
-of these hold, each recorded here with in-game evidence:
+Applies to any route, including the event route. An action counts as caused by the command
+only when all of these hold, each recorded here with in-game evidence:
 
 - **Control trials.** Each action is also measured without a command, under the same
   setup. A pass needs the commanded trial to differ from the control: hold must stop a
@@ -86,14 +90,17 @@ of these hold, each recorded here with in-game evidence:
 - **Inactive start.** The companion and the target are both idle and out of combat before
   attack; a summon or other default follower is not evidence for follow, and an idle or
   AI-less NPC is not evidence for hold.
-- **Actor identity.** Player, companion and target are resolved on a verified game thread
-  each time and checked against a per-actor incarnation (not only an id) and a world
-  generation, so a despawn, respawn or world reload never reuses a stale actor.
+- **Actor identity.** Native route: player, companion and target are resolved on a
+  verified game thread each time and checked against a per-actor incarnation (not only an
+  id) and a world generation, so a despawn, respawn or world reload never reuses a stale
+  actor. Event route: the fixed MSB entity ids, checked against the user's MSBs at build
+  time, and loaded-and-alive checks in the event before each order.
 - **Measurements.** Positions must be finite and within bounds; a timeout is checked
   before observation; hit attribution needs a defined baseline.
 - **Cancel and release.** Every command can be cancelled, and the companion returns to its
-  previous behaviour on cancel, timeout, world reload and DLL unload, without a crash or
-  hang.
+  previous behaviour on cancel, timeout and world reload without a crash or hang; the
+  native route also on DLL unload, the event route also on rest, warp and reload with the
+  package and after removing it. None of this is qualified yet.
 
 ## Port decisions
 
@@ -116,8 +123,10 @@ of these hold, each recorded here with in-game evidence:
 3. Check `kagrenac_er_probe.log`: build line, "loaded PE header identity matches file",
    "blocked: build not in the qualified table" and three `unsupported` action lines; the
    me3 log shows "native failed to initialize".
-4. Hold, follow and attack stay blocked until an NPC command mechanism meets the future
-   acceptance above.
+4. The probe's hold, follow and attack lines stay `unsupported`. Actions go through the
+   separate event route; its Gatefront checklist is in
+   [control/README.md](../../ports/elden-ring/control/README.md#gatefront-checklist), and
+   a result counts only if it meets the acceptance above.
 
 ## Open questions
 
@@ -125,6 +134,8 @@ of these hold, each recorded here with in-game evidence:
 |---|---|---|
 | A game-thread callback that works on the installed build | Game access | Integrate and test a backend offline; fromsoftware-rs tasks are the cited lead |
 | Resolving the player and a companion with incarnation-safe handles | Identity | Same; handles need a generation check of our own |
-| Commanding hold, follow and attack of a specific target, with cancel and hit attribution | Actions | Find an actual NPC command mechanism (none in the three sources), then integration and in-game tests against the future acceptance. Freezing a character or injecting action requests is not a command |
+| Commanding hold, follow and attack of a specific target, with cancel and hit attribution | Actions | Event route written (event script with bank 2004 AI instructions plus AI logic on `TARGET_EVENT`); the full package build is verified (exit 0); next: the user's offline Gatefront test against the acceptance above, including a reload or warp while controlled (the event restarts at idle without a restore). Native route: no mechanism in the three sources; freezing a character or injecting action requests is not a command |
+| Whether control team 47 acts friendly to the player | Attack, follow | Observe in the Gatefront test; 47 was read from spirit-summon NpcParam rows only |
+| A hostile that is reliably loaded near the companion | Attack | The configured Man-Bat is on the next map tile; pick a nearer grounded hostile if it is not loaded |
 | Whether me3 calls `finalizer` at all | Unload | Read me3 source at a newer pin, or test |
 | Title patch number of the installed build | Build row | In-game title screen check by the user |
