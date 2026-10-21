@@ -101,7 +101,7 @@ in the game-side rows; record it here when you use one.
 | Game-side builds (the port's build route; Elden Ring: `mod.ps1 build`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\<engine>\<part>` |
 | Game runtime folder (Elden Ring: `mod.ps1 assemble`) with the private `config.json` (`pair -OutFile`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\runtime` |
 | Deploy bundles and records (`project.ps1 deploy`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\deploy\<id>` |
-| Server copy and database in the DwemerDistro | `/var/www/html/custom-mods/<id>`, database `custom_<id>` with `-` as `_` |
+| Server copy and database in the DwemerDistro | `/var/www/html/<server_folder>` (`server_folder` in `dwemer-mod.json`; a copy without it: `/var/www/html/custom-mods/<id>`; Core's registry entry is what counts), database `custom_<id>` with `-` as `_` |
 
 ## Decisions
 

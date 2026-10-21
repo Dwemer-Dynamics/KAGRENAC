@@ -44,7 +44,8 @@ setup; never ask me for keys in chat.
 The route, from download to the first AI line in your game, is
 [docs/getting-started.md](docs/getting-started.md). Your copy gets its own `id` and `name`
 in `dwemer-mod.json`; `scripts\project.ps1 deploy -WslDistro <name>` then installs it inside
-DwemerDistro WSL through Core, at `/custom-mods/<id>` with database `custom_<id>`. A manual
+DwemerDistro WSL through Core, at `/var/www/html/<Name>Server` (the `server_folder` that
+`project.ps1 new` sets; older copies: `/custom-mods/<id>`) with database `custom_<id>`. A manual
 install ([SETUP.md](SETUP.md#1-install-the-server-inside-dwemerdistro)) or the launcher's
 **Mods > Custom mods** ([LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md)) are separate
 routes. 19000 is DwemerDistro's shared loopback port for custom PHP mods
@@ -86,7 +87,7 @@ routes. 19000 is DwemerDistro's shared loopback port for custom PHP mods
 - A template, not a product: no real game is supported until someone ports and tests the
   client in that game. The console's follow is a printed simulation.
 - `deploy` needs a DwemerDistro Core with `setup-web --protect-project` and
-  `update --expect-commit`, not yet in a public Core release; until a compatible Core is
+  `update --expect-commit` (and `setup-web --protect-root` for a `server_folder`), not yet in a public Core release; until a compatible Core is
   available, it stops with a clear message and changes nothing.
 - Meant for one PC or a trusted local network. The dashboard has **no login**, there is
   **no rate limiting**, and the token travels over plain HTTP.

@@ -33,7 +33,8 @@ You use two copies of it, with separate jobs:
 - a **Windows development copy** where you edit, build the client and run
   `scripts\project.ps1`; and
 - a **WSL server copy** inside Apache's web root that only runs the server:
-  `/var/www/html/custom-mods/<id>` from `scripts\project.ps1 deploy`
+  `/var/www/html/<Name>Server` (or `/var/www/html/custom-mods/<id>` for a copy without
+  `server_folder`) from `scripts\project.ps1 deploy`
   ([getting-started](docs/getting-started.md#deploy-and-pair)), or a manual
   `/var/www/html/custom-mods/KagrenacServer`, or `/custom-mods/example-server` from the
   launcher. Never build the client or write a client `config.json` there.
@@ -117,7 +118,8 @@ client's `server_url`. Keep it on loopback or a trusted local network:
   [SETUP.md](SETUP.md#before-you-install-web-protection)) denies `.git/` under every custom
   mod and the source folders (`client/`, `docs/`, `ports/` and others) under the known
   install paths `/custom-mods/KagrenacServer`, `/custom-mods/example-server` and
-  `/ExampleServer`. A copy in any other folder needs `setup-web --protect-project <folder>`
+  `/ExampleServer`. A `server_folder` install is protected by Core before its folder is made.
+  A copy in any other folder needs `setup-web --protect-project <folder>`
   before its source is placed, or equivalent server-side rules of its own. `scripts/smoke.sh`
   checks only that the token is not visible at `config/config.php`; it does not check these
   paths. Check your install, on every Apache port that serves `/var/www/html`:

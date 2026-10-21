@@ -74,7 +74,10 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
   `config/config.php`, database placeholder `example_ai_mod`, service identity
   `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
   and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
-  for a new install); Core then names the database `custom_<id>`. Default to one repository per mod:
+  for a new install); Core then names the database `custom_<id>`. `new` also sets `server_folder`
+  (`<Name>Server`), so Core installs the copy at `/var/www/html/<Name>Server`; a copy without it
+  stays in `custom-mods/<id>` until `ddistro_custom_mod migrate-root` moves it (getting-started,
+  Server folder). Find an install from Core's registry, never by guessing the path. Default to one repository per mod:
   in the template, start a mod with `scripts/project.ps1 new` (getting-started, New project),
   which writes an independent copy outside every checkout and web root and leaves the
   template unchanged; the copy is committed explicitly before its first deploy.

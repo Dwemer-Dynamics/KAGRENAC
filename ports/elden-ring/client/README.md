@@ -97,7 +97,7 @@ acceptance. Inventory, combat, other actors and line of sight are `unavailable`.
 A private `config.json`, never in the repository or a web root, read only from the runtime
 folder (parent of `natives/`); there is no fallback location. Create it with `pair`, which
 writes your server's real route and never overwrites an existing file:
-`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> -OutFile <runtime>\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]`
+`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -OutFile <runtime>\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]`
 ([getting-started](../../../docs/getting-started.md#deploy-and-pair)), or start
 from [config.example.json](config.example.json). `-NpcId`, `-NpcName` and `-VoiceEnabled`
 shape only the new file, so nothing is edited after pairing. Same loader and fields as the

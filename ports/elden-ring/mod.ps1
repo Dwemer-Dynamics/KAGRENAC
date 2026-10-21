@@ -557,7 +557,7 @@ function Invoke-Assemble {
         Say 'OK' "config.json is present and was not touched$(if (-not (Test-Private $cfg)) { ' (WARNING: not private to you, SYSTEM and Administrators)' })."
     } else {
         Say 'INFO' 'Pair next (creates the private config.json; follow and hold only, attack stays out):'
-        Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/$id -OutFile $(Lit $cfg) -AllowedActions follow_player,hold_position -NpcId <companion id> -NpcName '<companion name>' [-VoiceEnabled]"
+        Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -OutFile $(Lit $cfg) -AllowedActions follow_player,hold_position -NpcId <companion id> -NpcName '<companion name>' [-VoiceEnabled]"
     }
     Say 'INFO' "Server allowlist: the same actions, each checked against build $stamp's records (candidates, not qualified in game):"
     Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> -AllowedActions follow_player,hold_position -Build $(Lit $dir)"
