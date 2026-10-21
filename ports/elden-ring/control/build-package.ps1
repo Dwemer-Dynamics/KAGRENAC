@@ -7,22 +7,31 @@
     1. config: every value a finite number in range, no duplicates, no player id
     2. eldenring.exe SHA-256 equals the recorded build (a file check; the engine itself is
        not qualified by this)
-    3. extract-inputs.ps1: common.emevd, aicommon.luabnd and the two tiles' MSBs and event
-       files, read-only;
+    3. extract-inputs.ps1: common.emevd, aicommon.luabnd, 010000_logic.luabnd and the template's, companion's and
+       hostile's tile MSBs and event files, read-only;
        then one `dotnet build` of erpack into the output folder (no build servers)
-    4. erpack inspect on the user's MSBs and a copy of regulation.bin: the companion and the
-       hostile exist with the configured think row, team and no talk script; the action
-       button row exists; the new think row does not
+    4. erpack inspect on the user's MSBs and a copy of regulation.bin: the template and the
+       hostile exist with the configured think row, NpcParam row, team and no talk script; the
+       companion id does not exist yet; the action button row exists; the new think and
+       NpcParam rows do not.
+       erpack place then writes package/map/mapstudio/<companion_msb>.msb.dcx: the user's
+       destination MSB plus one copy of the template under the companion id and name, with the
+       control think row, the private NpcParam row and no backup animation (-1), beside
+       the grace of the configured BonfireWarpParam row (read from the user's regulation and
+       the Paramdex names), checked against that grace and its player part, and checked to be
+       the original plus only that part and model
     5. DarkScript3 /cmd: decompile common (the control event id must be free), add the one
        control event and InitializeEvent(0, event_control, 0) to event 0, compile into the
        work folder. erpack merge-events then writes package/event/common.emevd.dcx from the
        user's original binary common, keeping its events, instructions, parameters and
        strings, appending only that event and that one start, and checking everything else
-       is unchanged; the event id must also be free in both tiles' original event files and
-       every SetCharacterTeamType must target the companion. DarkScript3 decompiles the
-       merged file again as a last check.
-    6. luac 5.0.3: compile the logic; erpack pack: add it to aicommon.luabnd and clone the
-       think row into the regulation.bin copy, then re-read both
+       is unchanged; the event id must also be free in the tiles' original event files, the
+       event may set no team, and every character AI call must address the companion.
+       DarkScript3 decompiles the merged file again as a last check.
+    6. luac 5.0.3: compile the logic; erpack pack: add it to aicommon.luabnd, write it as its
+       own <logic_id>_logic.luabnd.dcx (laid out like the game's 010000_logic.luabnd), and clone the
+       think row (new logicId) and the NpcParam row (new teamType) into the regulation.bin
+       copy, then re-read both; a last inspect qualifies the placed copy with that regulation
   Every tool but the console `dotnet build` runs hidden; each has its own timeout and checked exit code; only the process the
   script started is stopped on a timeout. DOTNET_ROLL_FORWARD=Major, DOTNET_ReadyToRun=0
   and the game folder on PATH are set for erpack and DarkScript3 only; this session's
@@ -78,15 +87,39 @@ function Tile([string] $name) {
     return $v
 }
 $companion = Int 'companion_entity' 1000000 4294967295
+$template = Int 'template_entity' 1000000 4294967295
 $hostile = Int 'hostile_entity' 1000000 4294967295
-if ($companion -eq $hostile) { Refuse 'companion_entity and hostile_entity are the same' }
+if (@($companion, $template, $hostile | Sort-Object -Unique).Count -ne 3) { Refuse 'companion_entity, template_entity and hostile_entity must all differ' }
 $companionMsb = Tile 'companion_msb'
+$templateMsb = Tile 'template_msb'
 $hostileMsb = Tile 'hostile_msb'
+# The companion is a new copy of the template, placed beside one grace in companion_msb.
+$companionName = [string] $cfg.companion_name
+if ($companionName -notmatch '^c\d{4}_\d{4}$') { Refuse 'companion_name must look like cNNNN_NNNN (the template model, then a new instance)' }
+$graceRow = Int 'grace_bonfire_row' 1 2147483647
+$graceName = [string] $cfg.grace_name
+if (-not $graceName -or $graceName.Length -gt 100) { Refuse 'grace_name must be the row''s name from the Paramdex BonfireWarpParam names' }
+$posCfg = @($cfg.companion_position)
+if ($posCfg.Count -ne 3) { Refuse 'companion_position must be [x, y, z] in companion_msb''s coordinates' }
+$companionPos = foreach ($v in $posCfg) {
+    if ($null -eq $v -or $v -is [bool] -or -not ($v -is [ValueType])) { Refuse 'companion_position values must be numbers' }
+    $d = [double] $v
+    if ([double]::IsNaN($d) -or [double]::IsInfinity($d) -or [Math]::Abs($d) -gt 1000) { Refuse "companion_position value $v outside -1000..1000" }
+    $d
+}
 $originalAi = Int 'original_ai_id' 1 2147483647
 $controlAi = Int 'control_ai_id' 1 2147483647
 if ($originalAi -eq $controlAi) { Refuse 'control_ai_id must differ from original_ai_id' }
+$originalNpc = Int 'original_npc_id' 1 2147483647
+$controlNpc = Int 'control_npc_id' 1 2147483647
+if ($originalNpc -eq $controlNpc) { Refuse 'control_npc_id must differ from original_npc_id' }
 $originalTeam = Int 'original_team_type' 1 255
 $controlTeam = Int 'control_team_type' 1 255
+if ($controlTeam -eq $originalTeam) { Refuse 'control_team_type must differ from original_team_type' }
+# The control team goes only into the companion's private NpcParam row, never into an event
+# (the EMEDF Team Type enum lists neither 47 nor 48). Accepted: the raw teamType of the
+# game's own spirit-summon NpcParam rows (Paramdex TEAM_TYPE 47 "Spirit Summon").
+if ($controlTeam -ne 47) { Refuse 'control_team_type must be 47 (the teamType of the game''s spirit-summon NpcParam rows)' }
 $hostileTeam = Int 'hostile_team_type' 1 255
 if ($hostileTeam -in $originalTeam, $controlTeam) { Refuse 'hostile_team_type must differ from original_team_type and control_team_type' }
 $logicId = Int 'logic_id' 1 2147483647
@@ -112,6 +145,7 @@ $inv = [Globalization.CultureInfo]::InvariantCulture
 $logicName = "kagrenac$logicId"
 $values = [ordered]@{
     COMPANION = $companion; HOSTILE = $hostile; ORIGINAL_AI = $originalAi; CONTROL_AI = $controlAi
+    ORIGINAL_NPC = $originalNpc; CONTROL_NPC = $controlNpc
     ORIGINAL_TEAM = $originalTeam; CONTROL_TEAM = $controlTeam; HOSTILE_TEAM = $hostileTeam
     LOGIC_ID = $logicId; LOGIC_NAME = $logicName; E_CONTROL = $eventControl
     BUTTON_PARAM = $button; CMD_HOLD = $commands.command_hold; CMD_FOLLOW = $commands.command_follow
@@ -184,10 +218,11 @@ function Tool([string] $exe, [string[]] $argv, [string] $log) { Run $exe $argv $
 
 # 3. Extract the allowlisted inputs.
 $vanilla = Join-Path $work 'vanilla'
-$msbs = @("/map/mapstudio/$companionMsb.msb.dcx", "/map/mapstudio/$hostileMsb.msb.dcx") | Sort-Object -Unique
-$mapEvents = @("/event/$companionMsb.emevd.dcx", "/event/$hostileMsb.emevd.dcx") | Sort-Object -Unique
+$tiles = @($companionMsb, $templateMsb, $hostileMsb) | Sort-Object -Unique
+$msbs = @($tiles | ForEach-Object { "/map/mapstudio/$_.msb.dcx" })
+$mapEvents = @($tiles | ForEach-Object { "/event/$_.emevd.dcx" })
 & (Join-Path $PSScriptRoot 'extract-inputs.ps1') `
-    -GameDir $GameDir -UxmExe $Uxm -OutDir $vanilla -Files (@('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx') + $msbs + $mapEvents)
+    -GameDir $GameDir -UxmExe $Uxm -OutDir $vanilla -Files (@('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx', '/script/010000_logic.luabnd.dcx') + $msbs + $mapEvents)
 if ($LASTEXITCODE -ne 0) { Refuse 'extract-inputs.ps1 failed' }
 $steps.extract = Get-Content -LiteralPath (Join-Path $vanilla 'extract.json') -Raw | ConvertFrom-Json
 
@@ -211,30 +246,61 @@ $defs = Join-Path $work 'paramdex'
 $zip = [IO.Compression.ZipFile]::OpenRead($Paramdex)
 try {
     New-Item -ItemType Directory -Force -Path $defs | Out-Null
-    foreach ($n in 'NpcThinkParam', 'NpcParam', 'ActionButtonParam') {
+    foreach ($n in 'NpcThinkParam', 'NpcParam', 'ActionButtonParam', 'BonfireWarpParam') {
         [IO.Compression.ZipFileExtensions]::ExtractToFile($zip.GetEntry("ER/Defs/$n.xml"), (Join-Path $defs "$n.xml"))
     }
+    $graceNames = Join-Path $work 'BonfireWarpParam.names.txt'
+    [IO.Compression.ZipFileExtensions]::ExtractToFile($zip.GetEntry('ER/Names/BonfireWarpParam.txt'), $graceNames)
 } finally { $zip.Dispose() }
 $msbPaths = $msbs | ForEach-Object { Join-Path $vanilla $_.TrimStart('/') }
 $code = Tool $erpack (@('inspect', '--oodle', $Oodle, '--regulation', $regCopy, '--paramdex', $defs, '--msb') + $msbPaths +
-    @('--think', $controlAi, '--buttons', $button)) (Join-Path $work 'inspect')
+    @('--think', $controlAi, '--npc', $originalNpc, $controlNpc, '--buttons', $button)) (Join-Path $work 'inspect')
 if ($code -ne 0) { Refuse "erpack inspect failed: $(Get-Content "$work\inspect.err" -Raw)" }
 # Plain strings: Windows PowerShell 5.1 ConvertTo-Json also serializes the PSPath/PSDrive/
 # PSProvider notes Get-Content attaches to each line, which grows without bound at -Depth 12.
 $inspect = [IO.File]::ReadAllLines("$work\inspect.out")
-function Part([int64] $entity) {
-    $l = @($inspect | Where-Object { $_ -match " entity=$entity " })
+function Part([string[]] $lines, [int64] $entity) {
+    $l = @($lines | Where-Object { $_ -match " entity=$entity " })
     if ($l.Count -ne 1) { Refuse "entity $entity found $($l.Count) times in the MSBs" }
     return $l[0]
 }
-$c = Part $companion; $h = Part $hostile
-if ($c -notmatch " think=$originalAi " -or $c -notmatch " team=$originalTeam " -or $c -notmatch ' talk=0 ') {
-    Refuse "companion does not match original_ai_id/original_team_type or has a talk script: $c"
+function Companion([string] $line, [string] $what, [int64] $npcId, [int64] $think, [int64] $team) {
+    if ($line -notmatch " npc=$npcId " -or $line -notmatch " think=$think " -or $line -notmatch " team=$team " -or $line -notmatch ' talk=0 ') {
+        Refuse "$what does not have NpcParam $npcId, think row $think and team $team, or has a talk script: $line"
+    }
 }
+$t = Part $inspect $template; $h = Part $inspect $hostile
+Companion $t 'template' $originalNpc $originalAi $originalTeam
+if (@($inspect | Where-Object { $_ -match " entity=$companion " }).Count -ne 0) { Refuse "companion_entity $companion already exists in the MSBs" }
 if ($h -notmatch " team=$hostileTeam " -or $h -match ' talk=[1-9]') { Refuse "hostile does not match hostile_team_type or has a talk script: $h" }
 if (-not ($inspect -match "^think $controlAi exists=False$")) { Refuse "NpcThinkParam $controlAi already exists" }
+if (-not ($inspect -match "^npc $originalNpc exists=True team=$originalTeam$")) { Refuse "NpcParam $originalNpc missing or not team $originalTeam" }
+if (-not ($inspect -match "^npc $controlNpc exists=False team=$")) { Refuse "NpcParam $controlNpc already exists" }
 if (-not ($inspect -match "^button $button regionType=")) { Refuse "ActionButtonParam $button not found" }
-$steps.ids = [ordered]@{ companion = $c; hostile = $h; button = @($inspect -match "^button $button")[0] }
+
+# The companion: one copy of the template in a new copy of companion_msb, beside the grace.
+# Limits: 3 to 4 m from the grace, within 0.5 m of its height and of its player part, 2.5 m
+# clear of characters, 2 m of assets, 1 m outside event regions; the id and name must be new
+# in every extracted MSB and event file.
+$pkgMap = Join-Path $pkg 'map\mapstudio'
+New-Item -ItemType Directory -Force -Path $pkgMap | Out-Null
+$placedMsb = Join-Path $pkgMap "$companionMsb.msb.dcx"
+$code = Tool $erpack (@('place', '--oodle', $Oodle, '--template', (Join-Path $vanilla "map\mapstudio\$templateMsb.msb.dcx"),
+    '--template-entity', $template, '--dest', (Join-Path $vanilla "map\mapstudio\$companionMsb.msb.dcx"),
+    '--dest-events', (Join-Path $vanilla "event\$companionMsb.emevd.dcx"), '--out', $placedMsb,
+    '--entity', $companion, '--name', $companionName, '--think', $controlAi, '--npc', $controlNpc, '--backup-anim', '-1',
+    '--pos') + @($companionPos | ForEach-Object { $_.ToString('R', $inv) }) + @(
+    '--regulation', $regCopy, '--paramdex', $defs, '--bonfire-names', $graceNames, '--bonfire-row', $graceRow, '--bonfire-name', $graceName,
+    '--offset-min', '3', '--offset-max', '4', '--max-dy', '0.5', '--clear-chr', '2.5', '--clear-asset', '2', '--clear-region', '1',
+    '--check-msb') + $msbPaths + @('--check-events', (Join-Path $vanilla 'event\common.emevd.dcx')) + @($mapEvents | ForEach-Object { Join-Path $vanilla $_.TrimStart('/') })) (Join-Path $work 'place')
+if ($code -ne 0 -or -not (Test-Path -LiteralPath $placedMsb)) {
+    Refuse "erpack place failed (exit $code): $(Get-Content "$work\place.out", "$work\place.err" -Raw)"
+}
+try { $place = Get-Content -LiteralPath "$work\place.out" -Raw | ConvertFrom-Json } catch { $place = $null }
+if ($null -eq $place -or $place.ok -ne $true -or $place.original_entries_unchanged -ne $true -or $place.id_in_output -ne 1) {
+    Refuse 'erpack place did not report a verified copy'
+}
+$steps.place = $place
 
 function Render([string] $template) {
     $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $template) -Raw
@@ -306,14 +372,15 @@ $pkgEvent = Join-Path $pkg 'event'
 New-Item -ItemType Directory -Force -Path $pkgEvent | Out-Null
 $emevdOut = Join-Path $pkgEvent 'common.emevd.dcx'
 $code = Tool $erpack (@('merge-events', '--original', $vanillaEmevd, '--compiled', $compiled, '--event', $eventControl,
-    '--out', $emevdOut, '--oodle', $Oodle, '--expect-teams', $originalTeam, $controlTeam, '--expect-entity', $companion,
+    '--out', $emevdOut, '--oodle', $Oodle, '--expect-teams', '--expect-entity', $companion,
     '--check-events') + @($mapEvents | ForEach-Object { Join-Path $vanilla $_.TrimStart('/') })) (Join-Path $work 'merge')
 if ($code -ne 0 -or -not (Test-Path -LiteralPath $emevdOut)) {
     Refuse "erpack merge-events failed (exit $code): $(Get-Content "$work\merge.out", "$work\merge.err" -Raw)"
 }
 try { $merge = Get-Content -LiteralPath "$work\merge.out" -Raw | ConvertFrom-Json } catch { $merge = $null }
 if ($null -eq $merge) { Refuse 'erpack merge-events did not report its checks as JSON' }
-if ($merge.ok -ne $true -or $merge.teams_ok -ne $true -or $merge.entity_ok -ne $true -or @($merge.event_id_checks).Count -ne $mapEvents.Count) {
+if ($merge.ok -ne $true -or $merge.teams_ok -ne $true -or @($merge.team_commands).Count -ne 0 -or $merge.entity_ok -ne $true -or
+        @($merge.event_id_checks).Count -ne $mapEvents.Count) {
     Refuse "erpack merge-events reported ok=$($merge.ok) teams_ok=$($merge.teams_ok) entity_ok=$($merge.entity_ok)"
 }
 # Last check on the file actually packaged: DarkScript3 reads it back with the control event,
@@ -347,16 +414,35 @@ if ($code -ne 0 -or -not (Test-Path -LiteralPath $luaBin)) { Refuse "luac failed
 $spec = [ordered]@{
     luabnd = (Join-Path $vanilla 'script\aicommon.luabnd.dcx'); lua_bytecode = $luaBin; lua_file = "${logicName}_logic.lua"
     logic_id = $logicId; logic_name = $logicName; globals = @("${logicName}_Logic", "${logicName}_Interupt")
-    regulation = $regCopy; paramdex = $defs; think_source = $originalAi; think_new = $controlAi; out_dir = $pkg
+    regulation = $regCopy; paramdex = $defs; think_source = $originalAi; think_new = $controlAi
+    npc_source = $originalNpc; npc_new = $controlNpc; npc_team = $controlTeam
+    logic_layout = (Join-Path $vanilla 'script\010000_logic.luabnd.dcx'); out_dir = $pkg
 }
 $specPath = Join-Path $work 'pack.json'
 [IO.File]::WriteAllText($specPath, ($spec | ConvertTo-Json), $utf8)
 $code = Tool $erpack @('pack', '--oodle', $Oodle, '--spec', $specPath) (Join-Path $work 'pack')
 if ($code -ne 0) { Refuse "erpack pack failed: $(Get-Content "$work\pack.err" -Raw)" }
 $steps.pack = Get-Content -LiteralPath "$work\pack.out" -Raw | ConvertFrom-Json
+if ($steps.pack.ok -ne $true -or $steps.pack.logic_file.ok -ne $true) { Refuse 'erpack pack did not report a verified aicommon, per-logic file and regulation' }
+
+# Qualify the copy as the game would see it: the template's and the placed tile's MSBs with the
+# packaged regulation.bin. The copy alone has the control think row (logic $logicId) and the
+# private NpcParam row (team $controlTeam); the template keeps its own rows.
+$code = Tool $erpack @('inspect', '--oodle', $Oodle, '--regulation', (Join-Path $pkg 'regulation.bin'), '--paramdex', $defs, '--msb',
+    (Join-Path $vanilla "map\mapstudio\$templateMsb.msb.dcx"), $placedMsb, '--npc', $originalNpc, $controlNpc) (Join-Path $work 'inspect-placed')
+if ($code -ne 0) { Refuse "erpack inspect of the placed MSB failed: $(Get-Content "$work\inspect-placed.err" -Raw)" }
+$placedLines = [IO.File]::ReadAllLines("$work\inspect-placed.out")
+$c = Part $placedLines $companion
+Companion $c 'placed companion' $controlNpc $controlAi $controlTeam
+if ($c -notmatch " logic=$logicId ") { Refuse "placed companion does not run logic $logicId`: $c" }
+if ($c -notmatch "^$companionName ") { Refuse "placed companion is not named $companionName`: $c" }
+if ((Part $placedLines $template) -ne $t) { Refuse 'template changed in the inspect of the placed MSB' }
+if (-not ($placedLines -match "^npc $originalNpc exists=True team=$originalTeam$")) { Refuse "NpcParam $originalNpc changed in the package" }
+$steps.ids = [ordered]@{ companion = $c; template = $t; hostile = $h; button = @($inspect -match "^button $button")[0] }
 
 $outputs = [ordered]@{}
-foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', 'regulation.bin') {
+$logicFile = "script\$('{0:D6}' -f $logicId)_logic.luabnd.dcx"
+foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', $logicFile, 'regulation.bin', "map\mapstudio\$companionMsb.msb.dcx") {
     $outputs[$f.Replace('\', '/')] = Sha256 (Join-Path $pkg $f)
 }
 $manifest = [ordered]@{
@@ -364,24 +450,36 @@ $manifest = [ordered]@{
     game_exe_sha256 = $exeSha
     outputs = $outputs
     commands = [ordered]@{
-        event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $eventControl --out package/event/common.emevd.dcx --expect-teams $originalTeam $controlTeam --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
-        script_and_param = 'luac -s; erpack pack (aicommon.luabnd copy and regulation.bin copy, each re-read)'
+        event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $eventControl --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
+        script_and_param = "luac -s; erpack pack (aicommon.luabnd copy, new $($logicFile.Replace('\', '/')) and regulation.bin copy, each re-read)"
+        map = "erpack place --template <user $templateMsb.msb.dcx> --template-entity $template --dest <user $companionMsb.msb.dcx> --entity $companion --name $companionName --think $controlAi --npc $controlNpc --backup-anim -1 --bonfire-row $graceRow (re-read and compared with the original); erpack inspect of the placed MSB with the packaged regulation.bin"
     }
     source_preservation = [ordered]@{
         'event/common.emevd.dcx' = "the user's original binary common with its events, instructions, parameters and strings kept; only event $eventControl and one InitializeEvent(0, $eventControl, 0) in event 0 added, the rest checked unchanged by erpack merge-events (steps.emevd.merge)"
         'script/aicommon.luabnd.dcx' = "the user's original with one added logic file $logicName and its LUAINFO/LUAGNL names"
-        'regulation.bin' = "a copy of the user's original with NpcThinkParam $controlAi cloned from $originalAi"
+        ($logicFile.Replace('\', '/')) = "new: the same logic as its own per-logic file, laid out like the game's 010000_logic.luabnd.dcx (container, entry ids, flags and folder naming), with only logic $logicId in its LUAINFO and LUAGNL (steps.pack.logic_file)"
+        'regulation.bin' = "a copy of the user's original with NpcThinkParam $controlAi cloned from $originalAi (only logicId changed) and NpcParam $controlNpc cloned from $originalNpc (only teamType changed, to $controlTeam); every other row, $originalAi and $originalNpc included, and every other file unchanged (steps.pack)"
+        "map/mapstudio/$companionMsb.msb.dcx" = "the user's original with one enemy $companionName (entity $companion, a copy of $template from $templateMsb with think $controlAi, NpcParam $controlNpc and BackupEventAnimID -1) and its model entry if missing; with those removed it equals the original byte for byte, decompressed (steps.place)"
     }
     values = $values
+    companion_copy = [ordered]@{
+        template_entity = $template; template_msb = $templateMsb; companion_msb = $companionMsb; companion_name = $companionName
+        companion_position = $companionPos; grace_bonfire_row = $graceRow; grace_name = $graceName
+    }
     steps = $steps
     untested = @(
         "common event 0 starting control event $eventControl on every load or warp (constructor lifetime not confirmed)",
-        'a reload or warp while controlled: the event restarts at idle without a restore, so the game must rebuild the companion with its original AI and team',
-        "ActionButtonParam $button showing a prompt on a character from an event, and one press passing only one wait",
+        "the copy loading friendly and holding: team $controlTeam from its private NpcParam row $controlNpc (the teamType of the game's spirit-summon rows) keeping it off the player and the player off it, and logic $logicId waiting with no request",
+        "ActionButtonParam $button showing a prompt on a friendly character from an event, and one press passing only one wait",
         "IfElapsedSeconds($lease) in the attack wait counting from that wait, not from the event start",
-        "control team $controlTeam (raw NpcParam team, seen on spirit-summon rows) being accepted by SetCharacterTeamType and keeping the soldier off the player",
-        "GOAL_COMMON_AttackTunableSpin with animation $attackAnim on TARGET_EVENT hitting the selected hostile",
-        'the logic running and the soldier obeying follow, hold and attack'
+        "the game running logic $logicId for think row $controlAi at all (from $($logicFile.Replace('\', '/')) or aicommon)",
+        'GOAL_COMMON_ApproachTarget on TARGET_LOCALPLAYER following the player, and GOAL_COMMON_Turn on TARGET_LOCALPLAYER facing the player within follow range',
+        "SetCharacterEventTarget setting TARGET_EVENT, and GOAL_COMMON_AttackTunableSpin with animation $attackAnim on it hitting the selected hostile",
+        'the logic running without COMMON_EasySetup_Initial, and the soldier obeying follow, hold and attack',
+        'a reload, warp, death or release returning the copy to a friendly hold',
+        "the copy $companionName standing on the ground at $($companionPos -join ', ') in $companionMsb (height checked only against the grace asset and its player part, not against terrain collision)",
+        "a team-$controlTeam copy within the grace's RegisterBonfire enemy deactivation distance ($($place.grace.register_bonfire.enemy_deactivation_distance) m) not blocking resting at the grace",
+        "the game loading $companionMsb.msb.dcx from the package with the added part and model, and the copy without the template's BackupEventAnimID 704 starting in a normal standing pose"
     )
     attack_evidence = [ordered]@{
         asset = '/script/431000_battle.luabnd.dcx (Data0, 5952 bytes, sha256 c1295e3a21536027e751651ba565d2985ae07dd721ca4e79bc3f9320cbf8500b)'

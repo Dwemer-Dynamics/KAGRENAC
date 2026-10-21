@@ -2,12 +2,21 @@
 // Uses only the public SoulsFormats API from the user's own WitchyBND 3.0.1 release.
 //   inspect  lists MSB enemies with their think/NPC param rows, LUAINFO entries, NPC teams,
 //            think rows and action buttons
-//   pack     adds one compiled Lua logic (+ LUAINFO/LUAGNL names) to a copy of aicommon.luabnd
-//            and clones one NpcThinkParam row in a copy of regulation.bin, then re-reads both
+//   pack     adds one compiled Lua logic (+ LUAINFO/LUAGNL names) to a copy of aicommon.luabnd,
+//            writes it as its own <id>_logic.luabnd laid out like a game per-logic file
+//            and, in a copy of regulation.bin, clones one NpcThinkParam row (new logicId) and one
+//            NpcParam row (new teamType) for the companion alone, then re-reads both
 //   merge-events  adds one owned event and its InitializeEvent from a compiled common.emevd to
 //            the game's original one, so no game event is re-encoded by the script compiler;
-//            --check-events: map event files the id must also be free in; --expect-teams and
-//            --expect-entity: what every SetCharacterTeamType must set and target
+//            --check-events: map event files the id must also be free in; --expect-teams: the
+//            teams SetCharacterTeamType may set (given with no value: none allowed);
+//            --expect-entity: the one character every character AI call (2004[2/11/16/17/19/20])
+//            must address
+//   place    adds one copy of a template enemy, under a new entity id and name and with its own
+//            think row, NpcParam row and backup animation, to a copy of a destination MSB beside
+//            the grace named by a BonfireWarpParam row; refuses an id or
+//            name already used in any given MSB or event file, then checks the written file is
+//            the original plus only that part (and its model entry if the map lacked it)
 // It reads its inputs and writes only new files (the spec's out_dir, or --out), never overwriting:
 // outputs go to *.partial and are moved into place only after re-read verification passes.
 using System;
@@ -31,7 +40,8 @@ static class Program
                 "inspect" => Inspect(opt),
                 "pack" => Pack(opt),
                 "merge-events" => MergeEvents(opt),
-                _ => Fail("usage: erpack inspect|pack|merge-events --option value ..."),
+                "place" => Place(opt),
+                _ => Fail("usage: erpack inspect|pack|merge-events|place --option value ..."),
             };
         }
         catch (Exception e) { return Fail(e.ToString()); }
@@ -99,7 +109,7 @@ static class Program
             Console.WriteLine($"luabnd files={bnd.Files.Count} maxId={bnd.Files.Where(f => f.ID < 1000000).Max(f => f.ID)} goals={info.Goals.Count}");
         }
         foreach (var id in (o.GetValueOrDefault("npc") ?? new List<string>()).Select(int.Parse))
-            Console.WriteLine($"npc {id} team={npc.Rows.FirstOrDefault(r => r.ID == id)?["teamType"].Value}");
+            Console.WriteLine($"npc {id} exists={npc.Rows.Any(r => r.ID == id)} team={npc.Rows.FirstOrDefault(r => r.ID == id)?["teamType"].Value}");
         foreach (var id in (o.GetValueOrDefault("think") ?? new List<string>()).Select(int.Parse))
             Console.WriteLine($"think {id} exists={think.Rows.Any(r => r.ID == id)}");
         if (o.TryGetValue("buttons", out var ids))
@@ -127,6 +137,10 @@ static class Program
         public string paramdex { get; set; }
         public int think_source { get; set; }
         public int think_new { get; set; }
+        public int npc_source { get; set; }
+        public int npc_new { get; set; }
+        public byte npc_team { get; set; }
+        public string logic_layout { get; set; }
         public string out_dir { get; set; }
     }
 
@@ -136,7 +150,9 @@ static class Program
         // Never overwrite: refuse before any write if a final or partial output is already there.
         var luaOut = Path.Combine(s.out_dir, "script", "aicommon.luabnd.dcx");
         var regOut = Path.Combine(s.out_dir, "regulation.bin");
-        foreach (var p in new[] { luaOut, regOut, luaOut + ".partial", regOut + ".partial" }.Where(Path.Exists))
+        var each = $"{s.logic_id:D6}_logic";
+        var eachOut = Path.Combine(s.out_dir, "script", each + ".luabnd.dcx");
+        foreach (var p in new[] { luaOut, regOut, eachOut, luaOut + ".partial", regOut + ".partial", eachOut + ".partial" }.Where(Path.Exists))
             return Fail("output already exists, refusing to overwrite: " + p);
         var code = File.ReadAllBytes(s.lua_bytecode);
         var luaHeader = new byte[] { 0x1b, 0x4c, 0x75, 0x61, 0x50, 0x01, 0x04, 0x08, 0x04, 0x06, 0x08, 0x09, 0x09, 0x08 };
@@ -180,8 +196,34 @@ static class Program
         Directory.CreateDirectory(Path.GetDirectoryName(luaOut));
         bnd.Write(luaOut + ".partial", bnd.Compression);
 
+        // <id>_logic.luabnd.dcx: in the user's archives 70 of the 84 logic ids used by think rows
+        // have their own file of this name (the checked placed logics 10000, 410000 and 430000 do;
+        // 14 ids have none). That the game loads a logic from it is not proven; as a packaging
+        // hypothesis the logic also goes into one, laid out like the game's per-logic file given
+        // as logic_layout: the same
+        // container, entry ids, flags and folder naming, one .lua, one .luagnl, one .luainfo.
+        var layout = BND4.Read(s.logic_layout);
+        if (layout.Files.Count != 3 || layout.Files.Count(f => f.Name.EndsWith(".lua")) != 1
+            || layout.Files.Count(f => f.Name.EndsWith(".luagnl")) != 1 || layout.Files.Count(f => f.Name.EndsWith(".luainfo")) != 1)
+            return Fail("logic_layout is not a per-logic luabnd (one .lua, .luagnl and .luainfo); not guessing");
+        var layoutInfo = LUAINFO.Read(layout.Files.Single(f => f.Name.EndsWith(".luainfo")).Bytes);
+        if (layoutInfo.Goals.Count != 1 || !LogicShape(layoutInfo.Goals[0])) return Fail("logic_layout does not register exactly one logic");
+        var layoutEach = $"{layoutInfo.Goals[0].ID:D6}_logic";
+        if (!layout.Files.All(f => f.Name.Contains($"\\{layoutEach}\\{layoutEach}."))) return Fail($"logic_layout entries are not named {layoutEach}; not guessing");
+        if (!layout.Files.Single(f => f.Name.EndsWith(".lua")).Bytes.Take(luaHeader.Length).SequenceEqual(luaHeader)) return Fail("logic_layout Lua entry has another header");
+        foreach (var f in layout.Files)
+        {
+            var original = f.Name;
+            f.Name = original.Replace($"\\{layoutEach}\\{layoutEach}.", $"\\{each}\\{each}.");
+            if (original.EndsWith(".lua")) f.Bytes = code;
+            else if (original.EndsWith(".luainfo")) { layoutInfo.Goals.Clear(); layoutInfo.Goals.Add(newGoal); f.Bytes = layoutInfo.Write(); }
+            else { var g = LUAGNL.Read(f.Bytes); g.Globals.Clear(); g.Globals.AddRange(s.globals); f.Bytes = g.Write(); }
+        }
+        layout.Write(eachOut + ".partial", layout.Compression);
+
         // regulation.bin copy: clone the companion's think row; only logicId changes. battleGoalID
-        // is kept for compatibility; the control logic does not queue it.
+        // is kept for compatibility; the control logic does not queue it. Clone its NpcParam row
+        // too; only teamType changes. The source rows, used by the original soldier, stay as they are.
         var reg = RegulationDecryptor.DecryptERRegulation(s.regulation);
         var thinkFile = reg.Files.Single(f => Path.GetFileName(f.Name) == "NpcThinkParam.param");
         var think = PARAM.Read(thinkFile.Bytes);
@@ -196,6 +238,20 @@ static class Program
         think.Rows.Add(row);
         think.Rows.Sort((a, b) => a.ID.CompareTo(b.ID));
         thinkFile.Bytes = think.Write();
+        var npcFile = reg.Files.Single(f => Path.GetFileName(f.Name) == "NpcParam.param");
+        var npc = PARAM.Read(npcFile.Bytes);
+        npc.ApplyParamdef(PARAMDEF.XmlDeserialize(Path.Combine(s.paramdex, "NpcParam.xml")));
+        var nsrc = npc.Rows.SingleOrDefault(r => r.ID == s.npc_source);
+        if (nsrc == null) return Fail($"NpcParam {s.npc_source} not found");
+        if (npc.Rows.Any(r => r.ID == s.npc_new)) return Fail($"NpcParam {s.npc_new} already exists");
+        if (Convert.ToByte(nsrc["teamType"].Value) == s.npc_team) return Fail($"NpcParam {s.npc_source} already has team {s.npc_team}; nothing to clone");
+        var nrow = new PARAM.Row(s.npc_new, "KAGRENAC companion", npc.AppliedParamdef);
+        for (int i = 0; i < nsrc.Cells.Count; i++)
+            nrow.Cells[i].Value = nsrc.Cells[i].Value is byte[] b ? b.Clone() : nsrc.Cells[i].Value;
+        nrow["teamType"].Value = s.npc_team;
+        npc.Rows.Add(nrow);
+        npc.Rows.Sort((a, b) => a.ID.CompareTo(b.ID));
+        npcFile.Bytes = npc.Write();
         RegulationDecryptor.EncryptERRegulation(regOut + ".partial", reg);
 
         // Re-read what was written and compare it with fresh reads of the inputs.
@@ -208,29 +264,40 @@ static class Program
         var gnl2 = LUAGNL.Read(bnd2.Files.Single(f => f.Name.EndsWith(".luagnl")).Bytes);
         var reg0 = RegulationDecryptor.DecryptERRegulation(s.regulation);
         var reg2 = RegulationDecryptor.DecryptERRegulation(regOut + ".partial");
-        PARAM ReadThink(BND4 r)
+        PARAM ReadParam(BND4 r, string name, PARAMDEF def)
         {
-            var t = PARAM.Read(r.Files.Single(f => Path.GetFileName(f.Name) == "NpcThinkParam.param").Bytes);
-            t.ApplyParamdef(think.AppliedParamdef);
+            var t = PARAM.Read(r.Files.Single(f => Path.GetFileName(f.Name) == name + ".param").Bytes);
+            t.ApplyParamdef(def);
             return t;
         }
-        var think0 = ReadThink(reg0);
-        var think2 = ReadThink(reg2);
+        var think0 = ReadParam(reg0, "NpcThinkParam", think.AppliedParamdef);
+        var think2 = ReadParam(reg2, "NpcThinkParam", think.AppliedParamdef);
         var r2 = think2.Rows.Single(r => r.ID == s.think_new);
         var s2 = think2.Rows.Single(r => r.ID == s.think_source);
         var differing = Enumerable.Range(0, r2.Cells.Count).Where(i => !Same(r2.Cells[i].Value, s2.Cells[i].Value)).ToList();
+        var npc0 = ReadParam(reg0, "NpcParam", npc.AppliedParamdef);
+        var npc2 = ReadParam(reg2, "NpcParam", npc.AppliedParamdef);
+        var n2 = npc2.Rows.Single(r => r.ID == s.npc_new);
+        var ns2 = npc2.Rows.Single(r => r.ID == s.npc_source);
+        var npcDiffering = Enumerable.Range(0, n2.Cells.Count).Where(i => !Same(n2.Cells[i].Value, ns2.Cells[i].Value)).ToList();
 
         // Collateral: everything else must equal a fresh read of the inputs.
         bool SameFile(BinderFile a, BinderFile b, bool bytes) =>
             a.ID == b.ID && a.Name == b.Name && a.Flags == b.Flags && (!bytes || a.Bytes.AsSpan().SequenceEqual(b.Bytes));
         var regBad = reg2.Files.Count != reg0.Files.Count ? new List<string> { "file count" } : Enumerable.Range(0, reg0.Files.Count)
-            .Where(i => !SameFile(reg0.Files[i], reg2.Files[i], Path.GetFileName(reg0.Files[i].Name) != "NpcThinkParam.param"))
+            .Where(i => !SameFile(reg0.Files[i], reg2.Files[i], Path.GetFileName(reg0.Files[i].Name) is not ("NpcThinkParam.param" or "NpcParam.param")))
             .Select(i => reg0.Files[i].Name).ToList();
-        var rows2 = think2.Rows.Where(r => r.ID != s.think_new).ToList();
-        var rowsBad = rows2.Count != think0.Rows.Count ? new List<int> { -1 } : Enumerable.Range(0, rows2.Count)
-            .Where(i => rows2[i].ID != think0.Rows[i].ID || rows2[i].Name != think0.Rows[i].Name
-                || Enumerable.Range(0, rows2[i].Cells.Count).Any(c => !Same(rows2[i].Cells[c].Value, think0.Rows[i].Cells[c].Value)))
-            .Select(i => think0.Rows[i].ID).ToList();
+        // Every other row of both params, the source rows included, equals the original.
+        List<int> RowsBad(PARAM before, PARAM after, int added)
+        {
+            var rows = after.Rows.Where(r => r.ID != added).ToList();
+            return rows.Count != before.Rows.Count ? new List<int> { -1 } : Enumerable.Range(0, rows.Count)
+                .Where(i => rows[i].ID != before.Rows[i].ID || rows[i].Name != before.Rows[i].Name
+                    || Enumerable.Range(0, rows[i].Cells.Count).Any(c => !Same(rows[i].Cells[c].Value, before.Rows[i].Cells[c].Value)))
+                .Select(i => before.Rows[i].ID).ToList();
+        }
+        var rowsBad = RowsBad(think0, think2, s.think_new);
+        var npcRowsBad = RowsBad(npc0, npc2, s.npc_new);
         bool Meta(BinderFile f) => f.Name.EndsWith(".luainfo") || f.Name.EndsWith(".luagnl");
         // Position by position, with the new entry removed, so a reorder counts as a change.
         var kept = bnd2.Files.Where(f => f.ID != id).ToList();
@@ -255,6 +322,33 @@ static class Program
         if (bnd2.Version != bnd0.Version) containerBad.Add("luabnd version");
         if (bnd2.Format != bnd0.Format) containerBad.Add("luabnd format");
         if (Dcx(bnd2.Compression) != Dcx(bnd0.Compression)) containerBad.Add("luabnd compression");
+        // The per-logic file against a fresh read of its layout: same container, entries in the
+        // same order with the same ids and flags, only the names' logic id and the contents new.
+        var lay0 = BND4.Read(s.logic_layout);
+        var each2 = BND4.Read(eachOut + ".partial");
+        var eachBad = new List<string>();
+        if (each2.Version != lay0.Version || each2.Format != lay0.Format || each2.Unicode != lay0.Unicode || each2.Extended != lay0.Extended
+            || each2.BigEndian != lay0.BigEndian || each2.BitBigEndian != lay0.BitBigEndian || each2.Unk04 != lay0.Unk04 || each2.Unk05 != lay0.Unk05)
+            eachBad.Add("container header");
+        if (Dcx(each2.Compression) != Dcx(lay0.Compression)) eachBad.Add("compression");
+        if (each2.Files.Count != lay0.Files.Count) eachBad.Add("file count");
+        else for (int i = 0; i < lay0.Files.Count; i++)
+        {
+            var (a, b) = (lay0.Files[i], each2.Files[i]);
+            if (a.ID != b.ID || a.Flags != b.Flags || b.Name != a.Name.Replace($"\\{layoutEach}\\{layoutEach}.", $"\\{each}\\{each}."))
+                eachBad.Add("entry " + a.ID);
+            else if (b.Name.EndsWith(".lua") && !b.Bytes.AsSpan().SequenceEqual(code)) eachBad.Add("lua bytes");
+            else if (b.Name.EndsWith(".luainfo"))
+            {
+                var (i0, i2) = (LUAINFO.Read(a.Bytes), LUAINFO.Read(b.Bytes));
+                if (i2.Goals.Count != 1 || !Goal(i2.Goals[0], newGoal) || i2.BigEndian != i0.BigEndian || i2.LongFormat != i0.LongFormat) eachBad.Add("luainfo");
+            }
+            else if (b.Name.EndsWith(".luagnl"))
+            {
+                var (g0, g2) = (LUAGNL.Read(a.Bytes), LUAGNL.Read(b.Bytes));
+                if (!g2.Globals.SequenceEqual(s.globals) || g2.BigEndian != g0.BigEndian || g2.LongFormat != g0.LongFormat) eachBad.Add("luagnl");
+            }
+        }
         bool containers = containerBad.Count == 0;
 
         bool ok = entry.Bytes.SequenceEqual(code) && entry.Name == dir + s.lua_file && entry.Flags == game[0].Flags
@@ -262,11 +356,15 @@ static class Program
             && s.globals.All(gnl2.Globals.Contains) && (int)r2["logicId"].Value == s.logic_id
             && Equals(r2["battleGoalID"].Value, s2["battleGoalID"].Value)
             && differing.Select(i => r2.Cells[i].Def.InternalName).SequenceEqual(new[] { "logicId" })
-            && regBad.Count == 0 && rowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers;
+            && Convert.ToByte(n2["teamType"].Value) == s.npc_team
+            && npcDiffering.Select(i => n2.Cells[i].Def.InternalName).SequenceEqual(new[] { "teamType" })
+            && regBad.Count == 0 && rowsBad.Count == 0 && npcRowsBad.Count == 0 && luaBad.Count == 0 && goalsKept && globalsKept && containers
+            && eachBad.Count == 0;
         if (ok)
         {
             File.Move(luaOut + ".partial", luaOut, false);
             File.Move(regOut + ".partial", regOut, false);
+            File.Move(eachOut + ".partial", eachOut, false);
         }
         static string Show(object v) => v is byte[] a ? Convert.ToHexString(a) : v?.ToString();
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -279,9 +377,13 @@ static class Program
             think_cells_differing_from_source = differing.Select(i => r2.Cells[i].Def.InternalName),
             think_cell_diffs = differing.Select(i => new { name = r2.Cells[i].Def.InternalName, type = r2.Cells[i].Def.DisplayType.ToString(),
                 value = Show(r2.Cells[i].Value), source = Show(s2.Cells[i].Value) }),
-            collateral = new { regulation_files_changed = regBad, think_rows_changed = rowsBad, luabnd_files_changed = luaBad,
+            npc_row = s.npc_new, npc_cell_diffs = npcDiffering.Select(i => new { name = n2.Cells[i].Def.InternalName,
+                value = Show(n2.Cells[i].Value), source = Show(ns2.Cells[i].Value) }),
+            collateral = new { regulation_files_changed = regBad, think_rows_changed = rowsBad, npc_rows_changed = npcRowsBad, luabnd_files_changed = luaBad,
                 luainfo_goals_kept = goalsKept, luagnl_globals_kept = globalsKept, container_metadata_changed = containerBad },
-            outputs = ok ? new[] { luaOut, regOut } : new[] { luaOut + ".partial", regOut + ".partial" },
+            logic_file = new { layout = Path.GetFileName(s.logic_layout), names = each2.Files.Select(f => $"{f.ID} {f.Flags} {f.Name}"),
+                compression = Dcx(each2.Compression), differences_from_layout = eachBad, ok = eachBad.Count == 0 },
+            outputs = ok ? new[] { luaOut, regOut, eachOut } : new[] { luaOut + ".partial", regOut + ".partial", eachOut + ".partial" },
         }));
         return ok ? 0 : Fail("re-read verification failed; unverified .partial files left in place, nothing published");
     }
@@ -304,7 +406,7 @@ static class Program
     {
         string origPath = One(o, "original"), compPath = One(o, "compiled"), outPath = One(o, "out");
         var id = uint.Parse(One(o, "event"));
-        var expectTeams = (o.GetValueOrDefault("expect-teams") ?? new List<string>()).Select(byte.Parse).ToList();
+        var expectTeams = o.ContainsKey("expect-teams") ? o["expect-teams"].Select(byte.Parse).ToList() : null;
         uint? expectEntity = o.ContainsKey("expect-entity") ? uint.Parse(One(o, "expect-entity")) : null;
         foreach (var p in new[] { outPath, outPath + ".partial" }.Where(Path.Exists))
             return Fail("output already exists, refusing to overwrite: " + p);
@@ -347,9 +449,13 @@ static class Program
         var teams = ev.Instructions.Select((i, k) => (i, k)).Where(x => x.i.Bank == 2004 && x.i.ID == 2)
             .Select(x => new { index = x.k, args = Convert.ToHexString(x.i.ArgData), shape_ok = x.i.ArgData.Length == 8 && x.i.ArgData[5..].All(b => b == 0),
                 entity = x.i.ArgData.Length >= 4 ? BitConverter.ToUInt32(x.i.ArgData, 0) : 0, team = x.i.ArgData.Length >= 5 ? x.i.ArgData[4] : (byte)0 }).ToList();
-        bool teamsOk = teams.All(t => t.shape_ok) && (expectTeams.Count == 0
+        bool teamsOk = teams.All(t => t.shape_ok) && (expectTeams == null
             || teams.Select(t => t.team).Distinct().Order().SequenceEqual(expectTeams.Distinct().Order()));
-        bool? entityOk = expectEntity == null ? null : teams.Count > 0 && teams.All(t => t.entity == expectEntity);
+        // Character AI calls (team, event target, clear target, AI command, AI id, replan): the
+        // character is the first argument of each.
+        var aiCalls = ev.Instructions.Where(i => i.Bank == 2004 && i.ID is 2 or 11 or 16 or 17 or 19 or 20)
+            .Select(i => new { instruction = $"2004[{i.ID}]", entity = i.ArgData.Length >= 4 ? BitConverter.ToUInt32(i.ArgData, 0) : 0 }).ToList();
+        bool? entityOk = expectEntity == null ? null : aiCalls.Count > 0 && aiCalls.All(c => c.entity == expectEntity);
 
         // Event 0 ends early on some conditions (END IF instructions), so the start goes first, as
         // the compiler places it; parameter references in event 0 move with the shifted instructions.
@@ -388,12 +494,240 @@ static class Program
             ok, event_id = id, rest = ev.RestBehavior.ToString(), event_name = ev.Name, instructions = ev.Instructions.Count,
             init = new { index = 0, instruction = Ins(init), ok = initOk }, event_kept = eventOk,
             team_commands = teams, expect_teams = expectTeams, teams_ok = teamsOk, expect_entity = expectEntity, entity_ok = entityOk,
+            ai_calls = aiCalls.GroupBy(c => (c.instruction, c.entity)).Select(g => new { g.Key.instruction, g.Key.entity, count = g.Count() }),
             event_id_checks = idChecks,
             original_sha256 = origHash, original_unchanged = origKept, format = back.Format.ToString(), compression = Dcx(back.Compression),
             original_events = fresh.Events.Count, output_events = back.Events.Count,
             compiled_events_ignored = comp.Events.Where(e => e.ID != id && !fresh.Events.Any(f => f.ID == e.ID)).Select(e => e.ID),
             compiled_game_events_reencoded = reencoded.Count,
             collateral = new { file_metadata_changed = fileBad, events_changed = eventsBad },
+            output = ok ? outPath : outPath + ".partial",
+        }));
+        return ok ? 0 : Fail("re-read verification failed; unverified .partial file left in place, nothing published");
+    }
+
+    // Public values of an MSB entry, nested settings objects and arrays flattened, so two
+    // entries compare field by field.
+    static Dictionary<string, string> Fields(object o, string pre = "", int depth = 0)
+    {
+        var d = new Dictionary<string, string>();
+        foreach (var p in o.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0))
+        {
+            var v = p.GetValue(o);
+            if (v == null || v is string || v.GetType().IsPrimitive || v.GetType().IsEnum || v is System.Numerics.Vector3) d[pre + p.Name] = v?.ToString() ?? "null";
+            else if (v is System.Collections.IEnumerable e) d[pre + p.Name] = string.Join(",", e.Cast<object>());
+            else if (depth < 3) foreach (var kv in Fields(v, pre + p.Name + ".", depth + 1)) d[kv.Key] = kv.Value;
+            else d[pre + p.Name] = "unread";
+        }
+        return d;
+    }
+
+    // Every offset, not only aligned ones, so any stored copy of the value counts as a use.
+    static int Occurrences(byte[] data, byte[] value)
+    {
+        int n = 0;
+        for (int i = data.AsSpan().IndexOf(value); i >= 0; )
+        {
+            n++;
+            int next = data.AsSpan(i + 1).IndexOf(value);
+            i = next < 0 ? -1 : i + 1 + next;
+        }
+        return n;
+    }
+
+    static float Flat(System.Numerics.Vector3 a, System.Numerics.Vector3 b) => MathF.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Z - b.Z) * (a.Z - b.Z));
+
+    static IEnumerable<IMsbEntry> Entries(MSBE m) =>
+        m.Models.GetEntries().Concat<IMsbEntry>(m.Events.GetEntries()).Concat(m.Regions.GetEntries()).Concat(m.Routes.GetEntries()).Concat(m.Parts.GetEntries());
+
+    // One copy of a template enemy beside a grace. The grace comes from the user's own
+    // BonfireWarpParam row (name from the Paramdex names file, tile from areaNo/gridXNo/gridZNo,
+    // landmark = the one destination asset at the row's position, bonfire entity registered by
+    // RegisterBonfire 2009[03] in the tile's events); the height is checked against that landmark
+    // and the nearest player part (a warp spawn). Nothing about the grace is guessed or fixed here.
+    static int Place(Dictionary<string, List<string>> o)
+    {
+        string tplPath = One(o, "template"), destPath = One(o, "dest"), outPath = One(o, "out"), name = One(o, "name");
+        uint tplId = uint.Parse(One(o, "template-entity")), id = uint.Parse(One(o, "entity"));
+        int row = int.Parse(One(o, "bonfire-row"));
+        string wantName = One(o, "bonfire-name");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var pv = o.GetValueOrDefault("pos") ?? new List<string>();
+        if (pv.Count != 3) return Fail("need --pos x y z");
+        var pos = new System.Numerics.Vector3(float.Parse(pv[0], inv), float.Parse(pv[1], inv), float.Parse(pv[2], inv));
+        if (!float.IsFinite(pos.X) || !float.IsFinite(pos.Y) || !float.IsFinite(pos.Z)) return Fail("position is not finite");
+        float F(string k) => float.Parse(One(o, k), inv);
+        int think = int.Parse(One(o, "think")), npcRow = int.Parse(One(o, "npc")), backupAnim = int.Parse(One(o, "backup-anim"));
+        float offMin = F("offset-min"), offMax = F("offset-max"), maxDy = F("max-dy"), clearChr = F("clear-chr"), clearAsset = F("clear-asset"), clearRegion = F("clear-region");
+        var checkMsbs = o.GetValueOrDefault("check-msb") ?? new List<string>();
+        var checkEvents = o.GetValueOrDefault("check-events") ?? new List<string>();
+        bool Listed(List<string> l, string p) => l.Any(x => Path.GetFullPath(x).Equals(Path.GetFullPath(p), StringComparison.OrdinalIgnoreCase));
+        if (!Listed(checkMsbs, tplPath) || !Listed(checkMsbs, destPath)) return Fail("--check-msb must include the template and destination MSBs");
+        if (!Listed(checkEvents, One(o, "dest-events"))) return Fail("--check-events must include the destination's event file");
+        foreach (var p in new[] { outPath, outPath + ".partial" }.Where(Path.Exists))
+            return Fail("output already exists, refusing to overwrite: " + p);
+        var full = Path.GetFullPath(outPath);
+        if (checkMsbs.Concat(checkEvents).Append(tplPath).Append(destPath).Any(p => Path.GetFullPath(p).Equals(full, StringComparison.OrdinalIgnoreCase)))
+            return Fail("--out must be a new path, not an input");
+        string Hash(string p) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(p)));
+        var inputHashes = checkMsbs.Concat(checkEvents).Append(tplPath).Append(destPath).Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(p => p, Hash);
+
+        // The grace, from the user's regulation and the Paramdex names.
+        var names = File.ReadAllLines(One(o, "bonfire-names")).Where(l => l.StartsWith(row + " ")).ToList();
+        if (names.Count != 1 || names[0][(row.ToString().Length + 1)..] != wantName) return Fail($"BonfireWarpParam {row} is not named '{wantName}' in the names file");
+        var reg = RegulationDecryptor.DecryptERRegulation(One(o, "regulation"));
+        var bw = LoadParam(reg, One(o, "paramdex"), "BonfireWarpParam").Rows.SingleOrDefault(r => r.ID == row);
+        if (bw == null) return Fail($"BonfireWarpParam {row} not in regulation.bin");
+        var tile = $"m{bw["areaNo"].Value:00}_{bw["gridXNo"].Value:00}_{bw["gridZNo"].Value:00}_00";
+        var destTile = Path.GetFileName(destPath).Split('.')[0];
+        if (destTile != tile) return Fail($"BonfireWarpParam {row} is on {tile}, not {destTile}");
+        var warp = new System.Numerics.Vector3((float)bw["posX"].Value, (float)bw["posY"].Value, (float)bw["posZ"].Value);
+        uint bonfire = (uint)bw["bonfireEntityId"].Value;
+        var destEvents = One(o, "dest-events");
+        if (Path.GetFileName(destEvents).Split('.')[0] != tile) return Fail($"--dest-events must be {tile}'s event file");
+        var registers = EMEVD.Read(destEvents).Events.SelectMany(e => e.Instructions.Select((i, k) => (e, i, k)))
+            .Where(x => x.i.Bank == 2009 && x.i.ID == 3 && x.i.ArgData.Length >= 24 && BitConverter.ToUInt32(x.i.ArgData, 4) == bonfire).ToList();
+        if (registers.Count != 1) return Fail($"bonfire entity {bonfire} is registered {registers.Count} times (RegisterBonfire 2009[03]) in {tile}'s events, need one");
+        var rb = registers[0];
+
+        var dest = MSBE.Read(destPath);
+        var marks = dest.Parts.Assets.Where(a => MathF.Abs(a.Position.X - warp.X) < 0.01f && MathF.Abs(a.Position.Y - warp.Y) < 0.01f && MathF.Abs(a.Position.Z - warp.Z) < 0.01f).ToList();
+        if (marks.Count != 1) return Fail($"{marks.Count} assets at BonfireWarpParam {row}'s position {warp} in {tile}, need exactly one");
+        var mark = marks[0];
+        var spawn = dest.Parts.Players.Where(p => Flat(p.Position, mark.Position) <= 5).OrderBy(p => Flat(p.Position, mark.Position)).FirstOrDefault();
+        if (spawn == null) return Fail("no player part within 5 m of the grace to check the height against");
+
+        // The place: beside the grace, at its height, clear of characters, assets and event areas.
+        float off = Flat(pos, mark.Position);
+        if (off < offMin || off > offMax) return Fail($"position is {off:F2} m from the grace, need {offMin}..{offMax}");
+        if (MathF.Abs(pos.Y - mark.Position.Y) > maxDy || MathF.Abs(pos.Y - spawn.Position.Y) > maxDy)
+            return Fail($"height {pos.Y} is more than {maxDy} m from the grace ({mark.Position.Y}) or the player part {spawn.Name} ({spawn.Position.Y})");
+        var tooClose = dest.Parts.Enemies.Cast<MSBE.Part>().Concat(dest.Parts.Players).Concat(dest.Parts.DummyEnemies).Where(p => Flat(p.Position, pos) < clearChr)
+            .Concat(dest.Parts.Assets.Cast<MSBE.Part>().Concat(dest.Parts.DummyAssets).Where(p => Flat(p.Position, pos) < clearAsset))
+            .Select(p => $"{p.Name} {Flat(p.Position, pos):F2} m").ToList();
+        if (tooClose.Count > 0) return Fail("position too close to " + string.Join(", ", tooClose));
+        // Event-addressed areas (entity id set): outside each, with a margin, on the ground plane.
+        // A box counts by its corner radius, so its rotation does not matter; any other shape
+        // within 30 m is refused unchecked.
+        bool Inside(MSBE.Region r) => Flat(pos, r.Position) < clearRegion + r.Shape switch
+        {
+            MSB.Shape.Point => 0,
+            MSB.Shape.Sphere s => s.Radius,
+            MSB.Shape.Cylinder c => c.Radius,
+            MSB.Shape.Box b => MathF.Sqrt(b.Width * b.Width + b.Depth * b.Depth) / 2,
+            _ => 30,
+        };
+        var inRegions = dest.Regions.GetEntries().Where(r => r.EntityID != 0 && Inside(r)).Select(r => $"{r.GetType().Name} {r.EntityID} {r.Shape.GetType().Name}").ToList();
+        if (inRegions.Count > 0) return Fail("position inside (or unchecked shape of) event regions: " + string.Join(", ", inRegions));
+
+        // The template and its references.
+        var tpl = MSBE.Read(tplPath);
+        var src = tpl.Parts.Enemies.Where(e => e.EntityID == tplId).ToList();
+        if (src.Count != 1) return Fail($"template entity {tplId} found {src.Count} times in {Path.GetFileName(tplPath)}");
+        var t = src[0];
+        var tm = tpl.Models.Enemies.SingleOrDefault(m => m.Name == t.ModelName);
+        if (tm == null) return Fail($"template model {t.ModelName} not registered in its own MSB");
+        if (!System.Text.RegularExpressions.Regex.IsMatch(name, $"^{t.ModelName}_\\d{{4}}$")) return Fail($"name must be {t.ModelName}_NNNN");
+        // Any other name reference (collision, patrol route, ...) would point into the template's map.
+        var refs = t.GetType().GetProperties().Where(p => p.PropertyType == typeof(string) && p.Name is not ("Name" or "ModelName" or "SibPath"))
+            .Select(p => (p.Name, v: (string)p.GetValue(t))).Where(x => !string.IsNullOrEmpty(x.v)).ToList();
+        if (refs.Count > 0) return Fail("template references " + string.Join(", ", refs.Select(r => $"{r.Name}={r.v}")) + "; not guessing a destination reference");
+        if (t.TileLoad.MapID.Any(b => b != 255)) return Fail("template has a tile-load map reference; not guessing one for the destination");
+
+        // The id and name must be new everywhere given: any byte offset of every MSB and event file,
+        // and every entry name of every MSB (also as raw UTF-16).
+        var idBytes = BitConverter.GetBytes(id);
+        var nameBytes = System.Text.Encoding.Unicode.GetBytes(name + "\0");
+        var idUses = new List<string>();
+        foreach (var p in checkMsbs)
+        {
+            var raw = DCX.Decompress(p);
+            int n = Occurrences(raw, idBytes), m = Occurrences(raw, nameBytes);
+            if (n > 0 || m > 0) idUses.Add($"{Path.GetFileName(p)}: id {n}x, name {m}x");
+            if (Entries(MSBE.Read(p)).Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase))) idUses.Add($"{Path.GetFileName(p)}: entry named {name}");
+        }
+        foreach (var p in checkEvents)
+        {
+            int n = Occurrences(DCX.Decompress(p), idBytes);
+            if (n > 0 || EMEVD.Read(p).Events.Any(e => e.ID == id)) idUses.Add($"{Path.GetFileName(p)}: id {n}x");
+        }
+        if (idUses.Count > 0) return Fail($"entity {id} or name {name} already used: " + string.Join("; ", idUses));
+
+        // The copy: only name, instance, entity id, position, the template map's entity groups, and
+        // its own think row, NpcParam row and backup animation change.
+        var copy = (MSBE.Part.Enemy)t.DeepCopy();
+        copy.ThinkParamID = think;
+        copy.NPCParamID = npcRow;
+        copy.BackupEventAnimID = backupAnim;
+        copy.Name = name;
+        copy.InstanceID = int.Parse(name[(t.ModelName.Length + 1)..]);
+        copy.EntityID = id;
+        copy.Position = pos;
+        for (int i = 0; i < copy.EntityGroupIDs.Length; i++) copy.EntityGroupIDs[i] = 0;
+        bool Sorted<T>(List<T> l) where T : IMsbEntry => l.Zip(l.Skip(1)).All(p => string.CompareOrdinal(p.First.Name, p.Second.Name) < 0);
+        int At<T>(List<T> l, string n) where T : IMsbEntry => Sorted(l) ? l.Count(x => string.CompareOrdinal(x.Name, n) < 0) : l.Count;
+        bool modelAdded = !dest.Models.Enemies.Any(m => m.Name == t.ModelName);
+        if (modelAdded) dest.Models.Enemies.Insert(At(dest.Models.Enemies, tm.Name), (MSBE.Model.Enemy)tm.DeepCopy());
+        int partAt = At(dest.Parts.Enemies, name);
+        dest.Parts.Enemies.Insert(partAt, copy);
+        Directory.CreateDirectory(Path.GetDirectoryName(full));
+        dest.Write(outPath + ".partial", dest.Compression);
+
+        // Re-read: exactly the one part (and model) added; with them removed, the file is the
+        // user's original byte for byte (decompressed); the inputs are unchanged.
+        var back = MSBE.Read(outPath + ".partial");
+        var fresh = MSBE.Read(destPath);
+        var owned = back.Parts.GetEntries().Where(e => e.Name == name).ToList();
+        var ownedPart = owned.Count == 1 ? owned[0] as MSBE.Part.Enemy : null;
+        var ownedModels = back.Models.Enemies.Where(m => m.Name == t.ModelName).ToList();
+        bool countsOk = back.Parts.GetEntries().Count == fresh.Parts.GetEntries().Count + 1
+            && back.Models.GetEntries().Count == fresh.Models.GetEntries().Count + (modelAdded ? 1 : 0)
+            && back.Regions.GetEntries().Count == fresh.Regions.GetEntries().Count && back.Events.GetEntries().Count == fresh.Events.GetEntries().Count
+            && back.Routes.GetEntries().Count == fresh.Routes.GetEntries().Count && ownedPart != null && ownedModels.Count == 1;
+        var allowed = new HashSet<string> { "Name", "InstanceID", "EntityID", "Position", "EntityGroupIDs", "ThinkParamID", "NPCParamID", "BackupEventAnimID" };
+        var ft = Fields(t);
+        var fo = ownedPart == null ? new Dictionary<string, string>() : Fields(ownedPart);
+        var differing = ft.Keys.Union(fo.Keys).Where(k => ft.GetValueOrDefault(k) != fo.GetValueOrDefault(k)).OrderBy(k => k).ToList();
+        bool copyOk = ownedPart != null && differing.All(allowed.Contains) && ownedPart.EntityID == id && ownedPart.Position == pos
+            && ownedPart.EntityGroupIDs.All(g => g == 0) && back.Parts.Enemies.IndexOf(ownedPart) == partAt
+            && ownedPart.ThinkParamID == think && ownedPart.NPCParamID == npcRow && ownedPart.BackupEventAnimID == backupAnim;
+        bool modelOk = ownedModels.Count == 1 && Fields(ownedModels[0]).OrderBy(k => k.Key).SequenceEqual(Fields(tm).OrderBy(k => k.Key));
+        var outRaw = DCX.Decompress(outPath + ".partial");
+        int idInOutput = Occurrences(outRaw, idBytes);
+        if (ownedPart != null) back.Parts.Enemies.Remove(ownedPart);
+        if (modelAdded && ownedModels.Count == 1) back.Models.Enemies.Remove(ownedModels[0]);
+        bool originalKept = DCX.Decompress(back.Write()).AsSpan().SequenceEqual(DCX.Decompress(destPath));
+        bool sameCompression = Dcx(MSBE.Read(outPath + ".partial").Compression) == Dcx(fresh.Compression);
+        var inputsChanged = inputHashes.Where(kv => Hash(kv.Key) != kv.Value).Select(kv => Path.GetFileName(kv.Key)).ToList();
+
+        bool ok = countsOk && copyOk && modelOk && idInOutput == 1 && originalKept && sameCompression && inputsChanged.Count == 0;
+        if (ok) File.Move(outPath + ".partial", outPath, false);
+        string V(System.Numerics.Vector3 v) => $"{v.X.ToString(inv)}, {v.Y.ToString(inv)}, {v.Z.ToString(inv)}";
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            ok,
+            grace = new
+            {
+                bonfire_warp_row = row, name = wantName, tile, warp_position = V(warp), bonfire_entity = bonfire,
+                register_bonfire = new { @event = rb.e.ID, index = rb.k, flag = BitConverter.ToUInt32(rb.i.ArgData, 0),
+                    reaction_distance = BitConverter.ToSingle(rb.i.ArgData, 8), enemy_deactivation_distance = BitConverter.ToSingle(rb.i.ArgData, 20) },
+                landmark = new { mark.Name, model = mark.ModelName, entity = mark.EntityID, position = V(mark.Position), rotation_y = mark.Rotation.Y },
+                height_reference = new { spawn.Name, model = spawn.ModelName, entity = spawn.EntityID, position = V(spawn.Position), distance = Flat(spawn.Position, mark.Position) },
+            },
+            placed = new
+            {
+                name, entity = id, position = V(pos), rotation = V(copy.Rotation), from_grace_m = off,
+                dx = pos.X - mark.Position.X, dz = pos.Z - mark.Position.Z, dy_grace = pos.Y - mark.Position.Y, dy_spawn = pos.Y - spawn.Position.Y,
+                nearest = dest.Parts.GetEntries().Where(p => p is MSBE.Part.Enemy or MSBE.Part.Player or MSBE.Part.Asset or MSBE.Part.DummyAsset && p.Name != name)
+                    .OrderBy(p => Flat(p.Position, pos)).Take(6).Select(p => $"{p.Name} {Flat(p.Position, pos):F2} m"),
+            },
+            template = new { file = Path.GetFileName(tplPath), t.Name, entity = tplId, model = t.ModelName, think = t.ThinkParamID, npc = t.NPCParamID, talk = t.TalkID, backup_anim = t.BackupEventAnimID,
+                entity_groups_cleared = t.EntityGroupIDs.Where(g => g != 0), collision = t.CollisionPartName, walk_route = t.WalkRouteName },
+            fields_differing_from_template = differing.Select(k => new { field = k, template = ft.GetValueOrDefault(k), copy = fo.GetValueOrDefault(k) }),
+            model_added = modelAdded, model_entry_ok = modelOk, part_index = partAt, counts_ok = countsOk, copy_ok = copyOk,
+            id_and_name_free_in = checkMsbs.Concat(checkEvents).Select(Path.GetFileName), id_in_output = idInOutput,
+            original_entries_unchanged = originalKept, same_compression = sameCompression, inputs_changed = inputsChanged,
             output = ok ? outPath : outPath + ".partial",
         }));
         return ok ? 0 : Fail("re-read verification failed; unverified .partial file left in place, nothing published");

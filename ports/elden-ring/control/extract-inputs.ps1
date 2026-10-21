@@ -2,7 +2,8 @@
 .SYNOPSIS
   Copies a fixed allowlist of files out of the user's own ELDEN RING archives, headless.
   431000_battle.luabnd is only read for the attack call's argument shape and animation id;
-  the map .emevd files only for their event ids and InitializeEvent targets.
+  010000_logic.luabnd only as the layout (container, entry ids, flags, names) of a per-logic
+  file; the map .emevd files only for their event ids and InitializeEvent targets.
 
 .DESCRIPTION
   Original tool. Run with Windows PowerShell 5.1 (.NET Framework), because it calls the
@@ -30,7 +31,7 @@ $ErrorActionPreference = 'Stop'
 # Only these may ever be extracted; -Files can narrow the list, never widen it.
 $Allow = @('/event/common.emevd.dcx', '/script/aicommon.luabnd.dcx',
     '/map/mapstudio/m60_42_36_00.msb.dcx', '/map/mapstudio/m60_42_37_00.msb.dcx',
-    '/map/mapstudio/m60_43_36_00.msb.dcx', '/script/431000_battle.luabnd.dcx',
+    '/map/mapstudio/m60_43_36_00.msb.dcx', '/script/431000_battle.luabnd.dcx', '/script/010000_logic.luabnd.dcx',
     '/event/m60_42_36_00.emevd.dcx', '/event/m60_42_37_00.emevd.dcx', '/event/m60_43_36_00.emevd.dcx')
 $MaxTotal = 32MB
 $Archives = 'Data0', 'Data1', 'Data2', 'Data3', 'DLC'
