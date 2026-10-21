@@ -85,9 +85,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $config !== null) {
             session_write_close();
             $turn = ['npc_name' => 'Guide', 'player_name' => 'Traveler', 'text' => $testText, 'context' => []];
             $started = microtime(true);
+            $allowedActions = is_array($config['allowed_actions'] ?? null) ? $config['allowed_actions'] : [];
             try {
-                $raw = generate_reply($llm, $turn, [], ['bio' => null, 'facts' => []]);
-                [$reply, $actions, $rejected] = extract_actions($raw, is_array($config['allowed_actions'] ?? null) ? $config['allowed_actions'] : []);
+                $raw = generate_reply($llm, $turn, [], ['bio' => null, 'facts' => []], null, $allowedActions);
+                [$reply, $actions, $rejected] = extract_actions($raw, $allowedActions);
                 $test = ['ok' => true, 'reply' => $reply, 'actions' => array_column($actions, 'name'), 'rejected' => $rejected];
             } catch (Throwable $error) {
                 // Provider replies can echo request details, so only the error type is logged.

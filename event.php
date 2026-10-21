@@ -36,11 +36,13 @@ if ($respond) {
         'player_name' => require_text($input['player']['name'] ?? null, 'player.name', 64),
         'text' => "Game event ($type): $text",
         'context' => $context,
+        'offered_actions' => require_offered_actions($input),
     ];
     run_turn($config, $started, $requestId, $sessionId, $npcId, $turn, $type);
 }
 
-// Log only. The NPC is optional (an event may concern no NPC).
+// Log only. The NPC is optional (an event may concern no NPC). offered_actions is ignored: a
+// log-only event never returns actions.
 $npcId = isset($input['npc']['id']) ? require_id($input['npc']['id'], 'npc.id') : null;
 $db = db_connect($config);
 require_schema($db);

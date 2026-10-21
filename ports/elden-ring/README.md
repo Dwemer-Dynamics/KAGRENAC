@@ -1,17 +1,36 @@
-# Elden Ring port: diagnostic foundation, not qualified in engine
+# Elden Ring port: reusable reference, not verified in game
 
-There is no working Elden Ring port. `probe/` holds a native x64 diagnostic DLL (me3
-native) and an offline build inspector. The DLL identifies the exact host file, compares
-the loaded image's PE header identity with that file, fails closed because no build is
-qualified, and logs hold, follow and attack as unsupported because it integrates no game
-backend. The fromsoftware-rs SDK handles the installed file version and has cited
-game-thread task and actor interfaces, but no NPC AI goal or target order was found in
-the three sources examined ([evidence](../../docs/engine-packs/elden-ring.md)). The DLL
-does not access actors, write game memory, hook or start threads. No dialogue, subtitles, voice or actions are supported. No
-engine SDK, mod loader, game file or third-party library is copied here or installed by
-this repository. The DLL has not been loaded by me3 or the game.
+A reference for building an Elden Ring AI companion with KAGRENAC. Reuse and adapt it rather
+than starting over; it is tied to one game build, one companion and one fixed hostile.
 
-Build (outside the repository; MSVC x64 with the Visual Studio generator, `/W4 /WX`):
+| Folder | What | Status |
+|---|---|---|
+| [client/](client/README.md) | Native me3 DLL: F8 text box, server turn, reply text, optional PocketTTS voice, and orders to the control package through a guarded event-flag mailbox | Built `/W4 /WX` and bridge fixtures passed outside the game; not loaded by me3 or the game |
+| [control/](control/README.md) | Event-script and AI-logic package built from the user's own game files: one companion copy that holds and follows | Full package build verified; not verified in game |
+| `probe/` | Native diagnostic DLL and offline build inspector | Inspector verified offline; DLL not loaded by me3; it controls no actor |
+
+**Follow and hold** are the reference actions. Each is a request that the game event may
+accept or refuse; neither is verified in game yet. **Attack is unavailable:** the control
+package and client contain an attack path for one fixed hostile, but no target or handler
+is verified in the game, so do not put `attack_hostile` in either allowlist or describe it
+as working until its own in-game check passes
+([acceptance](../../docs/engine-packs/elden-ring.md#future-acceptance-for-hold-follow-and-attack)).
+
+Evidence is kept by kind. An earlier prototype of the client was reported by the user as
+generally working in game (box, reply text, voice); that is user-reported and is not proof
+of any individual action. The renamed client, the current control package and each action
+still need their own in-game check. Engine facts and citations are in
+[docs/engine-packs/elden-ring.md](../../docs/engine-packs/elden-ring.md); the port's
+history is in [control/EVIDENCE.md](control/EVIDENCE.md).
+
+Testing is offline only, with an isolated me3 `savefile` and a save backup first (me3
+creates the isolated save as a copy of an existing one). No online play, no
+`disable_arxan`, and no code that bypasses or hides from anti-cheat. No engine SDK, mod
+loader, game file or third-party library is copied into or installed by this repository.
+
+## Probe build
+
+Outside the repository; MSVC x64 with the Visual Studio generator, `/W4 /WX`:
 
 ```powershell
 cmake -S ports/elden-ring/probe -B D:/build/kagrenac-elden-probe -G "Visual Studio 17 2022" -A x64
@@ -20,12 +39,8 @@ D:/build/kagrenac-elden-probe/Release/kagrenac_er_inspect.exe "<game>/Game/elden
 ```
 
 The inspector exits 0 for a qualified build, 3 for an identified but unqualified build
-(every build today), 1 when the file cannot be identified and 2 on wrong usage.
-
-This folder records the plan and the evidence for a port. Engine facts go in
-`docs/engine-packs/elden-ring.md`, copied from
-[ENGINE_PACK.md](../../docs/engine-packs/ENGINE_PACK.md); the brief, decisions and evidence
-of this port's project are in [control/EVIDENCE.md](control/EVIDENCE.md).
+(every build today), 1 when the file cannot be identified and 2 on wrong usage. The probe
+DLL logs hold, follow and attack as unsupported: it integrates no game backend.
 
 ## Stages
 
@@ -39,21 +54,18 @@ of this port's project are in [control/EVIDENCE.md](control/EVIDENCE.md).
    This comes before any full voice or dialogue UI. Unknown facts are questions for the
    probe to answer; never fake or guess an API. The probe does not need every row below to
    be verified first.
-3. **Optional voice, input and subtitles**, only after the action control proof. They do
-   not gate the probe.
-
-Testing is offline only: a documented mod launch procedure with an isolated save, on the
-exact game build and loader version qualified in stage 1. No online play, and no code that
-bypasses or hides from anti-cheat.
+3. **Optional voice, input and subtitles**, in this probe plan only after the action
+   control proof. They do not gate the probe. (The [native client](client/README.md)
+   already offers optional voice; that does not change this order for the probe.)
 
 ## Action rules
 
 - The hostile target is captured locally by the game-side code. It is never a pointer or
   raw id chosen by the model, and an action's `args.target_id` stays the speaking NPC
   ([PROTOCOL.md](../../PROTOCOL.md)).
-- `follow_player` exists today only as the console client's printed simulation. Hold and
-  attack do not exist: each needs future allowlist, protocol and client handler work
-  ([WAVE_ACTION.md](../../WAVE_ACTION.md)), which this repository does not include.
+- The server knows `follow_player`, `hold_position` and `attack_hostile`
+  ([PROTOCOL.md](../../PROTOCOL.md)); each is offered only when it is in both allowlists.
+  Here only follow and hold are reference actions, and none is verified in game.
 
 ## Evidence
 
@@ -77,5 +89,5 @@ after testing in the game.
 | Player text input and subtitle display | 3 | | Unknown |
 | WAV playback on an NPC; microphone capture | 3 | | Unknown |
 
-Until a row is verified in the game, the only working client is the console simulation in
-[client/](../../client/README.md).
+This table covers the native probe route. The control package and native client keep
+their own status in [control/](control/README.md) and [client/](client/README.md).

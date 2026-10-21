@@ -47,8 +47,11 @@ clone that instead ([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)).
 | Windows development copy | Any folder you own on Windows, outside DwemerDistro | Editing, building the client (output in `%LOCALAPPDATA%`), `scripts\project.ps1` | Served by Apache |
 | WSL server copy | `/var/www/html/custom-mods/KagrenacServer` (manual) or `/custom-mods/example-server` (launcher) | Running the server: `install.sh`, `update.sh`, `smoke.sh`, pairing to a file outside the web root | Building the client, writing a client `config.json`, or holding build output |
 
-The server copy is not synced from the Windows copy; it is its own clone, updated with
-`update.sh` (or the launcher) from your pushed branch.
+The server copy is not synced from the Windows copy. From Windows,
+`scripts\project.ps1 deploy -WslDistro <name>` installs or updates it from your committed
+HEAD through DwemerDistro Core
+([getting-started](docs/getting-started.md#deploy-and-pair)); a manual clone is updated with
+`update.sh`, and a launcher install with the launcher. This page describes the manual route.
 
 ## Before you install: web protection
 
@@ -61,18 +64,30 @@ then apply it:
 
 ```bash
 sudo ddistro_custom_mod setup-web
-grep -qF '(client|ports|docs)' /etc/apache2/sites-available/dwemerdistro-custom-mods.conf && echo protected
+grep -qF 'client|ports|docs|config|lib|sql|scripts' /etc/apache2/sites-available/dwemerdistro-custom-mods.conf && echo protected
 ```
 
-It must print `protected`; an older Core writes a site file without these rules.
-The protection covers `.git/` under every custom mod, and `client/`, `docs/` and `ports/`
-under `/custom-mods/KagrenacServer`, `/custom-mods/example-server` and `/ExampleServer`. If
-you install into any other folder (a renamed copy or a fork), add equivalent server-side
-Apache rules for that folder yourself; nothing here protects arbitrary paths. After
-installing, check every Apache port that serves `/var/www/html` as
-[START_HERE.md](START_HERE.md#deployment-and-exposure) describes.
+It must print `protected`. A Core whose rules list fewer source folders (for example only
+`client|ports|docs`) does not give this protection and these flags may not yet be in a
+public Core release: wait for a compatible Core, or add equivalent server-side Apache rules
+yourself before installing. The protection covers `.git/` under every custom mod, and the
+source folders `client/`, `ports/`, `docs/`, `config/`, `lib/`, `sql/` and `scripts/` plus
+any `config.json` or `.env` file under `/custom-mods/KagrenacServer`,
+`/custom-mods/example-server` and `/ExampleServer`. Any other folder (a renamed copy or a
+fork) is covered only after `sudo ddistro_custom_mod setup-web --protect-project <folder>`
+(a folder directly under `custom-mods/`, run **before** you clone into it, same Core
+requirement), or by equivalent server-side Apache rules of your own; nothing protects
+arbitrary paths by itself. The `grep` only shows the rules exist: after installing, check
+for HTTP 403 on every Apache port that serves `/var/www/html` as
+[START_HERE.md](START_HERE.md#deployment-and-exposure) describes, using your own folder in
+the URL.
 
 ## 1. Install the server (inside DwemerDistro)
+
+For your own mod, the usual route is `project.ps1 deploy` from Windows
+([getting-started](docs/getting-started.md#deploy-and-pair)). The manual install below is a
+separate route; deploy never adopts or repoints it, but can update it when you name it with
+`-WslServerPath`.
 
 Open a DwemerDistro WSL shell as the `dwemer` user, for example from Windows:
 
@@ -169,8 +184,9 @@ the copy in its own folder directly under `/var/www/html/custom-mods/`, for exam
 `my-project`; it is served at `/custom-mods/my-project`. Use letters, digits, `.`, `_` or `-`
 in the folder name so pairing can infer the address, and do not use an id the launcher
 installs, such as `example-server`. A folder with another name is **not** covered by Core's
-web protection for `client/`, `docs/` and `ports/`: add equivalent Apache rules for it first
-([Before you install](#before-you-install-web-protection)). The
+default web protection: before cloning, run
+`sudo ddistro_custom_mod setup-web --protect-project my-project` or add equivalent Apache
+rules ([Before you install](#before-you-install-web-protection)). The
 installer creates `database.name` from
 your private config if it is missing. Use 1-63 lowercase letters, digits or underscores,
 starting with a letter. Choose a new name for your own project; never point a copy at
@@ -258,9 +274,22 @@ This builds x64 and x86 into `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build
 
 ## 3. Connect them
 
-Write a private client config inside WSL. It goes outside the web root, as a new file with
-mode 0600, in a folder you own that other users cannot write to (your home folder is
-fine); an existing file or link is never replaced and the token is not printed:
+From Windows, one command writes the private client config (your agent runs it):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> `
+  -WslServerPath /var/www/html/custom-mods/KagrenacServer -OutFile <full path>\config.json
+```
+
+Put `-OutFile` outside every repository and web root (next to `KagrenacClient.exe`, or the
+game-side runtime folder). The file is created private to you, and the token is never
+printed. An existing file with the same URL, token and session is kept as already paired;
+anything different is refused. Options: `-ServerUrl`, `-SessionId`, `-AllowedActions`.
+
+What it runs, if you work inside WSL instead: `pair_client.php` writes a new file with mode
+0600, outside the web root, in a folder you own that other users cannot write to (your
+home folder is fine); an existing file or link is never replaced and the token is not
+printed:
 
 ```bash
 cd /var/www/html/custom-mods/KagrenacServer
@@ -280,9 +309,7 @@ for example from PowerShell:
 Copy-Item \\wsl.localhost\DwemerAI4Skyrim3\home\dwemer\example-client.json .\config.json
 ```
 
-Then delete the WSL copy if you do not need it. Treat both copies like a password. You can
-still write `config.json` by hand: copy `server_url` and the `token` from
-`config/config.php`.
+Then delete the WSL copy if you do not need it. Treat both copies like a password.
 
 Run:
 
@@ -310,7 +337,11 @@ HTTP, so only do this on a trusted local network.
 
 ## 4. Use a real LLM (optional)
 
-The easiest way is the dashboard:
+Reuse a provider you already have. Otherwise the recommended start is OpenRouter with
+[`google/gemma-4-31b-it`](https://openrouter.ai/google/gemma-4-31b-it) for dialogue
+(`decision.php` choices can use [`typesafe/jev-1.13`](https://openrouter.ai/typesafe/jev-1.13),
+never chat or actions; [CONNECTORS.md](CONNECTORS.md)). Nothing has to answer on port 1234
+unless you chose `dwemerllm` or a local server there. The easiest way is the dashboard:
 
 1. Open **Configuration > LLM** and choose a **Reply mode**: `openai`, `openrouter`,
    `local` (any OpenAI-compatible server you run, such as LM Studio) or `dwemerllm`
@@ -420,6 +451,13 @@ cd /var/www/html/custom-mods/KagrenacServer
 sudo bash scripts/backup.sh      # database + config to /home/dwemer/example-ai-server-backups/<time>/
 sudo bash scripts/update.sh      # refuses local edits, backs up, fast-forwards, migrates
 ```
+
+An install made by `project.ps1 deploy` is updated by running deploy again after a new
+commit: Core backs up and fast-forwards to exactly that commit (`update <id>
+--expect-commit`), and the same commit again keeps config and data untouched. These flags
+are not yet in a public DwemerDistro Core release, so **Update Distro** may not supply them
+yet. If Core lacks them, deploy stops with a clear message and changes nothing; wait for a
+compatible Core version, and meanwhile update a manual clone with `update.sh`.
 
 - `update.sh` stops if tracked files have local changes. Keep your settings in
   `config/config.php` (untracked) and your code changes in your own fork.

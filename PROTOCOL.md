@@ -82,6 +82,7 @@ One player line to one NPC.
 | `npc.name`, `player.name` | 1-64 characters. |
 | `text` | 1-1000 characters. |
 | `context` | Optional object, at most 10 entries. Keys `a-z` and `_` (max 32), values text (max 200). |
+| `offered_actions` | Optional (added within version 1), list of at most 8 action names: what the game can run right now. The server then offers the model, and returns, only names that are also in its `allowed_actions`; `[]` means none this turn. Missing: the allowlist alone applies. Names are 1-40 of `A-Z a-z 0-9 _`; a bad name, a non-list or more than 8 gives `400 bad_request` (the client refuses to send such a list rather than dropping it). Older servers ignore it. |
 
 Reply:
 
@@ -100,12 +101,16 @@ Reply:
 ```
 
 - `reply` is at most 1000 characters.
-- `actions` only contains names in the server's `allowed_actions`. Version 1 defines one
-  action, `follow_player`. The game must still check every name against its own allowlist
-  and ignore unknown names. Nothing in this protocol runs commands. The server never repeats
+- `actions` only contains names in the server's `allowed_actions` (and in `offered_actions`
+  when the request sent it). Version 1 defines `follow_player`, and within version 1 added
+  `hold_position` (stay where it is) and `attack_hostile` (attack the one hostile the game
+  itself chooses; the model never names a target). The game must still check every name
+  against its own allowlist and ignore unknown names. Nothing in this protocol runs
+  commands. The server never repeats
   a name; a client uses at most 4 distinct names and treats a repeated name as malformed:
   it rejects that name once and never runs its handler.
-- `args` (optional, added within version 1) holds `target_id` for `follow_player`. The server
+- `args` (optional, added within version 1) holds `target_id` for these three actions, the NPC
+  that acts. The server
   always sets it to this request's `npc.id`; the model cannot choose it, and NPC selection
   (`decision.php`) never changes it. Older servers send name-only actions, which still mean
   "the NPC this request was sent to". A client accepts only `name` and `args`, only the
@@ -175,6 +180,7 @@ game decides when to send it; the server never triggers anything by itself.
 | `context` | Optional, as for `turn.php`. |
 | `respond` | Optional, default `false`. |
 | `npc` | `id` optional for log-only events. With `respond: true`, `npc.id`, `npc.name` and `player.name` are required, as for `turn.php`. |
+| `offered_actions` | Optional, as for `turn.php`, and read only with `respond: true`; a log-only event ignores it. |
 
 - `respond: false` (log only): the server stores the event in its event log. It makes no
   model call, writes no conversation history and returns no actions:

@@ -3,6 +3,7 @@
 // Usage (inside DwemerDistro WSL, as a user that can read config/config.php):
 //   sudo -u dwemer php scripts/pair_client.php --out /home/dwemer/example-client.json
 //       [--base-url http://127.0.0.1:19000/custom-mods/KagrenacServer] [--session-id demo-save-1]
+//       [--allowed-actions follow_player]
 //
 // - The file is new: an existing file or symbolic link at --out is never replaced.
 // - It is created with mode 0600, outside the web root and this app folder, in a folder
@@ -12,6 +13,8 @@
 // - Without --base-url the URL is inferred for installs under /var/www/html (Apache port
 //   19000 by default: CUSTOM_MODS_PORT in DwemerDistro), e.g. /var/www/html/custom-mods/KagrenacServer -> .../custom-mods/KagrenacServer.
 //   Anywhere else, pass the address the game should use with --base-url.
+// - --allowed-actions sets the client's own allowlist: 1-8 different comma-separated names of
+//   1-40 characters A-Z a-z 0-9 _. Without it the client allows follow_player, as before.
 // Copy the file to the PC that runs the client and save it next to KagrenacClient.exe as
 // config.json (git-ignored), then delete the copy in WSL if you no longer need it.
 
@@ -55,10 +58,10 @@ function pair_inferred_url(string $appDir): string
     return PAIR_DEFAULT_ORIGIN . '/' . $relative;
 }
 
-$options = ['--out' => null, '--base-url' => null, '--session-id' => 'demo-save-1'];
+$options = ['--out' => null, '--base-url' => null, '--session-id' => 'demo-save-1', '--allowed-actions' => null];
 for ($i = 1; $i < $argc; $i++) {
     if (!array_key_exists($argv[$i], $options) || $i + 1 >= $argc) {
-        pair_fail('usage: php scripts/pair_client.php --out <new file> [--base-url <url>] [--session-id <id>]');
+        pair_fail('usage: php scripts/pair_client.php --out <new file> [--base-url <url>] [--session-id <id>] [--allowed-actions <a,b>]');
     }
     $options[$argv[$i]] = $argv[++$i];
 }
@@ -70,6 +73,11 @@ if ($out === null || !str_starts_with($out, '/') || preg_match('/[\x00-\x1F\x7F]
 $sessionId = $options['--session-id'];
 if (!preg_match('/^[A-Za-z0-9_.:-]{1,64}$/D', $sessionId)) {
     pair_fail('--session-id must be 1-64 characters of A-Z a-z 0-9 _ . : -');
+}
+$actions = $options['--allowed-actions'] === null ? ['follow_player'] : explode(',', $options['--allowed-actions']);
+if (count($actions) > 8 || count(array_unique($actions)) !== count($actions)
+    || array_filter($actions, fn($name) => !preg_match('/^[A-Za-z0-9_]{1,40}$/D', $name))) {
+    pair_fail('--allowed-actions must be 1-8 different comma-separated names of 1-40 characters A-Z a-z 0-9 _');
 }
 
 $appDir = realpath(dirname(__DIR__)) ?: dirname(__DIR__);
@@ -115,7 +123,7 @@ $client = [
     'session_id' => $sessionId,
     'timeout_seconds' => 40,
     'voice_enabled' => false,
-    'allowed_actions' => ['follow_player'],
+    'allowed_actions' => $actions,
 ];
 
 // Refuse anything already there, including a dangling symbolic link (PHP's "x" mode alone

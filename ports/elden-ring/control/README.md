@@ -10,14 +10,17 @@ face-the-player sign) had not been run in game. After it was handed over the use
 "okay it works", without saying which of hold, follow and attack they saw, which build ran,
 or whether release, reload or warp recovery was tried. That report is recorded as
 user-reported, not verified, in [EVIDENCE.md](EVIDENCE.md), the project history of this
-port. Voice, an LLM and the server bridge are not part of this stage.
+port. A guarded event-flag mailbox was added later, beside the control event; see
+[Bridge mailbox](#bridge-mailbox-not-verified-in-game). It is proven by package build and
+audit only, not in game. Voice, an LLM and a native client are not part of this package.
 
 ## Status
 
 | Piece | File | Implemented | Checked so far | Not yet shown |
 |---|---|---|---|---|
-| Control event | `kagrenac_control.js.in` | One flagless `Restart` event, id 1042378801, started once from common event 0; sets no team and no AI id | Compiled, merged and decompiled with DarkScript3 3.6.3 in the full build | Running in game |
-| Event merge into the user's `common.emevd` | `build-package.ps1`, `erpack merge-events` | Adds that one event and its one start to the user's original binary, keeping everything else | Full friendly build 2026-10-19: `ok` true, 253 to 254 events; owned event 1042378801 (`Restart`, 66 instructions) and `InitializeEvent(0, 1042378801, 0)` at index 0 of event 0; collateral empty; original unchanged; no `SetCharacterTeamType` (`--expect-teams` with no value); all 11 character AI calls on the copy 1042360890 | Running in game |
+| Control event | `kagrenac_control.js.in` | One `Restart` event, id 1042378801, started from common event 0; sets no team and no AI id; also applies an order the bridge mailbox accepted | Compiled, merged and decompiled with DarkScript3 3.6.3 in the full build | Running in game |
+| Bridge mailbox | `kagrenac_control.js.in`, `build-package.ps1`, `erpack flag-audit` | Init event 1042378802 and mailbox event 1042378803 over flags 1042369800-1042369895 | Full build 2026-10-19: window audited clear, all three events merged; see [Bridge mailbox](#bridge-mailbox-not-verified-in-game) | Running in game; any client writing the command byte |
+| Event merge into the user's `common.emevd` | `build-package.ps1`, `erpack merge-events` | Adds the owned events (now three, see [Build](#build)) and one start each to the user's original binary, keeping everything else | Current bridge build 2026-10-19: `ok` true, 253 to 256 events; owned events 1042378802, 1042378803 and 1042378801 (`Restart`, 63, 132 and 106 instructions) started in that order at indices 0-2 of event 0; collateral empty; original unchanged; no `SetCharacterTeamType` (`--expect-teams` with no value); every character AI call in the control event and on the copy 1042360890 | Running in game |
 | AI logic | `kagrenac_companion.lua.in` | Hold with no order; follow on `TARGET_LOCALPLAYER` (21): within 4 m turn to face the player, beyond it approach with the game's `TARGET_SELF` fourth argument; attack on `TARGET_EVENT` (20); no `COMMON_EasySetup_Initial` | External Lua 5.0.3 contract test on the generated file: 12 pass (exact goal tuples) | Running in game |
 | Think, NpcParam and Lua packing | `erpack pack` | Clones think row 43111100 as 43111190 (`logicId` 431990) and NpcParam 43111110 as 43111190 (`teamType` 47), adds the logic to `aicommon.luabnd`, and writes it as its own `431990_logic.luabnd.dcx`, laid out like the game's `010000_logic.luabnd.dcx` | Full build: the only differing cells are `logicId` and `teamType` (48 to 47); every other row, 43111100 and 43111110 included, and every other file unchanged | Loading in game |
 | Companion copy at The First Step | `erpack place` | Adds one copy of the Gatefront soldier, with its own entity id, name, think row 43111190, NpcParam row 43111190 and `BackupEventAnimID` -1, to a copy of `m60_42_36_00.msb.dcx`, 3.5 m from The First Step grace | Full build: one part and the `c4311` model entry added; with them removed the file equals the user's original byte for byte (decompressed); id and name free in every extracted MSB and event file | Standing on the ground and loading in game |
@@ -162,21 +165,83 @@ The builder installs nothing and downloads nothing. It needs:
 UXM Selective Unpack is only used as a library, headless: `extract-inputs.ps1` reads a
 fixed allowlist of files from your archives and never unpacks or patches the game.
 
+## Bridge mailbox (not verified in game)
+
+Two more `Restart` events, each started once from common event 0, let a future client read
+the companion's state and send one order, using only event flags the game script already
+has instructions for. The package contains no client; nothing writes the command byte yet.
+
+- **Window.** Flags 1042369800-1042369895 (`bridge_flag_base`, 96 flags, starting a byte
+  inside one 1000-flag block). Before building, `extract-inputs.ps1 -EventAudit` copies every
+  event script, allocation list and talk script that the UXM dictionary names, and
+  `erpack flag-audit` refuses the build on any reference to the window: typed flags, ranges,
+  event values, any 32-bit value or pair in an instruction (caller parameters substituted),
+  and raw 32-bit or Lua-double constants in every param, the configured tiles' three MSBs and
+  the two Lua archives (`aicommon`, `010000_logic`). Talk scripts are checked for 32-bit and
+  Lua-double constants but not for 32-bit floats.
+- **Start order.** Event 0 starts init 1042378802, then mailbox 1042378803, then control
+  1042378801. Init sets busy (flag +39) first, clears the command, acknowledgement and order
+  bits, steps the load epoch, writes the beacon, version and guard bytes, and turns busy off
+  as its last write. The mailbox waits 0.5 s before it first reads the command byte.
+- **Mailbox pass.** Publishes eight sensors under busy (companion loaded, alive; hostile
+  loaded, alive; player within 4 m and 15 m of the companion; hostile within
+  `bridge_hostile_near_m` of the player; player in the companion's map), steps a heartbeat,
+  then waits for the command's valid bit or 1 s.
+- **Command handshake.** A client writes the one command byte (+56..+63: nonce, op, valid)
+  only while it is all zero and busy is off. The mailbox sets busy, echoes nonce and op,
+  accepts or refuses, clears the command byte and turns busy off last; the client reads the
+  answer only after that. Op 00 is a no-op challenge that arms the mailbox for this load;
+  follow, hold and attack need it armed, no order pending, the companion loaded and alive
+  now, and for attack the hostile too.
+- **Ownership.** An accepted order only sets a pending flag. The control event alone turns
+  it into an AI command, on the companion only; a Talk press always wins and drops a pending
+  order. Every other byte of the window is written by these events only.
+
+Limits: proven by package build, merge collateral check and static audit only. The audit
+leaves 62 event starts unresolved and cannot see computed flag ids; whether the window is
+stored, set and read like the game's own flags of block 1042369, whether the beacon is unique
+in memory, how the flag bits map to bytes, and whether the sensors are evaluated without
+waiting are all unproven. This generated, renamed package is not verified in game here: the
+user's earlier broad report does not identify which package or `common.emevd.dcx` hash ran,
+and does not qualify the mailbox or any individual action.
+
 ## Build
 
 ```powershell
 powershell -File ports/elden-ring/control/build-package.ps1 `
   -Config <your copy of kagrenac_control.example.json, outside the repository> `
-  -GameDir <Elden Ring>/Game -Tools <tools> -OutDir <new empty folder outside the repository and the game>
+  -GameDir <Elden Ring>/Game [-Tools <tools>] [-OutDir <new empty folder outside the repository and the game>]
 ```
+
+`-Tools` defaults to `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control\tools` and
+`-OutDir` to `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control\build`; the output
+folder must still be new or empty, so pass `-OutDir` for each further build.
 
 Exit codes: **0** the package was built (an asset build, not tested or qualified in the
 game); **1** refused or a step failed, with the reason printed. Output: `<out>/package/`
 (the override files), `<out>/work/` and `<out>/package.json`.
 
-Current build, after the friendly-package report, 2026-10-19 (Windows PowerShell 5.1, exit 0
-in 63 s, run once into the new folder `D:/build/kagrenac-first-step/package-turn-perlogic-20261019`,
-otherwise the same command as below):
+Current build, with the bridge mailbox, 2026-10-19 (Windows PowerShell 5.1, example config,
+explicit `-Tools` and a new `-OutDir`, exit 0 in 110 s). The five outputs are byte-identical
+to the earlier per-logic build below except `event/common.emevd.dcx`:
+
+| Output | Bytes | SHA-256 |
+|---|---|---|
+| `event/common.emevd.dcx` | 36160 | `594275dd07d2d3315a2c71b71bac906d70664e43549aceba8d6af93483c988dd` |
+| `map/mapstudio/m60_42_36_00.msb.dcx` | 35344 | `6805f7ee4612a0b9472d4fc9ff6b335ad090c11888be51dcafd192854c3d9262` |
+| `script/aicommon.luabnd.dcx` | 144064 | `5b9caf76ccc9610e36863643c2dbad33225c47c0f40922a0e3f0206c364eed29` |
+| `script/431990_logic.luabnd.dcx` | 928 | `af700f90e4cab3af25e3061263c8ddc81f0bfe241eb31568b4eb947404d4bb0a` |
+| `regulation.bin` | 1925616 | `2f7a704fe51469f5bad466e1c00363f51e77b60dc5c07dbdcae8d5158760cb0d` |
+
+merge-events: `ok`, 253 to 256 events, collateral empty, original unchanged; starts of
+1042378802, 1042378803 and 1042378801 at indices 0-2 of event 0 (init first); events of
+63, 132 and 106 instructions, all `Restart`; no team command; every character AI call in
+the control event and on 1042360890; the three ids free in the original `m60_42_36_00` and
+`m60_42_37_00` event files. flag-audit: 589 event scripts, 764982 instructions, 463463
+parameter substitutions, 733 raw files and 194 params, 0 hits, 62 event starts unresolved.
+
+Earlier build, after the friendly-package report, 2026-10-19 (Windows PowerShell 5.1, exit 0
+in 63 s, run once into a new folder, otherwise the same command as below):
 
 | Output | Bytes | SHA-256 |
 |---|---|---|
@@ -204,8 +269,7 @@ Earlier verified friendly build for The First Step, 2026-10-19 (Windows PowerShe
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ports/elden-ring/control/build-package.ps1 `
   -Config ports/elden-ring/control/kagrenac_control.example.json `
-  -GameDir "D:/SteamLibrary/steamapps/common/ELDEN RING/Game" `
-  -Tools D:/build/kagrenac-elden-control/tools -OutDir D:/build/kagrenac-first-step/package-friendly-20261019
+  -GameDir "<Elden Ring>/Game" -Tools <tools> -OutDir <new folder>   # paths in EVIDENCE.md
 ```
 
 | Output | Bytes | SHA-256 |
@@ -398,4 +462,5 @@ cycle) and is not itself a failure.
 - A reload, warp or death while controlled relies on the game rebuilding the copy from its
   MSB rows and on the event restarting (not tested).
 - The native SDK and DLL backend are not qualified; this route does not use them.
-- No voice, LLM or server bridge yet.
+- The bridge mailbox has package-build and static-audit proof only; no client writes its
+  command byte yet (see [Bridge mailbox](#bridge-mailbox-not-verified-in-game)).

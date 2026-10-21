@@ -63,9 +63,14 @@ docs/engine-packs/ENGINE_PACK.md)
    chosen), and list the constraints you noted and the authorized items. Do not pause.
 1. Recon. Fill the "SDK facts" part of the engine pack: plugin architecture (native,
    managed or script), lifecycle hooks, main-thread tick, threading and HTTP, NPC
-   identity, display, follow, save hooks, config location, logging, optional audio.
+   identity, live observation sources and their freshness, display, follow, the bridge from
+   plugin code to the engine's action mechanism, save hooks, config location, logging,
+   optional audio.
    Unknowns get bounded research and concrete options, as getting-started.md describes.
-2. Baseline. Install the server as SETUP.md says and run evidence level 1 from START_HERE.
+2. Baseline. Set your own id and name in dwemer-mod.json, commit, deploy with
+   scripts/project.ps1 deploy -WslDistro <name> (getting-started.md, Deploy and pair; a
+   manual install per SETUP.md is a separate route) and run evidence level 1 from START_HERE.
+   If a reference port for the engine exists in ports/<engine>/, reuse it.
    This is a developer check, not a demo; run level 2 (console) only when shared client
    code changes.
 3. Project identity. Rename folders, database name and ids in docs. Add your own notice
@@ -79,7 +84,9 @@ docs/engine-packs/ENGINE_PACK.md)
 5. Typed dialogue. Player input to turn, reply to subtitle, through a GameAdapter that
    uses only real engine APIs.
 6. Actions. follow_player with the engine's own follow behaviour. Extra actions only if
-   authorized, following WAVE_ACTION.md.
+   authorized, following WAVE_ACTION.md. Every action and observation passes the gates in
+   PORT_RECIPES, Awareness and actions: cited mechanism, guarded local validation, then
+   in-game verification before it is marked usable.
 7. Game events. Only if the engine has the hooks. Bounded; no responding event while any
    turn is pending or a cancel for that NPC in that session is still out.
 8. Saves and sessions. session_id per save, cancel in the old session before switching.
@@ -102,7 +109,9 @@ ACCEPTANCE REPORT
 - Evidence levels 1-4, each reported separately: what ran, its result, or "Not tested".
   Provider calls (level 3) may stay "Not tested".
 - Engine facts still Unknown, open TODOs, and stages skipped and why.
-- Never call the mod working in a game until level 4 was done in that game.
+- Never call the mod working in a game until level 4 was done in that game. Keep evidence
+  kinds apart (source, build, fixture, provider, user-reported, in game); a broad
+  user-reported "it works" is not proof of each action, and voice counts only when heard.
 ```
 
 ---
@@ -144,11 +153,11 @@ by hand (see the [client README](../client/README.md#npc-bios-knowledge-and-chec
 |---|---|---|
 | KagrenacServer (Apache in DwemerDistro, shared custom mods port) | `http://127.0.0.1:19000/custom-mods/KagrenacServer` (launcher install: `.../custom-mods/example-server`; pairing writes the actual route) | Yes |
 | PostgreSQL in DwemerDistro | `localhost:5432`, database `example_ai_mod` | Yes |
-| LLM: OpenAI, OpenRouter, local OpenAI-compatible or DwemerDistro LLM Studio (`127.0.0.1:1234`) | `llm.mode` in `config/config.php`, see [CONNECTORS.md](../CONNECTORS.md) | No (mock otherwise) |
+| LLM: OpenAI, OpenRouter, local OpenAI-compatible or DwemerDistro LLM Studio (`127.0.0.1:1234`) | `llm.mode` in `config/config.php`, see [CONNECTORS.md](../CONNECTORS.md); shipped as mock, guided setup recommends OpenRouter `google/gemma-4-31b-it` unless the user already chose | No (mock otherwise) |
 | TTS: PocketTTS (audio.cpp), default | `http://127.0.0.1:8086/v1/audio/speech`, off until enabled | No |
 | STT: Parakeet, default | `http://127.0.0.1:8022/v1/audio/transcriptions`, off until enabled | No |
 | STT: faster-whisper, supported alternative | `http://127.0.0.1:9876/api/v0/transcribe` | No |
-| NPC selection (`decision.php`, mock or OpenRouter decisions) | off | No; selection only, never actions |
+| NPC selection (`decision.php`, mock or OpenRouter JEV `typesafe/jev-1.13`) | off | No; selection only, never actions (JEV action choice is a future contract, [PORT_RECIPES](feature-recipes/PORT_RECIPES.md#awareness-and-actions)) |
 
 All URLs are configurable; provider settings are in [CONNECTORS.md](../CONNECTORS.md). None
 of these are installed or started by the template; start them from the DwemerDistro

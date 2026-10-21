@@ -6,9 +6,9 @@
 //            writes it as its own <id>_logic.luabnd laid out like a game per-logic file
 //            and, in a copy of regulation.bin, clones one NpcThinkParam row (new logicId) and one
 //            NpcParam row (new teamType) for the companion alone, then re-reads both
-//   merge-events  adds one owned event and its InitializeEvent from a compiled common.emevd to
-//            the game's original one, so no game event is re-encoded by the script compiler;
-//            --check-events: map event files the id must also be free in; --expect-teams: the
+//   merge-events  adds the owned events (--event id ...) and one InitializeEvent each from a
+//            compiled common.emevd to the game's original one, so no game event is re-encoded by
+//            the script compiler; --check-events: map event files the ids must also be free in; --expect-teams: the
 //            teams SetCharacterTeamType may set (given with no value: none allowed);
 //            --expect-entity: the one character every character AI call (2004[2/11/16/17/19/20])
 //            must address
@@ -17,6 +17,9 @@
 //            the grace named by a BonfireWarpParam row; refuses an id or
 //            name already used in any given MSB or event file, then checks the written file is
 //            the original plus only that part (and its model entry if the map lacked it)
+//   flag-audit  checks that nothing in the game's allocation lists, event scripts (parameters
+//            substituted), params or raw files references a candidate event flag window;
+//            exit 0 clear, 2 referenced, 1 error; writes nothing but its JSON report
 // It reads its inputs and writes only new files (the spec's out_dir, or --out), never overwriting:
 // outputs go to *.partial and are moved into place only after re-read verification passes.
 using System;
@@ -41,7 +44,8 @@ static class Program
                 "pack" => Pack(opt),
                 "merge-events" => MergeEvents(opt),
                 "place" => Place(opt),
-                _ => Fail("usage: erpack inspect|pack|merge-events|place --option value ..."),
+                "flag-audit" => FlagAudit(opt),
+                _ => Fail("usage: erpack inspect|pack|merge-events|place|flag-audit --option value ..."),
             };
         }
         catch (Exception e) { return Fail(e.ToString()); }
@@ -400,12 +404,13 @@ static class Program
         && a.Parameters.Select(p => Par(p, 0)).SequenceEqual(b.Parameters.Select(p => Par(p, skip)));
 
     // The script compiler re-encodes every event of the file it rebuilds. Take only the owned
-    // event and its one InitializeEvent(0, id, 0) from the compiled file and add them to a fresh
-    // read of the game's original file; everything else stays the original's.
+    // events, in start order, and their one InitializeEvent(0, id, 0) each from the compiled file
+    // and add them to a fresh read of the game's original file; everything else stays the original's.
     static int MergeEvents(Dictionary<string, List<string>> o)
     {
         string origPath = One(o, "original"), compPath = One(o, "compiled"), outPath = One(o, "out");
-        var id = uint.Parse(One(o, "event"));
+        var ids = (o.GetValueOrDefault("event") ?? new List<string>()).Select(uint.Parse).ToList();
+        if (ids.Count == 0 || ids.Distinct().Count() != ids.Count) return Fail("need --event with distinct ids");
         var expectTeams = o.ContainsKey("expect-teams") ? o["expect-teams"].Select(byte.Parse).ToList() : null;
         uint? expectEntity = o.ContainsKey("expect-entity") ? uint.Parse(One(o, "expect-entity")) : null;
         foreach (var p in new[] { outPath, outPath + ".partial" }.Where(Path.Exists))
@@ -417,53 +422,61 @@ static class Program
 
         var orig = EMEVD.Read(origPath);
         var comp = EMEVD.Read(compPath);
-        bool Uses(EMEVD f) => f.Events.Any(e => e.ID == id || e.Instructions.Any(i => IsInit(i) && InitTarget(i) == id));
-        if (Uses(orig)) return Fail($"event {id} already exists in, or is started by, the original file");
-        // The id must also be free in the given original map event files (ids and starts only).
+        bool Uses(EMEVD f, uint id) => f.Events.Any(e => e.ID == id || e.Instructions.Any(i => IsInit(i) && InitTarget(i) == id));
+        foreach (var id in ids.Where(id => Uses(orig, id))) return Fail($"event {id} already exists in, or is started by, the original file");
+        // The ids must also be free in the given original map event files (ids and starts only).
         var idChecks = new List<object>();
         foreach (var path in o.GetValueOrDefault("check-events") ?? new List<string>())
         {
             var m = EMEVD.Read(path);
-            if (Uses(m)) return Fail($"event {id} already exists in, or is started by, {path}");
-            idChecks.Add(new { file = Path.GetFileName(path), events = m.Events.Count, id_free = true });
+            foreach (var id in ids.Where(id => Uses(m, id))) return Fail($"event {id} already exists in, or is started by, {path}");
+            idChecks.Add(new { file = Path.GetFileName(path), events = m.Events.Count, ids_free = true });
         }
-        var owned = comp.Events.Where(e => e.ID == id).ToList();
-        if (owned.Count != 1) return Fail($"compiled file has {owned.Count} events {id}, need exactly one");
-        var ev = owned[0];
-        if (ev.RestBehavior != EMEVD.Event.RestBehaviorType.Restart) return Fail($"event {id} is {ev.RestBehavior}, need Restart");
-        if (ev.Parameters.Count != 0) return Fail($"event {id} takes parameters; only InitializeEvent(0, id, 0) is supported");
-        if (ev.Instructions.Any(IsInit)) return Fail($"event {id} starts other events; only one self-contained event is merged");
         var orig0 = orig.Events.FirstOrDefault(e => e.ID == 0);
         var comp0 = comp.Events.FirstOrDefault(e => e.ID == 0);
         if (orig0 == null || comp0 == null) return Fail("no event 0 in the original or compiled file");
-        var inits = comp.Events.SelectMany(e => e.Instructions.Where(i => IsInit(i) && InitTarget(i) == id).Select(i => (e, i))).ToList();
-        if (inits.Count != 1 || inits[0].e != comp0) return Fail($"need exactly one start of event {id}, in event 0; found {inits.Count}");
-        var init = inits[0].i;
-        var shape = new byte[12];
-        BitConverter.TryWriteBytes(shape.AsSpan(4), id);
-        if (init.ID != 0 || init.Layer != null || !init.ArgData.AsSpan().SequenceEqual(shape)
-            || comp0.Parameters.Any(p => p.InstructionIndex == comp0.Instructions.IndexOf(init)))
-            return Fail($"start of event {id} is not InitializeEvent(0, {id}, 0): {Ins(init)}");
+        var evs = new List<EMEVD.Event>();
+        var starts = new List<EMEVD.Instruction>();
+        foreach (var id in ids)
+        {
+            var owned = comp.Events.Where(e => e.ID == id).ToList();
+            if (owned.Count != 1) return Fail($"compiled file has {owned.Count} events {id}, need exactly one");
+            var ev = owned[0];
+            if (ev.RestBehavior != EMEVD.Event.RestBehaviorType.Restart) return Fail($"event {id} is {ev.RestBehavior}, need Restart");
+            if (ev.Parameters.Count != 0) return Fail($"event {id} takes parameters; only InitializeEvent(0, id, 0) is supported");
+            if (ev.Instructions.Any(IsInit)) return Fail($"event {id} starts other events; only self-contained events are merged");
+            var inits = comp.Events.SelectMany(e => e.Instructions.Where(i => IsInit(i) && InitTarget(i) == id).Select(i => (e, i))).ToList();
+            if (inits.Count != 1 || inits[0].e != comp0) return Fail($"need exactly one start of event {id}, in event 0; found {inits.Count}");
+            var init = inits[0].i;
+            var shape = new byte[12];
+            BitConverter.TryWriteBytes(shape.AsSpan(4), id);
+            if (init.ID != 0 || init.Layer != null || !init.ArgData.AsSpan().SequenceEqual(shape)
+                || comp0.Parameters.Any(p => p.InstructionIndex == comp0.Instructions.IndexOf(init)))
+                return Fail($"start of event {id} is not InitializeEvent(0, {id}, 0): {Ins(init)}");
+            evs.Add(ev);
+            starts.Add(new EMEVD.Instruction(2000, 0, shape));
+        }
+        int n = ids.Count;
 
         // SetCharacterTeamType (2004[02]): entity uint32, team uint8, three padding bytes.
-        var teams = ev.Instructions.Select((i, k) => (i, k)).Where(x => x.i.Bank == 2004 && x.i.ID == 2)
+        var teams = evs.SelectMany(ev => ev.Instructions).Select((i, k) => (i, k)).Where(x => x.i.Bank == 2004 && x.i.ID == 2)
             .Select(x => new { index = x.k, args = Convert.ToHexString(x.i.ArgData), shape_ok = x.i.ArgData.Length == 8 && x.i.ArgData[5..].All(b => b == 0),
                 entity = x.i.ArgData.Length >= 4 ? BitConverter.ToUInt32(x.i.ArgData, 0) : 0, team = x.i.ArgData.Length >= 5 ? x.i.ArgData[4] : (byte)0 }).ToList();
         bool teamsOk = teams.All(t => t.shape_ok) && (expectTeams == null
             || teams.Select(t => t.team).Distinct().Order().SequenceEqual(expectTeams.Distinct().Order()));
-        // Character AI calls (team, event target, clear target, AI command, AI id, replan): the
-        // character is the first argument of each.
-        var aiCalls = ev.Instructions.Where(i => i.Bank == 2004 && i.ID is 2 or 11 or 16 or 17 or 19 or 20)
-            .Select(i => new { instruction = $"2004[{i.ID}]", entity = i.ArgData.Length >= 4 ? BitConverter.ToUInt32(i.ArgData, 0) : 0 }).ToList();
+        // Character AI calls (team, event target, clear target, AI command, AI id, replan) in any
+        // owned event: the character is the first argument of each.
+        var aiCalls = evs.SelectMany(ev => ev.Instructions.Where(i => i.Bank == 2004 && i.ID is 2 or 11 or 16 or 17 or 19 or 20)
+            .Select(i => new { ev = ev.ID, instruction = $"2004[{i.ID}]", entity = i.ArgData.Length >= 4 ? BitConverter.ToUInt32(i.ArgData, 0) : 0 })).ToList();
         bool? entityOk = expectEntity == null ? null : aiCalls.Count > 0 && aiCalls.All(c => c.entity == expectEntity);
 
-        // Event 0 ends early on some conditions (END IF instructions), so the start goes first, as
-        // the compiler places it; parameter references in event 0 move with the shifted instructions.
+        // Event 0 ends early on some conditions (END IF instructions), so the starts go first, as
+        // the compiler places them; parameter references in event 0 move with the shifted instructions.
         var merged = EMEVD.Read(origPath);
         var merged0 = merged.Events.Single(e => e.ID == 0);
-        merged0.Instructions.Insert(0, new EMEVD.Instruction(2000, 0, shape));
-        foreach (var p in merged0.Parameters) p.InstructionIndex++;
-        merged.Events.Add(ev);
+        merged0.Instructions.InsertRange(0, starts);
+        foreach (var p in merged0.Parameters) p.InstructionIndex += n;
+        merged.Events.AddRange(evs);
         Directory.CreateDirectory(Path.GetDirectoryName(full));
         merged.Write(outPath + ".partial", merged.Compression);
 
@@ -475,13 +488,16 @@ static class Program
         if (Dcx(back.Compression) != Dcx(fresh.Compression)) fileBad.Add("compression");
         if (!back.StringData.AsSpan().SequenceEqual(fresh.StringData)) fileBad.Add("string data");
         if (!back.LinkedFileOffsets.SequenceEqual(fresh.LinkedFileOffsets)) fileBad.Add("linked file offsets");
-        if (back.Events.Count != fresh.Events.Count + 1) fileBad.Add("event count");
-        var eventsBad = fresh.Events.Where((e, k) => k >= back.Events.Count || !SameEvent(e, back.Events[k], e.ID == 0 ? 1 : 0))
+        if (back.Events.Count != fresh.Events.Count + n) fileBad.Add("event count");
+        var eventsBad = fresh.Events.Where((e, k) => k >= back.Events.Count || !SameEvent(e, back.Events[k], e.ID == 0 ? n : 0))
             .Select(e => e.ID).ToList();
         var back0 = back.Events.FirstOrDefault(e => e.ID == 0);
-        bool initOk = back0 != null && back0.Instructions.Count > 0 && Ins(back0.Instructions[0]) == Ins(init)
-            && back.Events.Sum(e => e.Instructions.Count(i => IsInit(i) && InitTarget(i) == id)) == 1;
-        bool eventOk = back.Events.Count(e => e.ID == id) == 1 && SameEvent(ev, back.Events[^1], 0);
+        bool initOk = back0 != null && back0.Instructions.Count >= n
+            && starts.Select(Ins).SequenceEqual(back0.Instructions.Take(n).Select(Ins))
+            && ids.All(id => back.Events.Sum(e => e.Instructions.Count(i => IsInit(i) && InitTarget(i) == id)) == 1);
+        var kept = evs.Select((ev, k) => back.Events.Count(e => e.ID == ev.ID) == 1 && back.Events.Count >= n
+            && SameEvent(ev, back.Events[back.Events.Count - n + k], 0)).ToList();
+        bool eventOk = kept.All(k => k);
         bool origKept = origHash == Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(origPath)));
         // Informational: game events the compiler re-encoded, which this merge leaves as the original's.
         var reencoded = fresh.Events.Where(e => e.ID != 0
@@ -491,19 +507,186 @@ static class Program
         if (ok) File.Move(outPath + ".partial", outPath, false);
         Console.WriteLine(JsonSerializer.Serialize(new
         {
-            ok, event_id = id, rest = ev.RestBehavior.ToString(), event_name = ev.Name, instructions = ev.Instructions.Count,
-            init = new { index = 0, instruction = Ins(init), ok = initOk }, event_kept = eventOk,
+            ok, event_ids = ids,
+            events = evs.Select((ev, k) => new { id = ev.ID, rest = ev.RestBehavior.ToString(), name = ev.Name, instructions = ev.Instructions.Count, kept = kept[k] }),
+            inits = new { indices = Enumerable.Range(0, n), instructions = starts.Select(Ins), ok = initOk }, events_kept = eventOk,
             team_commands = teams, expect_teams = expectTeams, teams_ok = teamsOk, expect_entity = expectEntity, entity_ok = entityOk,
-            ai_calls = aiCalls.GroupBy(c => (c.instruction, c.entity)).Select(g => new { g.Key.instruction, g.Key.entity, count = g.Count() }),
+            ai_calls = aiCalls.GroupBy(c => (c.ev, c.instruction, c.entity)).Select(g => new { @event = g.Key.ev, g.Key.instruction, g.Key.entity, count = g.Count() }),
             event_id_checks = idChecks,
             original_sha256 = origHash, original_unchanged = origKept, format = back.Format.ToString(), compression = Dcx(back.Compression),
             original_events = fresh.Events.Count, output_events = back.Events.Count,
-            compiled_events_ignored = comp.Events.Where(e => e.ID != id && !fresh.Events.Any(f => f.ID == e.ID)).Select(e => e.ID),
+            compiled_events_ignored = comp.Events.Where(e => !ids.Contains((uint)e.ID) && !fresh.Events.Any(f => f.ID == e.ID)).Select(e => e.ID),
             compiled_game_events_reencoded = reencoded.Count,
             collateral = new { file_metadata_changed = fileBad, events_changed = eventsBad },
             output = ok ? outPath : outPath + ".partial",
         }));
         return ok ? 0 : Fail("re-read verification failed; unverified .partial file left in place, nothing published");
+    }
+
+    // EMEDF argument type sizes (DarkScript3 3.6.3 er-common.emedf.json): 0 u8, 1 u16, 2 u32,
+    // 3 s8, 4 s16, 5 s32, 6 f32. Arguments are packed, each aligned to its own size.
+    static readonly int[] ArgSize = { 1, 2, 4, 1, 2, 4, 4 };
+    sealed record EmedfArg(string name, int type, int offset);
+
+    // One finding of flag-audit: what referenced which flag ids, and where.
+    sealed record Hit(string file, string where, string kind, long first, long last);
+
+    // Audits a candidate event flag window [start, end] against everything the game gives us:
+    // the allocation lists (is the 1000-flag block allocated), every event script with its
+    // InitializeEvent / InitializeCommonEvent parameters substituted into the called event
+    // (common_func included), typed flag arguments, flag ranges and event values decoded by
+    // EMEDF, any aligned 32-bit value or value pair in any instruction, every param file of
+    // the regulation, and raw files (talk scripts, Lua, MSB: 32-bit and Lua double constants).
+    // A window is clear only if nothing at all references a flag inside it.
+    static int FlagAudit(Dictionary<string, List<string>> o)
+    {
+        if (!o.TryGetValue("window", out var window) || window.Count != 2) return Fail("need --window start end");
+        long ws = long.Parse(window[0]), we = long.Parse(window[1]);
+        if (we < ws || ws / 1000 != we / 1000) return Fail("--window start end must lie in one 1000-flag block");
+        long block = ws / 1000;
+        // A folder stands for its files with that suffix (sorted), so the command line stays short.
+        List<string> Paths(string key, string suffix) => (o.GetValueOrDefault(key) ?? new List<string>())
+            .SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*" + suffix).Order(StringComparer.Ordinal).ToArray() : new[] { p }).ToList();
+        var hits = new List<Hit>();
+        var blockUse = new SortedDictionary<long, int>();  // every typed flag id seen in the block, with its count
+        void Mark(string file, string where, string kind, long a, long b)
+        {
+            if (a <= we && b >= ws) hits.Add(new Hit(file, where, kind, a, b));
+        }
+
+        // EMEDF: argument layout per instruction.
+        var emedf = JsonDocument.Parse(File.ReadAllText(One(o, "emedf"))).RootElement;
+        var layout = new Dictionary<(int, int), List<EmedfArg>>();
+        foreach (var cls in emedf.GetProperty("main_classes").EnumerateArray())
+            foreach (var ins in cls.GetProperty("instrs").EnumerateArray())
+            {
+                var args = new List<EmedfArg>();
+                int at = 0;
+                foreach (var a in ins.GetProperty("args").EnumerateArray())
+                {
+                    int t = a.GetProperty("type").GetInt32(), size = t is >= 0 and < 7 ? ArgSize[t] : 4;
+                    at = (at + size - 1) / size * size;
+                    args.Add(new EmedfArg(a.GetProperty("name").GetString(), t, at));
+                    at += size;
+                }
+                layout[(cls.GetProperty("index").GetInt32(), ins.GetProperty("index").GetInt32())] = args;
+            }
+        static long Read(byte[] d, EmedfArg a) => a.offset + ArgSize[a.type] > d.Length ? -1 : a.type switch
+        {
+            0 => d[a.offset], 1 => BitConverter.ToUInt16(d, a.offset), 2 => BitConverter.ToUInt32(d, a.offset),
+            3 => (sbyte)d[a.offset], 4 => BitConverter.ToInt16(d, a.offset), 5 => BitConverter.ToInt32(d, a.offset), _ => -1,
+        };
+        static bool IsFlag(EmedfArg a) => a.type is 2 or 5 && a.name.Contains("Flag") && !a.name.Contains("Bits");
+
+        // Event scripts, keyed by file name; common_func holds the InitializeCommonEvent targets.
+        var files = Paths("emevd", ".emevd.dcx").ToDictionary(p => Path.GetFileName(p), p => EMEVD.Read(p));
+        var commonFunc = files.FirstOrDefault(f => f.Key.StartsWith("common_func.")).Value;
+        if (commonFunc == null) return Fail("--emevd must include common_func.emevd.dcx");
+        int instructions = 0, substituted = 0, unresolved = 0;
+        var seen = new HashSet<string>();
+
+        void Check(string file, string where, EMEVD.Instruction ins, byte[] data)
+        {
+            // 1. Any aligned 32-bit value inside the window, and any aligned pair spanning it.
+            var words = Enumerable.Range(0, data.Length / 4).Select(k => (long)BitConverter.ToUInt32(data, k * 4)).ToList();
+            foreach (var w in words) Mark(file, where, "value", w, w);
+            for (int i = 0; i < words.Count; i++)
+                for (int j = i + 1; j < words.Count; j++)
+                    if (words[i] < words[j] && words[j] - words[i] <= 100000) Mark(file, where, "pair", words[i], words[j]);
+            // 2. Typed: flag ids, start/end ranges and base + bit-count event values.
+            if (!layout.TryGetValue((ins.Bank, ins.ID), out var args)) { Mark(file, where, "unknown-instruction", ws, we); return; }
+            for (int k = 0; k < args.Count; k++)
+            {
+                if (!IsFlag(args[k])) continue;
+                long v = Read(data, args[k]);
+                if (v / 1000 == block) blockUse[v] = blockUse.GetValueOrDefault(v) + 1;
+                Mark(file, where, "flag", v, v);
+                if (k + 1 < args.Count && IsFlag(args[k + 1]) && (args[k].name.Contains("Start") || args[k].name.Contains("Min")))
+                    Mark(file, where, "range", Math.Min(v, Read(data, args[k + 1])), Math.Max(v, Read(data, args[k + 1])));
+                if (k + 1 < args.Count && args[k + 1].name.Contains("Bits"))
+                    Mark(file, where, "event-value", v, v + Math.Max(0, Read(data, args[k + 1]) - 1));
+            }
+        }
+
+        // Walks one event with the given parameter bytes, then every event it starts (depth-capped).
+        void Walk(string file, EMEVD f, EMEVD.Event ev, byte[] param, int depth)
+        {
+            string key = file + ":" + ev.ID + ":" + Convert.ToHexString(param);
+            if (depth > 4 || !seen.Add(key)) return;
+            for (int n = 0; n < ev.Instructions.Count; n++)
+            {
+                var ins = ev.Instructions[n];
+                var data = (byte[])ins.ArgData.Clone();
+                foreach (var p in ev.Parameters.Where(p => p.InstructionIndex == n))
+                {
+                    substituted++;
+                    if (p.SourceStartByte + p.ByteCount <= param.Length && p.TargetStartByte + p.ByteCount <= data.Length)
+                        Array.Copy(param, (int)p.SourceStartByte, data, (int)p.TargetStartByte, (int)p.ByteCount);
+                }
+                instructions++;
+                string where = $"event {ev.ID} #{n} {ins.Bank}[{ins.ID}]" + (param.Length > 0 ? " (with caller parameters)" : "");
+                Check(file, where, ins, data);
+                if (IsInit(ins) && data.Length >= 8)
+                {
+                    var (tf, tFile) = ins.ID == 6 ? (commonFunc, "common_func.emevd.dcx") : (f, file);
+                    var target = tf.Events.FirstOrDefault(e => e.ID == InitTarget(new EMEVD.Instruction(ins.Bank, ins.ID, data)));
+                    if (target == null) { unresolved++; continue; }
+                    Walk(tFile, tf, target, data[8..], depth + 1);
+                }
+            }
+        }
+        foreach (var (name, f) in files)
+            foreach (var ev in f.Events) Walk(name, f, ev, Array.Empty<byte>(), 0);
+
+        // Allocation lists: decompressed bytes, and every aligned 32-bit word equal to the block.
+        var alloc = new List<object>();
+        foreach (var path in Paths("alloc", ".eventflagalloclist.dcx"))
+        {
+            var bytes = DCX.Decompress(path).ToArray();
+            var at = Enumerable.Range(0, bytes.Length / 4).Where(k => BitConverter.ToUInt32(bytes, k * 4) == block).Select(k => k * 4).ToList();
+            alloc.Add(new { file = Path.GetFileName(path), bytes = bytes.Length, block_word_offsets = at, hex = Convert.ToHexString(bytes) });
+        }
+
+        // Raw files and every param of the regulation: unaligned 32-bit and Lua double constants.
+        int rawFiles = 0;
+        void Raw(string file, byte[] d)
+        {
+            rawFiles++;
+            for (int i = 0; i + 4 <= d.Length; i++)
+            {
+                long v = BitConverter.ToUInt32(d, i);
+                if (v >= ws && v <= we) hits.Add(new Hit(file, $"offset {i}", "raw-u32", v, v));
+                if (i + 8 <= d.Length)
+                {
+                    double x = BitConverter.ToDouble(d, i);
+                    if (x >= ws && x <= we && x == Math.Floor(x)) hits.Add(new Hit(file, $"offset {i}", "raw-double", (long)x, (long)x));
+                }
+            }
+        }
+        void RawContainer(string label, byte[] bytes)
+        {
+            if (BND4.IsRead(bytes, out BND4 bnd)) foreach (var bf in bnd.Files) Raw(label + "/" + Path.GetFileName(bf.Name), bf.Bytes.ToArray());
+            else Raw(label, bytes);
+        }
+        foreach (var path in Paths("raw", ".dcx"))
+            RawContainer(Path.GetFileName(path), DCX.Is(path) ? DCX.Decompress(path).ToArray() : File.ReadAllBytes(path));
+        int paramFiles = 0;
+        if (o.TryGetValue("regulation", out var reg))
+            foreach (var pf in RegulationDecryptor.DecryptERRegulation(reg[0]).Files) { paramFiles++; Raw("regulation/" + Path.GetFileName(pf.Name), pf.Bytes.ToArray()); }
+
+        // A start of an event that no given file defines cannot reference anything; it is reported.
+        bool clear = hits.Count == 0;
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            window = new[] { ws, we }, block, window_clear = clear,
+            emevd_files = files.Count, instructions_checked = instructions, parameter_substitutions = substituted,
+            unresolved_event_starts = unresolved, raw_files = rawFiles, param_files = paramFiles,
+            hits_total = hits.Count, hits_by_kind = hits.GroupBy(h => h.kind).ToDictionary(g => g.Key, g => g.Count()),
+            hits = hits.OrderBy(h => h.kind == "pair").Take(200),
+            block_flags_used = blockUse.Select(kv => new { flag = kv.Key, offset = kv.Key % 1000, uses = kv.Value }),
+            alloc_lists = alloc,
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        return clear ? 0 : 2;
     }
 
     // Public values of an MSB entry, nested settings objects and arrays flattened, so two

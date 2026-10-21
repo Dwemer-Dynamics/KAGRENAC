@@ -14,11 +14,11 @@ if (str_contains($text, 'wave')) {
 }
 ```
 
-Replace the last instruction in `openai_reply()`'s `$system` string with:
+`actions_prompt()` already offers every allowed name as a tag. In it, add a hint after the
+follow one, so the model knows when to use wave:
 
 ```php
-. "If you agree to follow the player, end with [ACTION:follow_player]. "
-. "If asked to wave, end with [ACTION:wave]. Use no other tags.";
+$hints .= in_array('[ACTION:wave]', $tags, true) ? ' Use [ACTION:wave] only when asked to wave.' : '';
 ```
 
 In your private `config/config.php`, change only the action allowlist:

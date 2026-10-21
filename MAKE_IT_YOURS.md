@@ -15,7 +15,7 @@ template as an extra remote and merge reviewed updates on a working branch.
 | Project/build name | `client/CMakeLists.txt` (`project`, every `KagrenacClient` target reference including POST_BUILD/TARGET_FILE_DIR), `client/scripts/build.ps1` build folder and output message (and the matching default in `scripts/project.ps1`), the `--version` label in `client/src/main.cpp`, and README commands |
 | Server folder/route | Clone into `/var/www/html/custom-mods/your-folder` (the shared port serves it at `/custom-mods/your-folder`); change the default base URL in server `scripts/smoke.sh` and `client/config.default.json` and `client/src/config.h`, and set the client's private `server_url` to that route. Core's web protection covers only the known Kagrenac folders, so add equivalent Apache deny rules for `.git/`, `client/`, `docs/` and `ports/` in your folder ([SETUP.md](SETUP.md#before-you-install-web-protection)) |
 | Database | Server `config/config.php`: set `database.name` to a new lowercase identifier; `install.sh` creates it |
-| Launcher manifest | Server `dwemer-mod.json`: your own unique `id`, `name`, `description`, `project_url`, `branches` and database placeholder; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md#making-your-own-launcher-mod-from-this-template) |
+| Manifest (do this first) | Server `dwemer-mod.json`: your own unique `id` and `name` before the first deploy (`project.ps1 deploy` refuses the template's `example-server` for a new install; Core names the database `custom_<id>` and the route `/custom-mods/<id>`), then `description`, `project_url` and `branches`. Leave the `setup` placeholders as they are. One repository per mod; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md#making-your-own-launcher-mod-from-this-template) |
 | Navbar branding | Server `ui/tmpl/navbar.php` and `ui/tmpl/header.php`: title and icon; replace `ui/images/kagrenac.png` (also the manifest icon and banner, and the README logos) with your own image; keep existing source notices (including `ui/HERIKA-LICENSE`) |
 | Colors | Server `ui/css/chim-theme.css`: blue accent variables; search the scoped CSS for remaining blue literals |
 | Fictional page samples | Server `ui/examples/` (blank, form, table); unsaved previews. `ui/logs.php` (event log) and `ui/profiles.php` (saved profiles) are working pages, not samples |
@@ -29,10 +29,13 @@ template as an extra remote and merge reviewed updates on a working branch.
 | Your project brief | `PROJECT.md`: brief, integration plan, stages, decisions and latest evidence |
 | Your copyright notice | Add your notice to README and `THIRD_PARTY_NOTICES.md` (and `client/THIRD_PARTY_NOTICES.md` for client binaries); keep `LICENSE` (GPL-3.0-only) and every existing and third-party notice |
 
-For local WSL setup, clone your own repository into
-`/var/www/html/custom-mods/your-folder` as SETUP describes. Generate the private config,
-choose your own database name, run the installer twice and run smoke checks using your actual route. Backups and updates use
-that same configured database. Use that database name when restoring or removing it.
+For local WSL setup, commit your changes and run
+`scripts\project.ps1 deploy -WslDistro <name>` from your Windows copy
+([getting-started](docs/getting-started.md#deploy-and-pair)); Core creates the folder, the
+protection, the private config and the `custom_<id>` database. The manual route still
+works: clone your own repository into `/var/www/html/custom-mods/your-folder` as SETUP
+describes, choose your own database name, run the installer twice and run smoke checks on
+your actual route. Backups and updates use that same configured database.
 
 The agent handoff is [docs/agent-playbook.md](docs/agent-playbook.md),
 with [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md) for engine evidence and

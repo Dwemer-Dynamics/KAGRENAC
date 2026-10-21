@@ -1,5 +1,6 @@
 #include "ai_client.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -320,6 +321,34 @@ std::string AiClient::health(std::string* note, std::string* info) const
     return "";
 }
 
+// Adds the optional "offered_actions" list when the game set offerActions: at most 8 distinct
+// action names (1-40 of A-Z a-z 0-9 _). Repeats are sent once. Any bad name or more than 8
+// fails the request, so a malformed list never turns into "no list" (the full allowlist).
+namespace {
+
+std::string addOfferedActions(const GameContext& context, json& request)
+{
+    if (!context.offerActions) {
+        return "";
+    }
+    json names = json::array();
+    for (const std::string& name : context.offeredActions) {
+        if (!isSafe(name, 1, 40, false)) {
+            return "offered action names must be 1-40 characters of A-Z a-z 0-9 _";
+        }
+        if (std::find(names.begin(), names.end(), name) == names.end()) {
+            names.push_back(name);
+        }
+    }
+    if (names.size() > 8) {
+        return "at most 8 offered actions";
+    }
+    request["offered_actions"] = names;
+    return "";
+}
+
+}  // namespace
+
 TurnResult AiClient::sendTurn(const std::string& requestId, const GameContext& context, const std::string& text) const
 {
     TurnResult result;
@@ -334,6 +363,10 @@ TurnResult AiClient::sendTurn(const std::string& requestId, const GameContext& c
         {"context", context.details},
         {"text", text},
     };
+    result.error = addOfferedActions(context, request);
+    if (!result.error.empty()) {
+        return result;
+    }
     Response response = send(L"POST", "/turn.php", "application/json", jsonBody(request));
     readTurnReply(response, context, result);
     return result;
@@ -372,6 +405,13 @@ TurnResult AiClient::sendEvent(const std::string& requestId, const GameContext& 
     if (!context.npcId.empty()) {
         request["npc"] = {{"id", context.npcId}, {"name", context.npcName}};
         request["player"] = {{"name", context.playerName}};
+    }
+    // Only a responding event can lead to actions, so only it carries offered_actions.
+    if (respond) {
+        result.error = addOfferedActions(context, request);
+        if (!result.error.empty()) {
+            return result;
+        }
     }
     Response response = send(L"POST", "/event.php", "application/json", jsonBody(request));
     if (respond) {
@@ -429,6 +469,11 @@ void AiClient::readTurnReply(const Response& response, const GameContext& contex
     if (reply["actions"].is_array()) {
         for (const json& action : reply["actions"]) {
             TurnAction read = readAction(action, context.npcId);
+            if (context.offerActions && read.problem.empty()
+                && std::find(context.offeredActions.begin(), context.offeredActions.end(), read.name)
+                    == context.offeredActions.end()) {
+                read.problem = "action was not offered";
+            }
             TurnAction* earlier = nullptr;
             for (TurnAction& kept : result.actions) {
                 if (!read.name.empty() && kept.name == read.name) {

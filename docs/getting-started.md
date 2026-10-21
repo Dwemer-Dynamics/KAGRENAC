@@ -16,32 +16,47 @@ them; you do not have to read them first.
 3. **Integration plan, before any mod code is built.** The agent fills the short plan in
    PROJECT.md: how the player's input reaches the mod, which NPC and how long it lives, how
    the HTTP call runs off the game thread and comes back to it, how the reply is shown and
-   the voice played, which existing mechanism carries each action, saves, offline play and
-   cancel, which facts are cited from the game's SDK or files and which are unknown, and
-   what the first thin slice must show. For an unknown, the agent does bounded research: it
+   the voice played, which existing mechanism carries each action (its target, instance
+   check and preconditions), what the mod can observe (each value's source and freshness;
+   anything it cannot read is sent as `unavailable`), saves, offline play and cancel, which
+   facts are cited from the game's SDK or files and which are unknown, and what the first
+   thin slice must show. The mod stays one repository: the server at the root, the game
+   side in `client/` or `ports/<engine>/`. For an unknown, the agent does bounded research: it
    says what it will look up and where, stops when it finds a citation or runs out of named
    sources, then gives you two or three concrete options with a recommendation. That is a
    short step, not a separate diagnostic stage, and the agent never invents an engine API.
    Steps 4 and 5 do not wait for it; only step 6 needs the plan with options chosen.
 4. **DwemerDistro.** The agent runs `scripts\project.ps1 doctor -WslDistro <name>` for the
    one distro you use. If you have not named it and more than one distro is listed, the
-   agent asks which one; doctor never probes the others. If DwemerDistro is missing, it
-   walks you through the official installer. If it is there, the agent checks its runtime,
-   Apache, PostgreSQL and web protection, then installs the server
-   ([SETUP.md section 1](../SETUP.md#1-install-the-server-inside-dwemerdistro)) and pairs
-   the client or mod with it ([SETUP.md section 3](../SETUP.md#3-connect-them)). Existing
-   installs, configs and databases are kept; other distros are left alone.
-5. **LLM and voice, tested for real.** The agent sets the LLM on the dashboard **LLM** page
-   and presses **Send test**: a real reply is the pass. For voice it checks PocketTTS is
-   installed and running in the DwemerDistro launcher (starting it there if it is not),
-   enables it on the **Voice** page and presses **Speak**: you hearing it is the pass. You
-   enter keys on the dashboard **API keys** page or in the private `config/config.php`,
-   never in chat, logs or commits. Once you have chosen a provider, set its key privately
-   and asked for the test, that is the permission for the test call; the agent makes no
-   paid call just because you did not object.
+   agent asks which one; doctor never probes the others. Doctor only diagnoses: it changes
+   nothing, and a line about a service you did not choose (for example nothing answering on
+   local port 1234 when you use OpenRouter) does not block anything. If DwemerDistro is
+   missing, the agent walks you through the official installer. Then the agent:
+   - gives your copy its own `id` and `name` in `dwemer-mod.json` (the template's
+     `example-server` is refused for a new deploy), commits, and runs
+     `scripts\project.ps1 deploy -WslDistro <name>` (see [Deploy](#deploy-and-pair) below);
+   - pairs the game side with `scripts\project.ps1 pair`, which writes the private client
+     config itself. You never paste a key or copy the token by hand.
+   Existing installs, configs and databases are kept; other distros are left alone. An
+   existing manual install is supported separately ([SETUP.md section 1](../SETUP.md#1-install-the-server-inside-dwemerdistro)).
+5. **LLM and voice, tested for real.** The agent reuses a provider you already configured.
+   If you have not chosen, it recommends OpenRouter
+   [`google/gemma-4-31b-it`](https://openrouter.ai/google/gemma-4-31b-it) for dialogue,
+   OpenRouter [`typesafe/jev-1.13`](https://openrouter.ai/typesafe/jev-1.13) only for
+   `decision.php` choices from a bounded list the game offers (never chat or actions), and
+   PocketTTS for voice. It sets the LLM on the dashboard **LLM** page and presses **Send
+   test**: a real reply is the pass. You enter keys on the dashboard **API keys** page or in
+   the private `config/config.php`, never in chat, logs or commits. Choosing a provider,
+   setting its key privately and asking for the test authorizes that test only; no other
+   paid call. For voice the agent checks PocketTTS is installed and running in the
+   DwemerDistro launcher, enables it on the **Voice** page and presses **Speak**. The pass
+   is you hearing it, on the dashboard or in the game; a generated WAV alone is not heard.
+   The shipped config stays in mock mode.
 6. **First real prototype.** The agent builds the thin slice from the plan in the game
    itself. Mock mode and the console client are developer checks for the server and shared
-   code, not your demo, and no console exercise is required first.
+   code, not your demo, and no console exercise is required first. For Elden Ring, the
+   reference in [ports/elden-ring/](../ports/elden-ring/README.md) is reused rather than
+   started over.
 7. **Expand.** One feature at a time: more actions, events, memory, speech to text. The
    [wave exercise](../WAVE_ACTION.md), memory and profiles come after the first AI line in
    game, never before it.
@@ -66,22 +81,55 @@ that do not depend on it.
 | Copy | Where | Job |
 |---|---|---|
 | Windows development copy | Any folder you own, for example `C:\dev\Kagrenac` | Edit, build, run `scripts\project.ps1` and your agent |
-| WSL server copy | `/var/www/html/custom-mods/KagrenacServer` (manual) or `/custom-mods/example-server` (launcher) | Run the server only |
+| WSL server copy | `/var/www/html/custom-mods/<id>` (made by `deploy` through Core), or an existing manual or launcher install | Run the server only |
 
-They are separate clones. Never build the client, write its `config.json` or keep build
+They are separate copies; `deploy` updates the server copy from your committed HEAD. Never build the client, write its `config.json` or keep build
 output in the server copy: it sits in Apache's web root.
 
 ## `scripts\project.ps1`
 
-`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <doctor|setup|check>`
+`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <doctor|setup|check|pair|deploy>`
+(the full option list is at the top of the script).
 
 | Command | Does | Never |
 |---|---|---|
 | `doctor` | Reports tools, WSL distros with their state, client builds, the client config (token shown only as set or missing), server health (`ok` and the `example-ai-server` identity) and, on a healthy server, whether `.git/`, `client/`, `docs/` and `ports/` are denied (only HTTP 403 counts; 200 or anything else is a problem). With `-WslDistro <name>`, and only if that distro is already running, it checks its `ddistro_custom_mod` tool, Apache, PostgreSQL and web protection. It says whether anything answers on local port 1234 (the `dwemerllm` default, [CONNECTORS.md](../CONNECTORS.md)) and at the PocketTTS default (8086), which is not a test, and ends with a readiness summary. Exit 0 means no FAIL or UNVERIFIED line was detected; WARN, SKIP and not-checked items still need action, and exit 0 never means ready | Changes anything, or starts a distro |
 | `setup` | Builds the client for x64 and x86 with `client\scripts\build.ps1` into `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build` (change with `-BuildRoot`, outside the repository); safe to repeat | Installs prerequisites, copies source into WSL, writes a client config |
 | `check` | `php -l` on every server PHP file and `bash -n`, with local tools when present, then the client build (fails on compiler warnings) | Runs migrations or any other database operation |
+| `pair` | Writes a new private client config from a server checkout (below) | Prints the token, overwrites a different config |
+| `deploy` | Installs or updates your committed HEAD in the named distro (below) | Deploys uncommitted files, adopts or repoints an install, rewrites the private config |
 
-Explicit opt-ins, both against an **existing** WSL server checkout you name:
+### Deploy and pair
+
+`deploy -WslDistro <name>` (run with `powershell.exe`, not `pwsh`):
+
+- Refuses uncommitted or untracked files, then exports exactly HEAD as a Git bundle to the
+  private folder `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\deploy\<id>`.
+- Needs DwemerDistro Core with `setup-web --protect-project` and `update --expect-commit`.
+  These are not yet in a public Core release, so **Update Distro** may not supply them yet.
+  If Core lacks them, deploy stops without changing anything (its message suggests Update
+  Distro, which helps only once a compatible Core is released); wait for that version, then
+  deploy again.
+- Protects `/custom-mods/<id>` with Core before any source is placed, then installs or
+  fast-forwards through Core from a private cache in WSL, to exactly that commit. Core
+  names the database `custom_<id>` (dashes become underscores).
+- Checks the commit, `www-data` access, health and HTTP 403 for source and config paths,
+  and writes a private deployment record (backup and retry steps) next to the bundle.
+- Running it again at the same commit reports it as already deployed and changes nothing,
+  so config and data are kept. A new commit is backed up and fast-forwarded; the private config is never rewritten.
+
+`deploy -WslDistro <name> -WslServerPath <existing manual install>` updates that manual
+install through its own `scripts/update.sh` instead. Deploy never adopts or repoints a
+launcher or manual install it did not make.
+
+`pair -WslDistro <name> -WslServerPath <checkout> -OutFile <full Windows path>` (optional
+`-ServerUrl`, `-SessionId`, `-AllowedActions a,b`) runs that checkout's
+`scripts/pair_client.php` and saves a new private client config. Put `-OutFile` outside
+every repository and web root, for example the game-side runtime folder. If the file
+already exists with the same URL, token and session it is kept as "already paired";
+anything else is refused, never overwritten.
+
+Explicit opt-ins for an **existing** manual WSL server checkout you name:
 
 - `setup -RunServerInstaller -WslDistro <name> -WslServerPath /var/www/html/custom-mods/KagrenacServer`
   runs that checkout's existing `scripts/install.sh` as root (safe to repeat; it keeps the
@@ -93,4 +141,9 @@ Explicit opt-ins, both against an **existing** WSL server checkout you name:
 
 `doctor -WslDistro <name> -WslServerPath <checkout>` also checks that checkout and whether its
 private config exists (without reading it); a stopped distro is reported and skipped. The
-opt-ins above may start the distro they name.
+opt-ins, `pair` and `deploy` may start the distro they name.
+
+Doctor checks health and exposure at `-ServerUrl`, else the shared client config's
+`server_url`, else `/custom-mods/KagrenacServer` on port 19000. For your own route, name it
+explicitly, for example
+`doctor -WslDistro <name> -ServerUrl http://127.0.0.1:19000/custom-mods/<id> -WslServerPath /var/www/html/custom-mods/<id>`.

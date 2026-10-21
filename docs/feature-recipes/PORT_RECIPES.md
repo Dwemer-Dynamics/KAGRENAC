@@ -69,12 +69,68 @@ any new action. Do not copy its steps here.
 
 - Implement `followPlayer()` with the engine's own follow behaviour. The target is always
   the NPC the request was sent to.
-- Add other actions only if authorized.
+- Add other actions only if authorized. Every action passes the gates in
+  [Awareness and actions](#awareness-and-actions).
 
 **Check now:** `--say "follow me"`; `--say "dance"` (the server rejects it); client
 `"allowed_actions": []` (the client rejects `follow_player`). See
 [START_HERE, Actions](../../START_HERE.md#9-actions-and-the-worked-extension).
 **Engine only:** the NPC really follows.
+
+## Awareness and actions
+
+**Seam.** `readContext()` fills `GameContext.details` on the game thread at send time; it is
+sent as `context` and reaches the model as quoted, untrusted data (`context_prompt()` in
+`lib/llm.php`). The prompt offers only the server's `allowed_actions` (`actions_prompt()`),
+and with none it tells the model it cannot act. Actions then pass both allowlists and one
+handler each in `applyResult()`. The loop:
+
+1. **Observe.** Send only what the game actually read, on a thread ENGINE_PACK.md records
+   as safe for that read. The plan names each observation's source (a cited engine read)
+   and its freshness limit. One the mod cannot read, or read longer ago than its limit, is
+   sent as the value `unavailable`, never left out, guessed or filled with static text. One
+   entry says where the observations came from and when; label that time as the request
+   time unless the game captured the values then. Protocol 1 limits apply (10 entries,
+   200 characters each).
+2. **Offer capabilities.** An action is offered only with its name in both allowlists, its
+   target (always the request's `npc.id`), the instance marker `isSameNpc()` checks, and
+   written preconditions (for example "companion loaded and alive").
+3. **Route.** An obvious command (a button, a key, or a fixed phrase the game itself matches)
+   goes straight to its handler without a model call. Dialogue goes to the dialogue model,
+   which may ask for an offered action with a tag. A bounded choice between offered options
+   is the future JEV contract below. No model call runs from a game tick or frame callback:
+   calls start only from player input or a bounded event, on a worker thread.
+4. **Validate, then execute.** On the game thread: the reply is the current one,
+   `isSameNpc()` passes, the target matches, and the preconditions hold on a fresh
+   observation. Then the one explicit handler runs.
+5. **Report the actual result.** `handled` in `result.php` means the handler ran, not that
+   the outcome happened. Record an outcome (the companion is following) only from a later
+   observation, and never let dialogue state it before then. Feeding that observed outcome
+   back into dialogue is a new event type: a protocol change for server and client together.
+
+**Gates, in order, for every handler and every observation.**
+
+- **Cited mechanism.** ENGINE_PACK.md cites a mechanism that does exactly this read or
+  action (SDK file, doc or the game's own data). No guessed address or hook.
+- **Guarded local validation.** Implement and prototype the handler or reader behind that
+  mechanism, off in shipped config, and check it locally (harness, test build, a private
+  config). This step does not wait for in-game proof; requiring that first would be circular.
+- **In-game verification.** Run it in the game against the engine pack's acceptance. Only
+  then mark it Verified (in engine), add it to a shipped allowlist, or send it as available.
+
+**Future JEV action choice (not implemented).** `decision.php` only picks the responding NPC
+and stays free of actions ([AGENTS.md](../../AGENTS.md), Decisions); it is not extended for
+this. A later contract may send JEV (`typesafe/jev-1.13`) the ids of the capabilities the
+game offers right now plus "none", accept only one of those ids, and then validate and
+execute it as in step 4. Use it only where a choice is ambiguous. It needs its own endpoint
+or protocol addition, designed in the server, the client and PROTOCOL.md together; nothing
+in this template provides it today.
+
+**Check now:** with the server's `allowed_actions` `[]`, `--say "follow me"` lists
+`follow_player` under rejected actions (the mock ignores the prompt). With a real provider
+authorized, the dashboard **Send test** with an empty list should not claim any action.
+**Engine only:** each observation's source and freshness, each handler's effect and the
+observed result.
 
 ## Game events
 
