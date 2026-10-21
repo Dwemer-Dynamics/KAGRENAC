@@ -40,6 +40,18 @@ location; an enemy tag is not verified hostility; a saved roster is not live nea
 Keep observations separate from lore, guesses and advice. The model never supplies executable
 commands, function names or arbitrary targets.
 
+Keep the player's interaction within the game. Investigate native menus, widgets, subtitles
+and input APIs first, then supported in-process UI/render hooks. Selection, text entry,
+reply display, errors and cancel should not require switching to a separate desktop window.
+An always-on-top desktop overlay is still an external fallback. Qualify focus capture and
+restoration, menu conflicts, resolution/fullscreen behavior and scene/unload lifetime.
+
+Use external resources only where an appropriate game-side mechanism is unavailable.
+An external transport or audio helper may run in the background without becoming the
+player-facing UI. Document why each external component is necessary. If only an external
+interaction window is feasible, explain the exact blocker and tradeoff before adopting it;
+do not silently change the expected in-game experience to finish the prototype.
+
 ## 3. Resolve unknowns with bounded probes
 
 For each unknown, name the sources or probe, its stopping point and the result needed. A
