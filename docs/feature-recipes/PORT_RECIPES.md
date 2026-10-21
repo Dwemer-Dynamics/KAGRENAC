@@ -7,7 +7,8 @@ restating it. None of them adds a runtime feature, endpoint or protocol change.
 Each recipe ends with two lines:
 
 - **Check now**: what you can run today with the console client and a mock server. It may
-  be "none (engine only)".
+  be "none (engine only)". Run it when the stage changed shared client or server code; it
+  is never a step the first in-game prototype waits for.
 - **Engine only**: what can be shown only in the game. Record it in
   [ENGINE_PACK.md](../engine-packs/ENGINE_PACK.md) with the statuses defined there.
 

@@ -24,8 +24,8 @@ The inspector exits 0 for a qualified build, 3 for an identified but unqualified
 
 This folder records the plan and the evidence for a port. Engine facts go in
 `docs/engine-packs/elden-ring.md`, copied from
-[ENGINE_PACK.md](../../docs/engine-packs/ENGINE_PACK.md); scope and authorization are in
-[PROJECT.md](../../PROJECT.md).
+[ENGINE_PACK.md](../../docs/engine-packs/ENGINE_PACK.md); the brief, decisions and evidence
+of this port's project are in [control/EVIDENCE.md](control/EVIDENCE.md).
 
 ## Stages
 

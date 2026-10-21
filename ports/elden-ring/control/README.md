@@ -1,11 +1,16 @@
-# Elden Ring companion control: follow, hold, attack (not tested in game)
+# Elden Ring companion control: follow, hold, attack (not verified in game)
 
 One NPC, friendly and holding from the start, that you step with the action button: it
 follows you, holds its position, or attacks one fixed hostile, using the game's own event
 script and AI scripting. The package builds in full from the user's own files (2026-10-19,
 exit 0). The user ran two earlier packages once each ([hostile at start](#user-test-of-the-earlier-package-2026-10-19);
-[friendly, stood still after Talk and did not follow at about 10 m](#user-test-of-the-friendly-package-2026-10-19)); the
-current package (per-logic file, face-the-player sign) has not been run in game. Voice, an LLM and the server bridge are not part of this stage.
+[friendly, stood still after Talk and did not follow at about 10 m](#user-test-of-the-friendly-package-2026-10-19)).
+When the rest of this page was written, the current package (per-logic file,
+face-the-player sign) had not been run in game. After it was handed over the user reported
+"okay it works", without saying which of hold, follow and attack they saw, which build ran,
+or whether release, reload or warp recovery was tried. That report is recorded as
+user-reported, not verified, in [EVIDENCE.md](EVIDENCE.md), the project history of this
+port. Voice, an LLM and the server bridge are not part of this stage.
 
 ## Status
 
@@ -373,9 +378,10 @@ cycle) and is not itself a failure.
 
 ## Limits
 
-- The current package has not been run in game: loading the logic, friendliness at spawn,
-  hold, follow, attack, release and recovery are all unproven. The in-game reports are for
-  the two earlier packages (above).
+- For the current package there is only the user's later "okay it works"
+  ([EVIDENCE.md](EVIDENCE.md)), which names no action: loading the logic, friendliness at
+  spawn, hold, follow, attack, release and recovery are each still unproven. The detailed
+  in-game reports above are for the two earlier packages.
 - Team 47 (the raw NpcParam value of the game's spirit-summon rows) is not shown in game to
   keep the soldier and the player off each other, or to let its attack hurt the hostile.
 - `TARGET_EVENT` after `SetCharacterEventTarget` is not shown to be the hostile.

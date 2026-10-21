@@ -22,58 +22,28 @@ One repository holds both components:
 
 ## First prompt for your coding agent
 
-Paste this, adding what you already know (game, voice, actions, what you allow it to do);
-you do not need to fill in [PROJECT.md](PROJECT.md) first:
+Clone your copy on Windows, open your coding agent in it and paste this, adding anything
+you already know. You do not fill in any form first:
 
 ```text
-Read AGENTS.md and PROJECT.md in this repository. Fill in PROJECT.md from this
-conversation and my earlier instructions; ask me only for facts still missing for the
-next step, and do not ask me to confirm what I already said. Inspect what this repository
-and my engine can actually do today, and qualify the engine with
-docs/engine-packs/ENGINE_PACK.md before promising any game feature; never invent engine
-APIs. Then run: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 doctor, and
-report what it found.
+Read AGENTS.md, PROJECT.md and docs/getting-started.md, and take me through that route.
+Reuse what I already told you and ask only for what is missing (game, starting feature,
+mod name). Write the integration plan in PROJECT.md before building mod code; set up
+DwemerDistro, the LLM and voice meanwhile. You run the commands and setup; never ask me
+for keys in chat.
 ```
-
-For a full engine port, use the staged prompt in [docs/agent-playbook.md](docs/agent-playbook.md).
 
 ## Get started
 
-Clone once on Windows as your development copy (edit, build the client, run checks):
-
-```powershell
-git clone https://github.com/Dwemer-Dynamics/Kagrenac.git
-cd Kagrenac
-powershell -ExecutionPolicy Bypass -File scripts\project.ps1 doctor
-powershell -ExecutionPolicy Bypass -File scripts\project.ps1 setup    # builds the client outside the repository
-```
-
-The server runs from a **separate clone inside DwemerDistro WSL**, in Apache's web root.
-Install DwemerDistro Core's custom mod web protection first
-([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)), then either:
-
-- **Launcher:** **Mods > Custom mods > Add custom mod**, paste
-  `https://github.com/Dwemer-Dynamics/Kagrenac` ([LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md)).
-  It installs at `/custom-mods/example-server`.
-- **Manually**, in the DwemerDistro WSL shell as `dwemer`, after **Update Distro**:
-
-  ```bash
-  sudo ddistro_custom_mod setup-web   # protection and the shared custom mods port
-  grep -qF '(client|ports|docs)' /etc/apache2/sites-available/dwemerdistro-custom-mods.conf && echo protected
-  # Continue only if it printed "protected".
-  sudo install -d -o dwemer -g dwemer /var/www/html/custom-mods/KagrenacServer
-  git clone https://github.com/Dwemer-Dynamics/Kagrenac.git /var/www/html/custom-mods/KagrenacServer
-  cd /var/www/html/custom-mods/KagrenacServer
-  sudo bash scripts/install.sh
-  curl http://127.0.0.1:19000/custom-mods/KagrenacServer/health.php
-  bash scripts/smoke.sh
-  ```
-
-Never build the client or write its `config.json` inside the server copy. Pair the client as
-[SETUP.md](SETUP.md#3-connect-them) describes. The dashboard is at
-`http://127.0.0.1:19000/custom-mods/KagrenacServer/`. 19000 is DwemerDistro's shared loopback
-port for custom PHP mods (`CUSTOM_MODS_PORT`); official server ports such as 8081 are unchanged.
-The full developer cold start is [docs/getting-started.md](docs/getting-started.md).
+The route, from download to the first AI line in your game, is
+[docs/getting-started.md](docs/getting-started.md). The server runs from a separate clone
+inside DwemerDistro WSL ([SETUP.md](SETUP.md#1-install-the-server-inside-dwemerdistro), or
+the launcher's **Mods > Custom mods**, [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md)),
+after DwemerDistro Core's custom mod web protection
+([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)). The dashboard
+is at `http://127.0.0.1:19000/custom-mods/KagrenacServer/`; 19000 is DwemerDistro's shared
+loopback port for custom PHP mods (`CUSTOM_MODS_PORT`). A full engine port uses the staged
+prompt in [docs/agent-playbook.md](docs/agent-playbook.md).
 
 ## Directory map
 
@@ -85,7 +55,7 @@ The full developer cold start is [docs/getting-started.md](docs/getting-started.
 | `client/` | KagrenacClient source, CMake project and `scripts/build.ps1` |
 | `docs/` | [Getting started](docs/getting-started.md), [agent playbook](docs/agent-playbook.md), [engine pack template](docs/engine-packs/ENGINE_PACK.md), [port recipes](docs/feature-recipes/PORT_RECIPES.md) |
 | `ports/` | Per-engine evidence records; no port is implemented |
-| `PROJECT.md` | Your project brief, decisions, acceptance and evidence |
+| `PROJECT.md` | Your project brief, integration plan, stage checklist and latest evidence |
 
 `client/`, `docs/` and `ports/` are source only and are not meant to be served.
 
@@ -93,6 +63,7 @@ The full developer cold start is [docs/getting-started.md](docs/getting-started.
 
 | Read | For |
 |---|---|
+| [docs/getting-started.md](docs/getting-started.md) | The route: brief, integration plan, DwemerDistro, LLM and voice tests, first prototype |
 | [START_HERE.md](START_HERE.md) | Orientation, feature status, end-to-end walkthrough, troubleshooting by request ID, porting checklist |
 | [SETUP.md](SETUP.md) | Install, web protection, pairing, LLM and voice setup, backups, updates, migrations, removal |
 | [CONNECTORS.md](CONNECTORS.md) | Copyable LLM, voice, NPC selection, profile and memory settings |

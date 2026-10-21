@@ -26,7 +26,7 @@ root copy.
 | Read | For |
 |---|---|
 | [START_HERE.md](../START_HERE.md) | **Start here.** Document map, feature status, end-to-end walkthrough, troubleshooting by request ID |
-| [docs/getting-started.md](../docs/getting-started.md), [SETUP.md](../SETUP.md) | Developer cold start; installing the server, building and pairing this client |
+| [docs/getting-started.md](../docs/getting-started.md), [SETUP.md](../SETUP.md) | The route to a first prototype; installing the server, building and pairing this client |
 | [PROTOCOL.md](../PROTOCOL.md) | The request and reply contract (one copy, shared with the server) |
 | [docs/agent-playbook.md](../docs/agent-playbook.md) | Staged prompt for porting to your engine with a coding agent |
 | [docs/engine-packs/ENGINE_PACK.md](../docs/engine-packs/ENGINE_PACK.md) | Blank evidence record for your engine (SDK facts versus verified in engine) |
