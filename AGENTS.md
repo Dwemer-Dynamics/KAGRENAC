@@ -54,6 +54,10 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
    Report evidence by kind: source, build, fixture, provider, user-reported, in game. A
    user's broad "it works" is user-reported and never proof of each action; an action is
    usable only after its own in-game check.
+7. Before ending a build pass, reconcile PROJECT.md, the port plan and the flow review with
+   the actual files and validation. Record uncommitted artifacts and interrupted work. Give
+   server-ready, port-built and gameplay-verified separate results; a completed chat does not
+   mean a completed mod. Leave one concrete next probe for each critical engine blocker.
 
 ## Layout and copies
 
@@ -61,10 +65,17 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
   `config/config.php`, database placeholder `example_ai_mod`, service identity
   `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
   and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
-  for a new install); Core then names the database `custom_<id>`. One repository per mod:
+  for a new install); Core then names the database `custom_<id>`. Default to one repository per mod:
   in the template, start a mod with `scripts/project.ps1 new` (getting-started, New project),
   which writes an independent copy outside every checkout and web root and leaves the
   template unchanged; the copy is committed explicitly before its first deploy.
+- Offer a separate game-client repository and server repository as an optional layout when
+  discussing independent maintenance or when the user asks. Keep the single-repository
+  default without adding a setup question. Record the choice in PROJECT.md Decisions before
+  creating a split. The current `new` command creates one repo; a split needs an explicit
+  plan for shared protocol/client sources, build paths, deploy and pairing. Do not pretend
+  there is a split-repo CLI switch or split an existing project without a request. See
+  [Repository layout](docs/getting-started.md#repository-layout).
 - `client/`, `docs/` and `ports/` are source only. The server copy in Apache's web root
   contains them because it is one repository; DwemerDistro Core's custom mod web protection
   must be installed before a server install or update (SETUP.md). Never build the client,

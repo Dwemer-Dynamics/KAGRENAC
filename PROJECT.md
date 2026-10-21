@@ -85,6 +85,11 @@ in the game-side rows; record it here when you use one.
 
 ## Decisions
 
+Record the repository layout here: one repo by default, or a user-chosen client/server
+split with its build/deploy plan. Keep the current architecture and stage results aligned
+with actual files. Report server-ready, port-built and gameplay-verified separately;
+uncommitted code and interrupted checks remain explicit pending work.
+
 | Date | Decision | Reason |
 |---|---|---|
 

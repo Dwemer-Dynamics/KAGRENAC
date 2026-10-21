@@ -5,6 +5,10 @@ Use the current coding agent for build, tests and a separate actual-diff review.
 [primary-source tool catalogue](research/MODDING_TOOLS.md) for investigation leads. A loader,
 asset editor and runtime action bridge are distinct capabilities. No particular external
 coding service is required. Keep the per-mod `docs/KAGRENAC_FLOW_REVIEW.md` current.
+Use one repository by default; document an optional user-chosen split through
+[Repository layout](getting-started.md#repository-layout). Before ending a pass, follow the
+[handoff checklist](ENGINE_PLANNING.md#end-of-pass-handoff) so the next chat sees the actual
+architecture, completed checks and remaining game mechanisms.
 
 The deep reference for a full engine port. Start with the route in
 [getting-started.md](getting-started.md): the brief and the integration plan in

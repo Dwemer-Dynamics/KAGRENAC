@@ -21,7 +21,8 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    the agent then makes your mod its own project with `scripts\project.ps1 new`
    ([New project](#new-project)), which records that brief, and for a game with a reference
    port its plan, in the new copy's PROJECT.md, so nothing is asked twice. Every later step
-   runs in that copy.
+   runs in that copy. Default to one repository; the optional
+   [two-repository layout](#repository-layout) is a deliberate choice, not a required question.
 3. **Integration plan, before any mod code is built.** The agent fills the short plan in
    PROJECT.md: how the player's input reaches the mod, which NPC and how long it lives, how
    the HTTP call runs off the game thread and comes back to it, how the reply is shown and
@@ -92,6 +93,21 @@ that do not depend on it.
 [agent-playbook.md](agent-playbook.md) and records engine evidence in
 [engine-packs/ENGINE_PACK.md](engine-packs/ENGINE_PACK.md). Feature status:
 [START_HERE.md](../START_HERE.md#feature-and-status-checklist).
+
+## Repository layout
+
+**Default: one repository per mod.** The server lives at the root, with the game client or
+plugin under `client/` or `ports/<engine>/`. Separate installed game files and a deployed
+server are runtime copies, not separate source repositories. This is what `project.ps1 new`
+creates and what the documented commands support today.
+
+**Optional: separate client and server repositories.** Offer this when the user wants
+independent maintenance or release schedules. Record the user's choice in PROJECT.md's
+Decisions before creating the layout. Plan ownership of the shared protocol and client
+transport, compatible versions, explicit source/build paths, server deployment and pairing.
+Adapt and check the commands before claiming support; `new` has no two-repository switch.
+Keep one repo unless the user chooses the alternative. Existing mods are not split by this
+choice of instructions.
 
 ## Two copies of one repository
 

@@ -58,6 +58,9 @@ blocker explicit while continuing the independent server/provider setup.
 Before game-port implementation, the agent records:
 
 - **Chosen architecture:** loader, callback, speaker, transport, input, display and voice.
+- **Repository layout:** one repo by default; record an explicitly chosen client/server
+  split and its shared-code/build/deploy plan before creating it
+  ([layout options](getting-started.md#repository-layout)).
 - **Qualified facts:** build-specific citations and probe results, with their limits.
 - **Unknowns and next probe:** owner, stopping point and what independent work can continue.
 - **Initial capabilities:** readable fields and explicit action handlers; no action is a valid
@@ -73,13 +76,29 @@ reviews the plan against the user's brief and proceeds within existing authority
 no extra approval ceremony. Commits for the independent server/setup may happen before the
 game integration is ready.
 
+Name the next missing mechanism precisely: for example, friendly entity creation, a stable
+instance handle or a per-NPC movement call. Give the next probe, stopping point and evidence
+needed. Additional server checks cannot qualify that mechanism. Do not replace a blocked
+physical companion with a narrator or mark the requested mod complete because its server
+works. A probe needing a live game stays pending until the human launches it.
+
 ## 5. Build and review the first slice
 
-Use one mod repo and maintained commands: create, commit, deploy, configure providers, build
+For the default single repo, use maintained commands: create, commit, deploy, configure providers, build
 the port, assemble, configure capabilities, pair, install and start any helper. A new port
 can use [generic capability records](PORT_BUILD_RECORDS.md) without changing the shared CLI.
 Its route owns game-specific preflight, packaging and install checks. Print complete next
 commands with literal paths, project id and distro; never require copying a token.
+
+Label inherited console-client builds separately from a game-port build. Test conversation
+with empty allowlists rather than enabling a simulated action to satisfy a smoke check.
+Before an endpoint suite, check that dialogue, voice, decisions, embeddings and automatic
+memory cannot make an unintended provider call. A real provider test is a separate,
+authorized check.
+
+For awareness, record capture time or sequence, units, source and maximum age. A recently
+received heartbeat is not necessarily a snapshot captured for this turn. Either request a
+new capture before sending or describe its actual age and reject expired observations.
 
 Test locally with mocks first, then one authorized provider/voice test, then a human-launched
 game test. Capture the exact code commit and artifact hashes. Review the actual diff in a
@@ -91,6 +110,25 @@ Keep `docs/KAGRENAC_FLOW_REVIEW.md` in the mod with: stage, expected command/res
 evidence, workaround, minimal upstream improvement, generic versus engine-specific, and
 first/repeat outcome. Keep successful build/provider evidence even when an engine hook is
 blocked. End with a short prioritized list that can be reviewed back into the template.
+
+## End-of-pass handoff
+
+Before reporting, reconcile the current PROJECT.md stage table, chosen architecture in the
+port plan, and flow ledger with what actually ran. Preserve old findings as dated history;
+do not leave them as current instructions. If implementation switches from a DLL to an
+external helper, update loading, input, display, paths and launch instructions together.
+
+Report these separately:
+
+| Milestone | Required evidence |
+|---|---|
+| Server-ready | Exact deployed commit, health/protection, configuration and provider test results |
+| Port-built | Actual game adapter/helper build, artifact identity, runtime assembly and pairing; distinguish uncommitted source |
+| Gameplay-verified | Human-launched loader compatibility, live awareness, heard voice, controls and each action's own result |
+
+Generated audio does not complete heard-voice acceptance. An interruption ends that pass,
+not the remaining work: record the last completed check, preserved files and exact next
+step. Do not repeat paid tests just to refresh a handoff.
 
 ## First-launch guide
 
