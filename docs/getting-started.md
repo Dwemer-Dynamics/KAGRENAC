@@ -50,7 +50,8 @@ them; you do not have to read them first.
    OpenRouter [`typesafe/jev-1.13`](https://openrouter.ai/typesafe/jev-1.13) only for
    `decision.php` choices from a bounded list the game offers (never chat or actions), and
    PocketTTS for voice. It sets the LLM on the dashboard **LLM** page and presses **Send
-   test**: a real reply is the pass. You enter keys on the dashboard **API keys** page or in
+   test**, or runs `scripts\project.ps1 configure` with `-TestProviders`
+   ([Configure](#configure-providers-voice-and-actions)): a real reply is the pass. You enter keys on the dashboard **API keys** page or in
    the private `config/config.php`, never in chat, logs or commits. Choosing a provider,
    setting its key privately and asking for the test authorizes that test only; no other
    paid call. For voice the agent checks PocketTTS is installed and running in the
@@ -99,16 +100,17 @@ output in the server copy: it sits in Apache's web root.
 
 ## `scripts\project.ps1`
 
-`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|deploy>`
+`powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|configure|deploy>`
 (the full option list is at the top of the script).
 
 | Command | Does | Never |
 |---|---|---|
 | `new` | Makes a new mod from the template: an independent copy of the committed HEAD in a new folder, with its own id and name, brief, paths and stage states (below) | Writes into an existing folder, copies history, private config, databases, build output or logs, changes the template, or commits |
-| `doctor` | Reports tools, WSL distros with their state, client builds, the client config (token shown only as set or missing), server health (`ok` and the `example-ai-server` identity) and, on a healthy server, whether `.git/`, `client/`, `docs/` and `ports/` are denied (only HTTP 403 counts; 200 or anything else is a problem). With `-WslDistro <name>`, and only if that distro is already running, it checks its `ddistro_custom_mod` tool, Apache, PostgreSQL and web protection. It says whether anything answers on local port 1234 (the `dwemerllm` default, [CONNECTORS.md](../CONNECTORS.md)) and at the PocketTTS default (8086), which is not a test, and ends with a readiness summary. Exit 0 means no FAIL or UNVERIFIED line was detected; WARN, SKIP and not-checked items still need action, and exit 0 never means ready | Changes anything, or starts a distro |
+| `doctor` | Reports tools, WSL distros with their state, client builds, the client config (token shown only as set or missing), server health (`ok` and the `example-ai-server` identity) and, on a healthy server, whether `.git/`, `client/`, `docs/` and `ports/` are denied (only HTTP 403 counts; 200 or anything else is a problem). With `-WslDistro <name>`, and only if that distro is already running, it checks its `ddistro_custom_mod` tool, Apache, PostgreSQL and web protection. It says whether anything answers on local port 1234 (the `dwemerllm` default, [CONNECTORS.md](../CONNECTORS.md)) and at the PocketTTS default (8086), which is not a test, and ends with a readiness summary. In a native port's project (`-Engine <port>`, else the engine `new -Engine` wrote into its PROJECT.md Paths) it skips the console client build and config and points to the port's own route (Elden Ring: `ports\elden-ring\mod.ps1 doctor`, then `build`, `assemble` and `pair`); the console client stays an optional developer check. Exit 0 means no FAIL or UNVERIFIED line was detected; WARN, SKIP and not-checked items still need action, and exit 0 never means ready | Changes anything, or starts a distro |
 | `setup` | Builds the client for x64 and x86 with `client\scripts\build.ps1` into `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\client` for a project with its own id (the template: `%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build`; change with `-BuildRoot`, outside the repository); safe to repeat | Installs prerequisites, copies source into WSL, writes a client config |
 | `check` | `php -l` on every server PHP file and `bash -n`, with local tools when present, then the client build (fails on compiler warnings) | Runs migrations or any other database operation |
-| `pair` | Writes a new private client config from a server checkout (below) | Prints the token, overwrites a different config |
+| `pair` | Writes a new private client config from a server checkout (below) | Prints the token, overwrites a different config, writes an action the game side's build does not support |
+| `configure` | Sets the install's dialogue provider, voice and server allowlist through the dashboard's own config writer, and with `-TestProviders` tests them once ([below](#configure-providers-voice-and-actions)) | Takes or prints a key, copies a token or database, retries a test, saves a text or audio file |
 | `deploy` | Installs or updates your committed HEAD in the named distro (below) | Deploys uncommitted files, adopts or repoints an install, rewrites the private config |
 
 ### New project
@@ -129,8 +131,10 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   build folder under `%LOCALAPPDATA%\DwemerDynamics\Kagrenac` is refused.
 - The copy's PROJECT.md gets the brief you gave, its own build, runtime, deploy and server
   paths, and the stage states. `-Engine <port>` copies the reference plan from
-  `ports/<port>/PLAN.md` as the chosen plan (revise the rows where your feature differs; it is
-  not verified in game) and adds one stage row per reference action; brief text that holds
+  `ports/<port>/PLAN.md` as a starting plan and leaves stage 2 `in progress`: the agent checks
+  each row against the starting feature, revises the rows that differ (none is verified in
+  game) and then marks stage 2 done itself, while stages 3 to 5 go ahead without waiting. It
+  also adds one stage row per reference action; brief text that holds
   a URL or looks like a key is refused.
 - It runs `git init -b main` in the copy and commits nothing. Review the copy, then commit
   it yourself before its first deploy (deploy sends only committed HEAD), and run every
@@ -171,9 +175,10 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   `ddistro_custom_mod update` set Core's read-only ownership again. Run
   `project.ps1 deploy -WslDistro <name>` again afterwards to repair it; `doctor -WslDistro
   <name>` reports when the dashboard cannot save.
-- After the repair, change settings on the dashboard, or from an agent through the existing
-  `config_update()` in `lib/config_writer.php` run as the config's owner `www-data`, never
-  as `dwemer` (saving refuses a config it does not own).
+- After the repair, change settings on the dashboard, or from an agent with `configure`
+  ([below](#configure-providers-voice-and-actions)), which runs the existing `config_update()`
+  in `lib/config_writer.php` as the config's owner `www-data`, never as `dwemer` (saving
+  refuses a config it does not own).
 - Running it again at the same commit reports the code as already deployed; when the config
   can already be saved it changes nothing (no Core update, backup, installer or migrations),
   so config and data are kept. A new commit is backed up and fast-forwarded; the private
@@ -191,14 +196,80 @@ example the game-side runtime folder. If the file already exists with the same U
 session it is kept byte for byte as "already paired" (the identity and voice options shape
 only a new file); anything else is refused, never overwritten.
 
-`-AllowedActions` sets only the client's list; pair cannot change the server. The server
-returns only names in its own `allowed_actions`, so enable each intended action there as
-well: `follow_player` on the dashboard **Settings** page, and any other (such as
-`hold_position`) by adding it to `allowed_actions` in the private `config/config.php`
-(Settings keeps names it does not list). An action missing on either side is refused.
-With `-NpcId` or `-NpcName` the file is a game client's config: leave it in the game
-runtime and check it with the port's launch steps and its engine pack's acceptance, not
-`KagrenacClient.exe`.
+`-AllowedActions` sets only the client's list; pair cannot change the server. With
+`-Build <root>\elden-ring\builds\<time>`, or when `-OutFile` sits in a runtime that `assemble`
+wrote (its `runtime.json` names the build), every client action, including the default
+`follow_player`, must be one that build supports; its records are checked as `configure`
+checks them (below). A game client config (`-NpcId` or `-NpcName`) without a build record
+allows only `follow_player`; a console client config is unchanged. The server returns only
+names in its own `allowed_actions`, so set the same actions there with `configure`. An
+action missing on either side is refused. With `-NpcId` or `-NpcName` the file is a game
+client's config: leave it in the game runtime and check it with the port's launch steps and
+its engine pack's acceptance, not `KagrenacClient.exe`.
+
+### Configure providers, voice and actions
+
+`configure -WslDistro <name>` (run with `powershell.exe`, not `pwsh`) changes the install's private `config/config.php` the way the
+dashboard does: it runs that install's `scripts/configure_server.php` as `www-data`, which
+saves through the existing `config_update()` in `lib/config_writer.php` (one lock, the latest
+config read inside it, token, database and unknown settings kept, owner, group, mode and lock
+file kept). The same request again writes nothing. It targets this project's own
+`/var/www/html/custom-mods/<id>` (or `-WslServerPath <install>`, whose `dwemer-mod.json` must
+have this project's id; in the template `-WslServerPath` is required). An install `www-data`
+cannot save is refused with the same repair step doctor gives (run `deploy` again, or
+`sudo bash <install>/scripts/install.sh` for a manual install); configure never changes
+permissions itself. The install needs a deployed commit that has `scripts/configure_server.php`.
+Nothing changes unless you name it; the shipped config stays in mock mode.
+
+```powershell
+# Recommended dialogue and voice; keeps the OpenRouter key already configured for openrouter:
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
+  -LlmProvider openrouter -LlmModel google/gemma-4-31b-it -Tts pockettts -TtsVoice alba
+# A fresh copy: take only llm.api_key from another install's private openrouter config:
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
+  -LlmProvider openrouter -LlmModel google/gemma-4-31b-it `
+  -ReuseProviderFrom /var/www/html/custom-mods/<other id>/config/config.php
+# Server allowlist for a native build (Elden Ring), or for the console client:
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
+  -AllowedActions follow_player,hold_position -Build '<root>\elden-ring\builds\<time>'
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> -AllowedActions follow_player -ConsoleClient
+# One bounded test of what is saved (may cost money):
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> -TestProviders
+```
+
+- `-LlmProvider openrouter|dwemerllm|mock` with `-LlmModel <model>` (not for mock) sets
+  `llm.mode` and `llm.model`; other modes, URLs and timeouts stay on the dashboard **LLM**
+  page. No key is ever an argument, typed in or printed. openrouter keeps the key only when
+  `llm.mode` already is openrouter; otherwise it is refused unless you set the key on **API
+  keys** with the LLM page in openrouter mode, or name with `-ReuseProviderFrom` another
+  install's private config (no access for other users) whose `llm.mode` is openrouter. Only
+  its `llm.api_key` is taken, read as `www-data` inside WSL with its output and errors
+  discarded; its token, database, history and other settings are never copied. dwemerllm and
+  mock leave `llm.api_key` as it is: neither sends it.
+- `-Tts pockettts -TtsVoice <voice>` enables PocketTTS at `http://127.0.0.1:8086/v1/audio/speech`
+  (model `pocket-tts`), only when something answers on port 8086; `-Tts off` turns voice off.
+  `tts.api_key` and other voice settings stay; other providers are set on the **Voice** page.
+- `-AllowedActions a,b` replaces the server's `allowed_actions` with names the server knows
+  (`follow_player`, `hold_position`, `attack_hostile`), and needs exactly one of:
+  `-Build <root>\elden-ring\builds\<time>`, whose `build.json` must be this project's, for the
+  accepted game build, with every recorded file unchanged (SHA-256), a `package.json` that
+  agrees on the control config, `attack_enabled`, supported actions and package files, and a
+  DLL carrying the control config's hash, and each action must be one it supports (with
+  `attack_enabled` false, `attack_hostile` is refused); or `-ConsoleClient`, for
+  `follow_player` only. Supported means a candidate: nothing is marked usable, and no other
+  action is ever added.
+- `-TestProviders` (after any changes; alone it only reads the config, so it also runs when
+  `www-data` cannot save) refuses before calling anything when the mode is mock, voice is off,
+  vector search (`embeddings.enabled`) or automatic memory (`memory.auto_notes`,
+  `memory.auto_extract`) is on, or the default profile changes the mode or model. It prints
+  the mode and model it tests, then makes one `turn.php` call (its own `provider-test-...` session, `offered_actions: []`)
+  and one `speak.php` call with that reply, with no retry, fallback or NPC selection. It
+  prints only HTTP status, time, reply shape and character count, and the WAV's format, size
+  and SHA-256; never the text, a provider body, the token or the audio, and it saves no file.
+  The pass needs a real reply whose event row records the configured mode, and a complete PCM
+  or float WAV whose header values agree. `turn.php` records the test turn in that
+  session like any turn. A generated WAV is not heard: voice is ready only once someone
+  hears it on the **Voice** page or in game. Add `-ServerUrl` when Apache uses another port.
 
 **What a backup holds.** Each deploy's Core backup, and `scripts/backup.sh` for a manual
 install, take the database dump and the install's standard private `config/config.php`

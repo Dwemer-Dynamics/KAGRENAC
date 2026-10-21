@@ -1,5 +1,6 @@
 <?php
-// Saves dashboard changes into the private config file. Used only by ui/ pages.
+// Saves dashboard changes into the private config file. Used by ui/ pages and, for the same
+// sections, by scripts/configure_server.php (project.ps1 configure).
 // This file only defines functions and constants, so requesting it over HTTP prints nothing.
 //
 // One save: take the lock file next to the config, read the latest config, apply the

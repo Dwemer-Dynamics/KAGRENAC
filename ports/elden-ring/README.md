@@ -33,19 +33,25 @@ powershell -ExecutionPolicy Bypass -File $er build    -GameDir "<ELDEN RING>\Gam
 powershell -ExecutionPolicy Bypass -File $er assemble -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> `
   -OutFile <root>\runtime\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
+  -AllowedActions follow_player,hold_position -Build '<root>\elden-ring\builds\<time>'
 ```
 
 | Step | Does | Never |
 |---|---|---|
 | `doctor` | Reads `eldenring.exe` (version, size, PE timestamp, SizeOfImage, SHA-256) against `game-build.json`, the game inputs, the tools (control README, Tools), .NET, Visual Studio, me3, and the build and runtime folders; one readiness line each | Writes anything; counts as an in-game result |
-| `build` | Refuses any other game build; `client\build.ps1` into `<root>\elden-ring\client`, `control\build-package.ps1` (with `-ControlConfig`, default the example: follow and hold, attack left out) into a new `<root>\elden-ring\builds\<time>`, with the DLL and every file's SHA-256 in its `build.json` | Installs, downloads, or writes to the game, me3 or a save |
+| `build` | Refuses any other game build; `client\build.ps1` and `control\build-package.ps1`, both from the one `-ControlConfig` (default the example: follow and hold, attack left out), into `<root>\elden-ring\client` and a new `<root>\elden-ring\builds\<time>`, with the DLL and every file's SHA-256 in its `build.json`. Refuses unless the config's SHA-256 is unchanged after each build and is the one compiled into the DLL and recorded in `package.json`; `build.json` records it, the compiled map tile, hostile, bridge window and radius, and `supported_actions` (candidates, none qualified in game) | Installs, downloads, or writes to the game, me3 or a save |
 | `assemble` | Copies one verified build (default the newest) into `<root>\runtime`: `natives\`, `package\` and an offline profile `<id>.me3` with its own save `<id>.sl2`; prints the pair, `profile show` and launch commands. The same build again changes nothing; another build needs `-Replace`, which moves the old assembled files (only if unchanged) into `runtime\superseded\<time>` | Writes or reads `config.json`, launches, copies or deletes saves, uses `start_online` or `disable_arxan` |
-| `pair` | Creates the private `config.json` in the runtime with the mod's own `npc_id`, `npc_name`, voice flag and client allowlist | Overwrites an existing file (kept byte for byte); enables actions on the server |
+| `pair` | Creates the private `config.json` in the runtime with the mod's own `npc_id`, `npc_name`, voice flag and client allowlist, refusing any action the assembled build does not support | Overwrites an existing file (kept byte for byte); enables actions on the server |
+| `configure` | Sets the server's `allowed_actions` to actions the named build's checked records support (and, separately, the dialogue provider and voice) | Marks an action usable; adds an action not named |
 
-`pair -AllowedActions` sets only the client's list. Also enable the same actions in the
-server's `allowed_actions`: `follow_player` on the dashboard **Settings** page, and
-`hold_position` by adding it to `allowed_actions` in the server's private `config/config.php`
-([getting-started, Deploy and pair](../../docs/getting-started.md#deploy-and-pair)). Leave
+`pair -AllowedActions` sets only the client's list, and only actions the assembled build
+supports (it finds the build through `runtime\runtime.json`; with `attack_enabled` false,
+`attack_hostile` is refused). Set the same actions in the server's `allowed_actions` with
+`configure ... -Build <build folder>` (the command `assemble` prints), which checks that
+build's `build.json`, `package.json`, file hashes and DLL before saving
+([getting-started, Configure](../../docs/getting-started.md#configure-providers-voice-and-actions)).
+Supported actions are candidates; each still needs its own in-game check. Leave
 `config.json` in the runtime; the check is the launch below and the engine pack's
 acceptance, not `KagrenacClient.exe`.
 

@@ -38,6 +38,12 @@ function ui_config(): ?array
     if (!is_readable($path)) {
         return null;
     }
+    // Same forced reload as load_config(): a dashboard save is an atomic same-second replace from
+    // another process, which a timestamp check misses (or skips when validate_timestamps=0), so a
+    // stale cached copy would show the old provider model.
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($path, true);
+    }
     try {
         $config = require $path;
         if (is_array($config) && is_string($config['token'] ?? null)

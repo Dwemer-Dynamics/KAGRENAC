@@ -124,6 +124,14 @@ function load_config(): array
         app_log("config not readable: $path");
         fail(500, 'server_not_configured', 'The server is not configured.');
     }
+    // A save from another process (configure_server.php) only clears its own opcache, so this
+    // drops Apache's cached copy of this one small config before every load. It is forced
+    // because a timestamp check misses same-second atomic saves and is skipped entirely when
+    // opcache.validate_timestamps=0; a stale copy could authorize an old provider model.
+    // Cost: this file is recompiled on every request. No other cache entries are touched.
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($path, true);
+    }
     $config = require $path;
     $token = $config['token'] ?? '';
     if (!is_array($config) || !is_string($token) || strlen($token) < 16 || str_contains($token, 'CHANGE_ME')) {

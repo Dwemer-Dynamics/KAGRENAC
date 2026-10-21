@@ -4,8 +4,9 @@
 PROJECT.md as its chosen starting plan, so an agent starting a companion from this reference
 need not plan from scratch. It is a choice, not proof that it fits every mod: each row names
 the reference mechanism and where it is cited, and none of it is verified in game yet
-([README.md](README.md)). Revise a row in the project wherever its feature departs from the
-reference, and keep this page about the reference only.
+([README.md](README.md)). The project's stage 2 stays `in progress` until its agent has checked
+every row against the project's starting feature and revised each one that departs from the
+reference; keep this page about the reference only.
 
 Requires: the one game build in [game-build.json](game-build.json) (file 2.7.2.0; any other
 build is refused by the package build and leaves the client's game link off), me3 v0.13.0,

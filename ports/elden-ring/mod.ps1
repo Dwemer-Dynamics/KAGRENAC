@@ -17,7 +17,10 @@
             Refuses unless eldenring.exe is the build in game-build.json. Builds the native client
             into <Root>\elden-ring\client and the control package into a new
             <Root>\elden-ring\builds\<time>\control, copies the DLL beside it and records both,
-            with their SHA-256, in that folder's build.json.
+            with their SHA-256, in that folder's build.json. Both are built from the one
+            -ControlConfig: refused unless its SHA-256 is unchanged after each build and is the
+            one compiled into the DLL and recorded in package.json; build.json records it, the
+            compiled values and the supported actions.
   assemble  [-Root <folder>] [-Build <builds\<time> folder>] [-GameDir <...>] [-Me3 <me3.exe>] [-Replace]
             Refuses while eldenring.exe runs and, with -GameDir, unless the installed eldenring.exe
             is still the build in game-build.json (without it, warns to run doctor before launching).
@@ -126,12 +129,18 @@ function Test-GameBuild([string] $dir) {
     return @{ Ok = ($lines.Count -eq 0); Lines = $lines; Version = $version; Sha = $sha }
 }
 
+# $value as one single-quoted PowerShell argument, so a printed command passes it literally ('$',
+# '$(...)' and backticks stay text; every kind of single quote is doubled).
+function Lit([string] $value) {
+    return "'" + [Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($value) + "'"
+}
+
 # The -Root, -Tools and -Me3 arguments this run was given, for the next command it prints.
 function Get-RouteArgs([string] $out) {
     $a = ''
-    if ($rootGiven) { $a += ' -Root "' + $out + '"' }
-    if ($toolsGiven) { $a += ' -Tools "' + (Full $Tools) + '"' }
-    if ($me3Given) { $a += ' -Me3 "' + (Full $Me3) + '"' }
+    if ($rootGiven) { $a += ' -Root ' + (Lit $out) }
+    if ($toolsGiven) { $a += ' -Tools ' + (Lit (Full $Tools)) }
+    if ($me3Given) { $a += ' -Me3 ' + (Lit (Full $Me3)) }
     return $a
 }
 
@@ -343,12 +352,17 @@ function Invoke-Build {
     if (-not (Test-Path -LiteralPath $ControlConfig -PathType Leaf)) { Refuse "no control config at $ControlConfig" }
     if (-not (Find-CMake)) { Refuse 'CMake not found on PATH or in Visual Studio; run doctor' }
     $config = Resolve-LocalPath $ControlConfig
+    Assert-NoLink $config 'control config'
+    # One config feeds the DLL and the package; its SHA-256 now must be the one both builds
+    # record and the one it still has after each, so a config changed during the build is refused.
+    $configSha = Sha256 $config
     $out = Resolve-OutputRoot
     $port = Join-Path $out 'elden-ring'
     $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
     $dir = Join-Path $port "builds\$stamp"
     foreach ($w in @("natives\$dllName", 'build.json', 'control')) { Assert-NoLink (Join-Path $dir $w) 'output' }
     Assert-NoLink (Join-Path $port "client\Release\$dllName") 'output'
+    Assert-NoLink (Join-Path $port 'client\kagrenac_er_control.json') 'output'
     Assert-PortFolder $port -Create
     if (Test-Path -LiteralPath $dir) { Refuse "$dir already exists; run build again in a second" }
     New-Item -ItemType Directory -Force -Path (Join-Path $port 'builds') | Out-Null
@@ -356,10 +370,17 @@ function Invoke-Build {
     $ps = Join-Path $PSHOME 'powershell.exe'
 
     Say 'INFO' "Native client: client\build.ps1 into $port\client"
-    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'client\build.ps1') -BuildDir (Join-Path $port 'client') | Out-Host
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'client\build.ps1') -ControlConfig $config -BuildDir (Join-Path $port 'client') | Out-Host
     if ($LASTEXITCODE -ne 0) { Refuse "the native client build failed (exit $LASTEXITCODE); $dir holds no build" }
     $dll = Join-Path $port "client\Release\$dllName"
     if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { Refuse "the native client build left no $dll" }
+    $nativeJson = Join-Path $port 'client\kagrenac_er_control.json'
+    try { $nativeRecord = Get-Content -LiteralPath $nativeJson -Raw | ConvertFrom-Json } catch { Refuse "$nativeJson is not readable; $dir holds no build" }
+    if ([string] $nativeRecord.control_config.sha256 -cne $configSha -or [string] $nativeRecord.control_config.path -ne $config.Replace('\', '/') -or
+        $nativeRecord.attack_enabled -isnot [bool]) {
+        Refuse "the native client was not compiled from $config as it was when the build started; $dir holds no build"
+    }
+    if ((Sha256 $config) -cne $configSha) { Refuse "$config changed during the native client build; $dir holds no build. Build again" }
 
     Say 'INFO' "Control package: control\build-package.ps1 into $dir\control (several minutes)"
     & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'control\build-package.ps1') -Config $config -GameDir $GameDir -Tools $Tools -OutDir (Join-Path $dir 'control') | Out-Host
@@ -367,12 +388,22 @@ function Invoke-Build {
     $packageJson = Join-Path $dir 'control\package.json'
     try { $pkg = Get-Content -LiteralPath $packageJson -Raw | ConvertFrom-Json } catch { Refuse "$packageJson is not readable" }
     if ([string] $pkg.game_exe_sha256 -cne [string] $game.sha256 -or $pkg.attack_enabled -isnot [bool]) { Refuse "$packageJson does not record the accepted game build and attack_enabled" }
+    if ([string] $pkg.control_config_sha256 -cne $configSha) { Refuse "$packageJson was not built from $config as the native client was; $dir is incomplete and is never assembled" }
+    if ((Sha256 $config) -cne $configSha) { Refuse "$config changed during the build; $dir is incomplete and is never assembled. Build again" }
+    $actions = @($pkg.supported_actions | ForEach-Object { [string] $_ })
+    if ($pkg.attack_enabled -ne $nativeRecord.attack_enabled -or ($actions -join ',') -cne (@($nativeRecord.supported_actions) -join ',') -or
+        ($actions -join ',') -cne ('follow_player,hold_position' + $(if ($pkg.attack_enabled) { ',attack_hostile' }))) {
+        Refuse "the package and the native client disagree on attack_enabled or the supported actions; $dir is incomplete and is never assembled"
+    }
 
     $natives = Join-Path $dir 'natives'
     Assert-NoLink $dll 'client build'
     Assert-NoLink (Join-Path $natives $dllName) 'output'
     [void] [IO.Directory]::CreateDirectory($natives)
     [IO.File]::Copy($dll, (Join-Path $natives $dllName), $false)
+    # The copied DLL itself must carry this config's hash (the identity it logs at startup).
+    $dllText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $natives $dllName)))
+    if (-not $dllText.Contains("control config sha256 $configSha")) { Refuse "$natives\$dllName does not carry the control config hash $configSha; $dir is incomplete and is never assembled" }
     $files = [ordered]@{ "natives/$dllName" = (Sha256 (Join-Path $natives $dllName)); 'control/package.json' = (Sha256 $packageJson) }
     foreach ($p in $pkg.outputs.PSObject.Properties) {
         $f = Join-Path $dir ('control\package\' + $p.Name.Replace('/', '\'))
@@ -391,15 +422,26 @@ function Invoke-Build {
         status = 'built from your own game files; not loaded by me3 or the game; nothing installed'
         source = [ordered]@{ commit = $commit; uncommitted_paths = $dirty }
         game = [ordered]@{ file_version = $g.Version; sha256 = $g.Sha }
-        control_config = [ordered]@{ path = $config; sha256 = (Sha256 $config) }
+        control_config = [ordered]@{
+            path = $config; sha256 = $configSha
+            note = "the same bytes before and after both builds; compiled into natives/$dllName (its kagrenac_er_control.json and the hash in its bytes) and recorded in control/package.json"
+            compiled = [ordered]@{ companion_msb = $nativeRecord.companion_msb; hostile_entity = $nativeRecord.hostile_entity; bridge_window = $nativeRecord.bridge_window; bridge_hostile_near_m = $nativeRecord.bridge_hostile_near_m }
+        }
         attack_enabled = $pkg.attack_enabled
+        # What the DLL can offer and the control event handles; each is a candidate until its own
+        # in-game check, and config.json and the server's allowlist still decide what is used.
+        supported_actions = [ordered]@{
+            actions = $actions
+            source = 'control config attack_enabled, compiled into the DLL offered_actions and order checks and into the package control event'
+            status = $(if ($pkg.attack_enabled) { 'attack_hostile built guarded; no action is qualified in game' } else { 'attack left out; no action is qualified in game' })
+        }
         files = $files
     }) | ConvertTo-Json -Depth 4) + "`n")
     Say 'OK' "Built $stamp in $dir for $($g.Version): $dllName and the control package (attack $(if ($pkg.attack_enabled) { 'built, guarded, still unavailable' } else { 'left out' })); not loaded by me3 or the game."
     if ($commit -ceq 'unknown') { Say 'WARN' 'The source commit is unknown (git missing or failed, or nothing committed yet); build.json records it as unknown.' }
     if ($dirty -is [string]) { Say 'WARN' 'Whether the source had uncommitted paths is unknown (git status failed); build.json records it as unknown, not as clean.' }
     elseif ($dirty) { Say 'WARN' "$dirty uncommitted path(s) in the source at build time; build.json records it." }
-    Say 'INFO' ('Next: powershell -ExecutionPolicy Bypass -File ports\elden-ring\mod.ps1 assemble' + (Get-RouteArgs $out) + ' -GameDir "' + (Full $GameDir) + '"')
+    Say 'INFO' ('Next: powershell -ExecutionPolicy Bypass -File ports\elden-ring\mod.ps1 assemble' + (Get-RouteArgs $out) + ' -GameDir ' + (Lit (Full $GameDir)))
 }
 
 # The text of the offline me3 profile (me3 v0.13.0 schema, schemas/mod-profile.json).
@@ -515,17 +557,19 @@ function Invoke-Assemble {
         Say 'OK' "config.json is present and was not touched$(if (-not (Test-Private $cfg)) { ' (WARNING: not private to you, SYSTEM and Administrators)' })."
     } else {
         Say 'INFO' 'Pair next (creates the private config.json; follow and hold only, attack stays out):'
-        Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/$id -OutFile `"$cfg`" -AllowedActions follow_player,hold_position -NpcId <companion id> -NpcName `"<companion name>`" [-VoiceEnabled]"
+        Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/$id -OutFile $(Lit $cfg) -AllowedActions follow_player,hold_position -NpcId <companion id> -NpcName '<companion name>' [-VoiceEnabled]"
     }
+    Say 'INFO' "Server allowlist: the same actions, each checked against build $stamp's records (candidates, not qualified in game):"
+    Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> -AllowedActions follow_player,hold_position -Build $(Lit $dir)"
     Say 'INFO' 'Before the first launch, back up the whole save folder %APPDATA%\EldenRing yourself (copy it somewhere outside it).'
     if ($gameChecked) { Say 'OK' "The installed eldenring.exe is still the build $stamp was made for ($($game.file_version))." }
     else {
         Say 'WARN' 'The installed game was NOT checked (no -GameDir). If Steam updated it since the build, this package does not match it. Right before launching, run:'
-        Write-Host ('  powershell -ExecutionPolicy Bypass -File ports\elden-ring\mod.ps1 doctor' + (Get-RouteArgs $out) + ' -GameDir "<...\ELDEN RING\Game>"')
+        Write-Host ('  powershell -ExecutionPolicy Bypass -File ports\elden-ring\mod.ps1 doctor' + (Get-RouteArgs $out) + " -GameDir '<...\ELDEN RING\Game>'")
     }
     Say 'INFO' 'Check the profile, then launch it yourself, offline, with the game closed first:'
-    Write-Host "  & `"$(Full $Me3)`" profile show --file `"$rt\$profileName`""
-    Write-Host "  & `"$(Full $Me3)`" launch --game eldenring --exe `"$exe`" -p `"$rt\$profileName`" --online false --savefile $saveName"
+    Write-Host "  & $(Lit (Full $Me3)) profile show --file $(Lit "$rt\$profileName")"
+    Write-Host "  & $(Lit (Full $Me3)) launch --game eldenring --exe $(Lit $exe) -p $(Lit "$rt\$profileName") --online false --savefile $saveName"
 }
 
 switch ($Command) {
