@@ -12,7 +12,8 @@ set -euo pipefail
 
 # Everything runs inside main() so bash has read the whole script before git changes it.
 main() {
-    local app_dir="" bundle="" commit="" app_owner upstream incoming path backup_line backup_dir status
+    local app_dir="" bundle="" commit="" app_owner upstream incoming path backup_line backup_dir status here
+    here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     while [ $# -gt 0 ]; do
         case "$1" in
             --app-dir|--bundle|--commit)
@@ -40,6 +41,8 @@ main() {
         echo "Run with sudo: sudo bash scripts/update.sh" >&2
         exit 1
     fi
+    # Read-only: refuse an unpatched PHP CLI or Apache PHP runtime before fetching or backing up.
+    bash "$here/check-php-runtime-security.sh"
     if [ -n "$(as_owner git -C "$app_dir" status --porcelain --untracked-files=no)" ]; then
         echo "Refusing to update: tracked files in $app_dir have local changes." >&2
         echo "Keep your changes in your own fork, and settings in config/config.php." >&2
