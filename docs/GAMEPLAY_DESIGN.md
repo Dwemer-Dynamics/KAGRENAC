@@ -14,7 +14,7 @@ player talks to one NPC) fills each row in a few words and needs nothing else fr
 |---|---|---|
 | `turn.php` | One player line to one NPC: one reply, and only allowlisted actions targeting that NPC | No NPC-to-NPC exchange, listener or participant list |
 | `decision.php` | Picks which of up to 8 NPCs offered by the game answers a **player's line**, or falls back to the baseline | Choosing actions, ambient moments or any other kind of id |
-| `event.php` | Four fixed types (`location_entered`, `item_given`, `combat_started`, `combat_ended`). `respond: true` is a normal turn for one NPC that the port sends when its own trigger fires. History stores it as a player-role line marked `Game event (<type>): <text>`; it is the game's report, not something the player said | Built-in triggers, schedulers, queues, cooldowns or new event types: the port owns all of them |
+| `event.php` | Four fixed types (`location_entered`, `item_given`, `combat_started`, `combat_ended`). `respond: true` is a normal turn for one NPC that the port sends when its own trigger fires. History stores it as a player-role line marked `Game event (<type>): <text>`; it is the game's report, not something the player said | Built-in triggers, schedulers, queues or cooldowns: the port owns them. Accepts only the four fixed types; a new type needs an explicit server, client and `PROTOCOL.md` change |
 | `TurnRuntime` (client) | One pending turn per runtime. `submitTurn()` (with `eventType` for an event) replaces any pending turn or voice; `cancel()` drops it and tells the server | Running an ambient exchange beside the player's turn |
 | `result.php` | Records that a handler ran (`handled`), was refused (`rejected`) or failed (`failed`) | Reporting that the outcome happened in the game |
 | Memory | History, plus optional summary and diary notes (off by default), per `session_id` and NPC; the port decides which save a session is (`setSession`). Bios and approved facts belong to one NPC or are global, across every session; fact candidates wait for a person's approval | Tracking listeners or overheard lines, or keeping private and overheard knowledge apart |
@@ -110,11 +110,21 @@ game thread.
 
 Start with **one** automatic interaction and keep it bounded:
 
-- **Player input preempts it.** Send an ambient turn through the player's runtime and session
-  only while no player turn is pending. When the player speaks, `cancel()` the ambient turn,
-  then submit the player's. The server's generation fence (`cancel.php`, `409 stale`) keeps a
-  late ambient reply out of history. Never queue the player behind it, and never move it to a
-  separate made-up session to avoid this.
+- **Player input comes first.** Send an ambient turn through the player's runtime and session
+  only while no player turn is pending. When the player speaks, `cancel()` drops the ambient
+  turn locally at once; its late results and pending voice are discarded locally, but text
+  already presented or actions already executed are not undone. `submitTurn()` then refuses
+  that NPC until `tick()` has processed the server's cancel answer or failure. Meanwhile the
+  port keeps at most one pending player line and stays responsive, then submits it once as a
+  new request. It never replays the old HTTP request or the ambient turn. If that submit is
+  refused or fails, show it; never lose the player's line silently. "First" means ambient
+  speech never queues ahead of the player; it does not bypass the server's cancel ordering.
+- **Cancel limits.** The generation fence (`cancel.php`, `409 stale`) only stops a save that
+  has not yet committed. It cannot undo an ambient reply already saved to history, and an old
+  request that reaches the server after the cancel starts a new, current generation. Muting
+  or cancelling locally does not remove committed history. The template gives no automatic
+  scheduler or coordinator; the port qualifies its own. Never move ambient turns to a made-up
+  session to avoid this ordering; a separate social-participant contract is future work.
 - **Bounded exchange:** a fixed number of lines and participants, then it stops.
 - **Cooldown and dedupe:** a minimum gap between exchanges and before the same participants
   talk again, and the same trigger is never handled twice.
