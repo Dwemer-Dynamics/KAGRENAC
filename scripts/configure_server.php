@@ -19,7 +19,7 @@
 //   other setting are never copied. dwemerllm and mock leave llm.api_key as it is (neither sends it).
 // - --tts pockettts enables DwemerDistro PocketTTS at its default local address with the voice
 //   given; --tts off only turns voice off. --allowed-actions replaces the server allowlist with
-//   known action names; the caller checks them against the game side first.
+//   known action names (or 'none' for an empty list); the caller checks nonempty lists against the game side first.
 // - --test-providers makes one turn.php call (offered_actions [], its own test session) and one
 //   speak.php call with that reply, no retry. It refuses before any call when vector search or
 //   automatic memory would add model calls, or a profile would change the mode or model, and
@@ -102,7 +102,7 @@ if (($tts === 'pockettts') !== ($voice !== null) || ($voice !== null && form_nam
 }
 $actions = null;
 if ($options['--allowed-actions'] !== null) {
-    $actions = explode(',', $options['--allowed-actions']);
+    $actions = $options['--allowed-actions'] === 'none' ? [] : explode(',', $options['--allowed-actions']);
     // Only the actions the server knows: each has its prompt hint and target rule in lib/llm.php.
     if (count(array_unique($actions)) !== count($actions) || array_diff($actions, NPC_TARGET_ACTIONS)) {
         refuse('--allowed-actions must be different names from ' . implode(', ', NPC_TARGET_ACTIONS) . ', separated by commas.');

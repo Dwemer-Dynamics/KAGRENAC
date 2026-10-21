@@ -23,6 +23,11 @@ One repository holds both components:
 
 ## First prompt for your coding agent
 
+Use Codex or your chosen coding agent directly: plan, implement, test, review the actual
+changes in a separate pass, and fix findings. External delegation is optional. The
+[game planning guide](docs/ENGINE_PLANNING.md) and [tool catalogue](docs/research/MODDING_TOOLS.md)
+help the agent qualify a new game's mod infrastructure before building its port.
+
 Clone your copy on Windows, open your coding agent in it and paste this, adding anything
 you already know. You do not fill in any form first:
 

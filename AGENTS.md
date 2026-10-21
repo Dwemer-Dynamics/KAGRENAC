@@ -7,6 +7,13 @@ Follow both when a change touches both.
 
 ## Start of every task
 
+Use the user's chosen coding agent for implementation, tests and a separate review of the
+actual diff. There is no mandatory external worker or model-specific setup. Delegate only
+when the user asks. Follow [Engine planning](docs/ENGINE_PLANNING.md) before game-port code;
+use [the tool catalogue](docs/research/MODDING_TOOLS.md) as leads, never compatibility proof.
+Track first-run/repeat friction in the mod's `docs/KAGRENAC_FLOW_REVIEW.md` with evidence,
+minimal proposed fixes and generic versus engine-specific scope. Preserve the original brief.
+
 1. Read [PROJECT.md](PROJECT.md) and resume at the first stage in its Stages and readiness
    table that is not done and is ready to work on; that table is the one current status.
    If it is blank or incomplete, fill it in yourself from the conversation and the user's
@@ -35,8 +42,8 @@ Follow both when a change touches both.
    to test it authorize that test, and no other paid call. Keys go on the dashboard **API
    keys** page or in the private `config/config.php`, never in chat; pair with
    `project.ps1 pair` so the user never copies a token. Set the provider, voice and server
-   allowlist with `project.ps1 configure` (actions only against a verified `-Build` or with
-   `-ConsoleClient`; a key is reused only from a config the user names with
+   allowlist with `project.ps1 configure` (nonempty actions only against a verified `-Build`
+   or with `-ConsoleClient`; `-AllowedActions none` needs neither; a key is reused only from a config the user names with
    `-ReuseProviderFrom`); its `-TestProviders` is one such authorized test. Reuse a provider the user already
    configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
    `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
@@ -63,6 +70,9 @@ Follow both when a change touches both.
   must be installed before a server install or update (SETUP.md). Never build the client,
   write a client `config.json` or put build output inside the server copy or the
   repository; builds go outside both (the client script defaults to `%LOCALAPPDATA%`).
+- New ports use the data-only [generic build record](docs/PORT_BUILD_RECORDS.md) for action
+  configuration and pairing; keep game-specific install/runtime checks in the port's route.
+  `-AllowedActions none` explicitly disables actions while conversation is being qualified.
 - `scripts/project.ps1` is a thin Windows wrapper over the existing scripts. Keep it free of
   dependency installation, database resets and background services. `deploy` sends only a
   bundle of the committed HEAD into the named distro and installs through DwemerDistro Core

@@ -21,6 +21,14 @@ permission.
 
 ## Integration plan (required before building mod code)
 
+First follow [Engine planning](docs/ENGINE_PLANNING.md). Record the installation survey,
+selected loader/tool versions and primary sources, the chosen architecture, bounded probes
+for unknowns and a five-minute acceptance sequence in `ports/<engine>/PLAN.md`. The agent
+checks the plan against this brief before game-port implementation; independent server and
+provider setup can proceed. Use the current coding agent for build, tests and a separate
+diff review, unless the user explicitly chooses delegation. Record flow friction in
+`docs/KAGRENAC_FLOW_REVIEW.md`.
+
 Each row: the chosen mechanism, and whether it is a cited fact (SDK file, doc or game data)
 or Unknown. For an Unknown, note the bounded research (where, and when to stop) and the
 options offered.

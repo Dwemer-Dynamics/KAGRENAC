@@ -13,7 +13,7 @@
 // - Without --base-url the URL is inferred for installs under /var/www/html (Apache port
 //   19000 by default: CUSTOM_MODS_PORT in DwemerDistro), e.g. /var/www/html/custom-mods/KagrenacServer -> .../custom-mods/KagrenacServer.
 //   Anywhere else, pass the address the game should use with --base-url.
-// - --allowed-actions sets the client's own allowlist: 1-8 different comma-separated names of
+// - --allowed-actions none writes an empty list. Otherwise it sets 1-8 different comma-separated names of
 //   1-40 characters A-Z a-z 0-9 _. Without it the client allows follow_player, as before.
 // - --npc-id and --npc-name add the optional npc_id and npc_name a game client reads (protocol
 //   id rule; a name of 1-64 characters without control characters or edge spaces), and
@@ -79,7 +79,8 @@ $sessionId = $options['--session-id'];
 if (!preg_match('/^[A-Za-z0-9_.:-]{1,64}$/D', $sessionId)) {
     pair_fail('--session-id must be 1-64 characters of A-Z a-z 0-9 _ . : -');
 }
-$actions = $options['--allowed-actions'] === null ? ['follow_player'] : explode(',', $options['--allowed-actions']);
+$actions = $options['--allowed-actions'] === null ? ['follow_player']
+    : ($options['--allowed-actions'] === 'none' ? [] : explode(',', $options['--allowed-actions']));
 if (count($actions) > 8 || count(array_unique($actions)) !== count($actions)
     || array_filter($actions, fn($name) => !preg_match('/^[A-Za-z0-9_]{1,40}$/D', $name))) {
     pair_fail('--allowed-actions must be 1-8 different comma-separated names of 1-40 characters A-Z a-z 0-9 _');

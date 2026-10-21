@@ -7,6 +7,11 @@ them; you do not have to read them first.
 
 ## The route
 
+Use Codex or the coding agent the user chose. It handles planning, implementation, checks
+and a separate review of the actual changes; no external coding-model setup is required.
+Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primary sources from
+[the tool catalogue](research/MODDING_TOOLS.md). Keep the initial feature small and concrete.
+
 1. **Download.** Clone your copy (GitHub's **Use this template**, a fork, or
    `git clone https://github.com/Dwemer-Dynamics/Kagrenac.git`), open your coding agent in it
    and paste the [first prompt](../README.md#first-prompt-for-your-coding-agent).
@@ -123,7 +128,8 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
 - Runs only in the template (manifest id `example-server` at HEAD) and copies exactly its
   committed HEAD with `git archive`: no Git history, untracked or ignored files, private
   config, database, build output or logs. Uncommitted template changes are reported and left out.
-- `-Destination` must be a new folder on a local fixed disk, in an existing parent reached
+- `-Destination` accepts either slash style and normalizes it before applying the same safety
+  checks. It must be a new folder on a local fixed disk, in an existing parent reached
   without links, outside every Git checkout, web root (`htdocs`, `wwwroot`, `custom-mods` and
   the like) and `%LOCALAPPDATA%\DwemerDynamics`. An existing folder is refused, never merged.
 - `-Id` (3-32 lowercase letters, digits and single hyphens) and `-Name` become the copy's
@@ -136,6 +142,9 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   game) and then marks stage 2 done itself, while stages 3 to 5 go ahead without waiting. It
   also adds one stage row per reference action; brief text that holds
   a URL or looks like a key is refused.
+- An engine without a reference is also accepted: `new -Engine <name>` records its paths,
+  creates a short `ports/<name>/PLAN.md` starter and leaves stage 2 not started. The agent
+  qualifies it using [Engine planning](ENGINE_PLANNING.md), without inventing support.
 - It runs `git init -b main` in the copy and commits nothing. Review the copy, then commit
   it yourself before its first deploy (deploy sends only committed HEAD), and run every
   later command from the copy:
@@ -197,7 +206,7 @@ session it is kept byte for byte as "already paired" (the identity and voice opt
 only a new file); anything else is refused, never overwritten.
 
 `-AllowedActions` sets only the client's list; pair cannot change the server. With
-`-Build <root>\elden-ring\builds\<time>`, or when `-OutFile` sits in a runtime that `assemble`
+`-Build <port build folder>`, or when `-OutFile` sits in a runtime that `assemble`
 wrote (its `runtime.json` names the build), every client action, including the default
 `follow_player`, must be one that build supports; its records are checked as `configure`
 checks them (below). A game client config (`-NpcId` or `-NpcName`) without a build record
@@ -208,6 +217,21 @@ client's config: leave it in the game runtime and check it with the port's launc
 its engine pack's acceptance, not `KagrenacClient.exe`.
 
 ### Configure providers, voice and actions
+
+`pair` now defaults `-WslServerPath` to `/var/www/html/custom-mods/<id>` in a project with
+its own id, like configure/deploy. The template still requires an explicit install path.
+For a new port, use [schema-2 build/runtime records](PORT_BUILD_RECORDS.md); no shared CLI
+edit is needed. Legacy Elden Ring records keep their specialized validation below.
+For conversation-only work, set **both** lists explicitly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> -AllowedActions none
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -OutFile '<runtime>\config.json' -AllowedActions none
+```
+
+`none` creates an empty list and needs no build; omitting the option keeps the legacy
+follow default. Pair never changes an existing private config's settings. Only use
+`-Build` for recorded capabilities; a supported action still needs its own game test.
 
 `configure -WslDistro <name>` (run with `powershell.exe`, not `pwsh`) changes the install's private `config/config.php` the way the
 dashboard does: it runs that install's `scripts/configure_server.php` as `www-data`, which
@@ -249,9 +273,11 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistr
 - `-Tts pockettts -TtsVoice <voice>` enables PocketTTS at `http://127.0.0.1:8086/v1/audio/speech`
   (model `pocket-tts`), only when something answers on port 8086; `-Tts off` turns voice off.
   `tts.api_key` and other voice settings stay; other providers are set on the **Voice** page.
-- `-AllowedActions a,b` replaces the server's `allowed_actions` with names the server knows
+- `-AllowedActions none` empties the server list. A nonempty `-AllowedActions a,b` replaces
+  the server's `allowed_actions` with names the server knows
   (`follow_player`, `hold_position`, `attack_hostile`), and needs exactly one of:
-  `-Build <root>\elden-ring\builds\<time>`, whose `build.json` must be this project's, for the
+  `-Build <port build folder>` with the [generic record](PORT_BUILD_RECORDS.md), or the
+  existing Elden Ring record at `<root>\elden-ring\builds\<time>`, whose `build.json` must be this project's, for the
   accepted game build, with every recorded file unchanged (SHA-256), a `package.json` that
   agrees on the control config, `attack_enabled`, supported actions and package files, and a
   DLL carrying the control config's hash, and each action must be one it supports (with
