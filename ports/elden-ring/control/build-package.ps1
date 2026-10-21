@@ -4,9 +4,10 @@
 
 .DESCRIPTION
   Run with Windows PowerShell 5.1. Steps, each checked before the next:
-    1. config: every value a finite number in range, no duplicates, no player id
-    2. eldenring.exe SHA-256 equals the recorded build (a file check; the engine itself is
-       not qualified by this)
+    1. config: every value a finite number in range, no duplicates, no player id; attack_enabled
+       false leaves the attack step out of the event, the mailbox and the logic
+    2. eldenring.exe SHA-256 equals the build in ../game-build.json (a file check; the engine
+       itself is not qualified by this)
     3. extract-inputs.ps1: common.emevd, aicommon.luabnd, 010000_logic.luabnd and the template's, companion's and
        hostile's tile MSBs and event files, read-only;
        then one `dotnet build` of erpack into the output folder (no build servers)
@@ -53,8 +54,10 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'paths.ps1')
 
-# The build the engine notes were written against (docs/engine-packs/elden-ring.md).
-$RecordedExeSha256 = '1a3547101327f65d0c76da2f9190ac0aa66871ea42bae2aecc61e11a8b597891'
+# The one build this builder accepts: the port's single compatibility source, also read by the
+# native client build and mod.ps1 doctor. A file identity, not an in-game qualification.
+try { $RecordedExeSha256 = [string] (Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\game-build.json') -Raw | ConvertFrom-Json).sha256 } catch { $RecordedExeSha256 = '' }
+if ($RecordedExeSha256 -cnotmatch '^[0-9a-f]{64}$') { Refuse 'ports/elden-ring/game-build.json has no valid sha256' }
 $PlayerEntity = 10000
 
 $DarkScript = Join-Path $Tools 'darkscript\DarkScript3.exe'
@@ -144,16 +147,28 @@ $button = Int 'action_button_param' 1 2147483647
 $followMin = Num 'follow_min' 0.5 30
 $followMax = Num 'follow_max' 1 50
 if ($followMin -ge $followMax) { Refuse 'follow_min must be below follow_max' }
-$reach = Num 'attack_reach' 0.5 20
-$lease = Int 'attack_lease_seconds' 5 600
-# Attack animations proven per battle goal: an id is accepted only where the NPC's own
-# vanilla battle goal requests it (431000_battle.luabnd, ComboAttackTunableSpin 3000).
-$ProvenAttacks = @{ 43111100 = @(3000) }
-$attackAnim = Int 'attack_animation' 0 2147483647
-if (-not $ProvenAttacks.ContainsKey([int] $originalAi)) { Refuse "no attack animation is proven for think row $originalAi" }
-if ($attackAnim -notin $ProvenAttacks[[int] $originalAi]) { Refuse "attack_animation $attackAnim is not proven for think row $originalAi" }
-
+# attack_enabled is required: false leaves every attack step out of the event, the mailbox
+# (an attack command is refused) and the logic, and then no attack setting may be given.
+if ($cfg.attack_enabled -isnot [bool]) { Refuse 'attack_enabled must be true or false' }
+$attackEnabled = $cfg.attack_enabled
 $inv = [Globalization.CultureInfo]::InvariantCulture
+$attackValues = [ordered]@{}
+if ($attackEnabled) {
+    $reach = Num 'attack_reach' 0.5 20
+    $lease = Int 'attack_lease_seconds' 5 600
+    # Attack animations proven per battle goal: an id is accepted only where the NPC's own
+    # vanilla battle goal requests it (431000_battle.luabnd, ComboAttackTunableSpin 3000).
+    $ProvenAttacks = @{ 43111100 = @(3000) }
+    $attackAnim = Int 'attack_animation' 0 2147483647
+    if (-not $ProvenAttacks.ContainsKey([int] $originalAi)) { Refuse "no attack animation is proven for think row $originalAi" }
+    if ($attackAnim -notin $ProvenAttacks[[int] $originalAi]) { Refuse "attack_animation $attackAnim is not proven for think row $originalAi" }
+    $attackValues = [ordered]@{ ATTACK_LEASE = $lease; ATTACK_ANIM = $attackAnim; ATTACK_REACH = $reach.ToString('0.0##', $inv) }
+} else {
+    foreach ($n in 'attack_reach', 'attack_lease_seconds', 'attack_animation') {
+        if ($null -ne $cfg.$n) { Refuse "$n must be absent when attack_enabled is false" }
+    }
+}
+
 $logicName = "kagrenac$logicId"
 $values = [ordered]@{
     COMPANION = $companion; HOSTILE = $hostile; ORIGINAL_AI = $originalAi; CONTROL_AI = $controlAi
@@ -161,13 +176,13 @@ $values = [ordered]@{
     ORIGINAL_TEAM = $originalTeam; CONTROL_TEAM = $controlTeam; HOSTILE_TEAM = $hostileTeam
     LOGIC_ID = $logicId; LOGIC_NAME = $logicName; E_CONTROL = $eventControl
     BUTTON_PARAM = $button; CMD_HOLD = $commands.command_hold; CMD_FOLLOW = $commands.command_follow
-    CMD_ATTACK = $commands.command_attack; ATTACK_LEASE = $lease; ATTACK_ANIM = $attackAnim
+    CMD_ATTACK = $commands.command_attack
     FOLLOW_MIN = $followMin.ToString('0.0##', $inv); FOLLOW_MAX = $followMax.ToString('0.0##', $inv)
-    ATTACK_REACH = $reach.ToString('0.0##', $inv)
     E_BRIDGE_INIT = $eventInit; E_BRIDGE_MAILBOX = $eventMailbox; BRIDGE_FLAG_BASE = $flagBase
     HOSTILE_NEAR = $hostileNear.ToString('0.0##', $inv); MAP_NAME = $companionMsb
     MAP_AREA = $mapParts[0]; MAP_BLOCK = $mapParts[1]; MAP_REGION = $mapParts[2]; MAP_INDEX = $mapParts[3]
 }
+foreach ($k in $attackValues.Keys) { $values[$k] = $attackValues[$k] }
 if ($values.Values -contains $PlayerEntity) { Refuse 'no configured id may be the player entity 10000' }
 $values.PLAYER = $PlayerEntity  # only the mailbox's distance sensors name the player
 
@@ -320,6 +335,13 @@ $steps.place = $place
 
 function Render([string] $template) {
     $text = Get-Content -LiteralPath (Join-Path $PSScriptRoot $template) -Raw
+    # Lines between a line holding @ATTACK{@ and one holding @}ATTACK@ stay only with
+    # attack_enabled, those between @NOATTACK{@ and @}NOATTACK@ only without; markers go.
+    foreach ($b in @(@('ATTACK', $attackEnabled), @('NOATTACK', -not $attackEnabled))) {
+        $block = "(?ms)^[^\n]*@$($b[0])\{@[^\n]*\n(.*?)^[^\n]*@\}$($b[0])@[^\n]*\n"
+        $text = [regex]::Replace($text, $block, { param($m) if ($b[1]) { $m.Groups[1].Value } else { '' } }.GetNewClosure())
+    }
+    if ($text -match '@\}?(NO)?ATTACK\{?@') { Refuse "unpaired attack block marker in $template" }
     # @F+n@: flag n of the bridge window (n 0-95 only).
     foreach ($m in [regex]::Matches($text, '@F\+(\d+)@')) {
         if ([int] $m.Groups[1].Value -gt 95) { Refuse "bridge flag $($m.Value) is outside the 96-flag window" }
@@ -500,6 +522,7 @@ foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', $logicFil
 $manifest = [ordered]@{
     status = 'built from the user''s own files; not tested in game; nothing installed'
     game_exe_sha256 = $exeSha
+    attack_enabled = $attackEnabled
     outputs = $outputs
     commands = [ordered]@{
         event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $($ownedEvents -join ' ') --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"
@@ -525,23 +548,28 @@ $manifest = [ordered]@{
         companion_position = $companionPos; grace_bonfire_row = $graceRow; grace_name = $graceName
     }
     steps = $steps
-    untested = @(
+    untested = @(@(
         "common event 0 starting events $($ownedEvents -join ', ') on every load or warp, the init event first (constructor lifetime and start order not confirmed)",
         "the bridge window $flagBase-$($flagBase + 95) being stored, set and read by the game like its own flags of block $([math]::Floor($flagBase / 1000)) (statically unused, see steps.bridge_audit; the allocation lists do not name this tile)",
         "the mailbox sensors (IfCharacterBackreadStatus, IfCharacterDeadalive, IfEntityInoutsideRadiusOfEntity, IfPlayerInoutMap) evaluated without waiting by SkipIfConditionGroupStateUncompiled",
         "the copy loading friendly and holding: team $controlTeam from its private NpcParam row $controlNpc (the teamType of the game's spirit-summon rows) keeping it off the player and the player off it, and logic $logicId waiting with no request",
         "ActionButtonParam $button showing a prompt on a friendly character from an event, and one press passing only one wait",
-        "IfElapsedSeconds($lease) in the attack wait counting from that wait, not from the event start",
         "the game running logic $logicId for think row $controlAi at all (from $($logicFile.Replace('\', '/')) or aicommon)",
         'GOAL_COMMON_ApproachTarget on TARGET_LOCALPLAYER following the player, and GOAL_COMMON_Turn on TARGET_LOCALPLAYER facing the player within follow range',
-        "SetCharacterEventTarget setting TARGET_EVENT, and GOAL_COMMON_AttackTunableSpin with animation $attackAnim on it hitting the selected hostile",
-        'the logic running without COMMON_EasySetup_Initial, and the soldier obeying follow, hold and attack',
+        "the logic running without COMMON_EasySetup_Initial, and the copy obeying follow and hold$(if ($attackEnabled) { ' and attack' })",
         'a reload, warp, death or release returning the copy to a friendly hold',
         "the copy $companionName standing on the ground at $($companionPos -join ', ') in $companionMsb (height checked only against the grace asset and its player part, not against terrain collision)",
         "a team-$controlTeam copy within the grace's RegisterBonfire enemy deactivation distance ($($place.grace.register_bonfire.enemy_deactivation_distance) m) not blocking resting at the grace",
         "the game loading $companionMsb.msb.dcx from the package with the added part and model, and the copy without the template's BackupEventAnimID 704 starting in a normal standing pose"
-    )
-    attack_evidence = [ordered]@{
+    ) + @(if ($attackEnabled) {
+        "IfElapsedSeconds($lease) in the attack wait counting from that wait, not from the event start",
+        "SetCharacterEventTarget setting TARGET_EVENT, and GOAL_COMMON_AttackTunableSpin with animation $attackAnim on it hitting the selected hostile"
+    }))
+}
+if (-not $attackEnabled) {
+    $manifest.attack = 'left out (attack_enabled false): no attack step in the control event or the logic; the mailbox refuses an attack command'
+} else {
+    $manifest.attack_evidence = [ordered]@{
         asset = '/script/431000_battle.luabnd.dcx (Data0, 5952 bytes, sha256 c1295e3a21536027e751651ba565d2985ae07dd721ca4e79bc3f9320cbf8500b)'
         entry = '431000_battle.lua (sha256 81f4a857a44f1dd6a44e8ae06ba5bcbcfd5f4fe9789121b978155c86793941cf)'
         call_site = 'AddSubGoal(GOAL_COMMON_ComboAttackTunableSpin, 5, 3000, TARGET_ENE_0, 2.5, ...)'

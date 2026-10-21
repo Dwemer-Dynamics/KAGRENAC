@@ -1,8 +1,9 @@
 # Elden Ring companion control: follow, hold, attack (not verified in game)
 
 One NPC, friendly and holding from the start, that you step with the action button: it
-follows you, holds its position, or attacks one fixed hostile, using the game's own event
-script and AI scripting. The package builds in full from the user's own files (2026-10-19,
+follows you, holds its position, or (only in a build with `attack_enabled` true) attacks one
+fixed hostile, using the game's own event script and AI scripting. The example config, and so
+every new mod, leaves attack out ([Attack is optional](#attack-is-optional-attack_enabled)). The package builds in full from the user's own files (2026-10-19,
 exit 0). The user ran two earlier packages once each ([hostile at start](#user-test-of-the-earlier-package-2026-10-19);
 [friendly, stood still after Talk and did not follow at about 10 m](#user-test-of-the-friendly-package-2026-10-19)).
 When the rest of this page was written, the current package (per-logic file,
@@ -24,7 +25,7 @@ audit only, not in game. Voice, an LLM and a native client are not part of this 
 | AI logic | `kagrenac_companion.lua.in` | Hold with no order; follow on `TARGET_LOCALPLAYER` (21): within 4 m turn to face the player, beyond it approach with the game's `TARGET_SELF` fourth argument; attack on `TARGET_EVENT` (20); no `COMMON_EasySetup_Initial` | External Lua 5.0.3 contract test on the generated file: 12 pass (exact goal tuples) | Running in game |
 | Think, NpcParam and Lua packing | `erpack pack` | Clones think row 43111100 as 43111190 (`logicId` 431990) and NpcParam 43111110 as 43111190 (`teamType` 47), adds the logic to `aicommon.luabnd`, and writes it as its own `431990_logic.luabnd.dcx`, laid out like the game's `010000_logic.luabnd.dcx` | Full build: the only differing cells are `logicId` and `teamType` (48 to 47); every other row, 43111100 and 43111110 included, and every other file unchanged | Loading in game |
 | Companion copy at The First Step | `erpack place` | Adds one copy of the Gatefront soldier, with its own entity id, name, think row 43111190, NpcParam row 43111190 and `BackupEventAnimID` -1, to a copy of `m60_42_36_00.msb.dcx`, 3.5 m from The First Step grace | Full build: one part and the `c4311` model entry added; with them removed the file equals the user's original byte for byte (decompressed); id and name free in every extracted MSB and event file | Standing on the ground and loading in game |
-| Full package build | `build-package.ps1` | Builds the five assets and `package.json` | 2026-10-19, Windows PowerShell 5.1, example config: exit 0 in about 1 minute; erpack built with 0 warnings and 0 errors; `package.json` read back | Installing, loading and running in game |
+| Full package build | `build-package.ps1` | Builds the five assets and `package.json`; accepts only the `eldenring.exe` in `../game-build.json` (2.7.2.0) by SHA-256 | 2026-10-19 on 2.7.1.0, Windows PowerShell 5.1, example config with attack: exit 0 in about 1 minute; erpack built with 0 warnings and 0 errors; `package.json` read back. Not yet rebuilt here on 2.7.2.0 or with attack left out | Installing, loading and running in game |
 | Native DLL route | `../probe` | Diagnostics only | | Not qualified; it controls no actor |
 
 The existing diagnostic DLL is separate and unchanged: it returns false from its
@@ -62,6 +63,17 @@ press moves one step:
   game).
 
 To go from hold back to follow, finish the cycle (attack or release), then press again.
+
+### Attack is optional (`attack_enabled`)
+
+`attack_enabled` is required in the config. With `false` (the example, and every new mod)
+the lines between the `@ATTACK{@` and `@}ATTACK@` markers of `kagrenac_control.js.in` and
+`kagrenac_companion.lua.in` are left out when they are rendered: the mailbox refuses an attack
+command, the control event has no attack step and no `SetCharacterEventTarget`, the logic has
+no attack branch, and `attack_reach`, `attack_animation` and `attack_lease_seconds` must be
+absent. The cycle is then **hold -> follow -> hold -> release (hold)**, and `package.json`
+records `attack_enabled: false`. With `true` the three settings are required and the package
+is the full cycle above; attack still stays out of both allowlists until its own in-game check.
 
 The logic is registered twice, as the game does for its logics 10000, 410000 and 430000:
 in `aicommon.luabnd` and in its own `script/431990_logic.luabnd.dcx` (see
@@ -213,9 +225,16 @@ powershell -File ports/elden-ring/control/build-package.ps1 `
   -GameDir <Elden Ring>/Game [-Tools <tools>] [-OutDir <new empty folder outside the repository and the game>]
 ```
 
-`-Tools` defaults to `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control\tools` and
+A mod normally runs this through `..\mod.ps1 build`
+([Build a mod](../README.md#build-a-mod-from-this-reference)), which gives every build its own
+new folder under the mod's `-Root` and records its hashes. Run directly, `-Tools` defaults to
+`%LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control\tools` and
 `-OutDir` to `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\elden-ring\control\build`; the output
 folder must still be new or empty, so pass `-OutDir` for each further build.
+
+The builds recorded below ran on game file 2.7.1.0 with the attack path built in
+(`attack_enabled` was not a setting yet); a build on 2.7.2.0 or with attack left out has its own
+hashes.
 
 Exit codes: **0** the package was built (an asset build, not tested or qualified in the
 game); **1** refused or a step failed, with the reason printed. Output: `<out>/package/`
@@ -363,7 +382,8 @@ with possible values `true, false`, and `--exe <EXE>` and `--savefile <SAVEFILE>
    it turned, whether it moved, and whether it moves away from you or attacks.
 6. **Hold** (second press): step around it; it should no longer turn to you. Walk away; it
    should stay put.
-7. **Attack** (third press). Only if the Man-Bat (entity 1042360215, about 152 m away and
+7. **Attack** (third press; in a build with attack left out, the default, this press is a
+   release and step 8 does not apply). Only if the Man-Bat (entity 1042360215, about 152 m away and
    lower down) is loaded and alive does the soldier go after it; otherwise this press is a
    release. Attack ends by itself after 60 seconds.
 8. **Release** (fourth press): it should stop and hold, still friendly.

@@ -1,5 +1,5 @@
 {
-    "_comment": "First Step test. Companion: a dedicated copy (entity 1042360890, name c4311_9901) of the Godrick Soldier c4311_9021 (entity 1042370200, m60_42_37_00; think 43111100: logic 10000, battle goal 431000; NpcParam 43111110 team 48; no talk script), placed in m60_42_36_00 3.5 m west-south-west of The First Step grace (BonfireWarpParam 61423601); the original soldier and its rows stay as they are. The copy alone uses the control think row (a clone of 43111100 with logic 431990) and a private NpcParam row (a clone of 43111110 with teamType 47), so it loads friendly and holding. Team 47 = the teamType of the game's 115 [Spirit Summon] NpcParam rows (Paramdex TEAM_TYPE 'Spirit Summon'); it is set only in the param row, never by an event. Hostile: Man-Bat c4200_9005 in m60_42_36_00 (NpcParam 42000010 team 6); hostile_team_type must equal the hostile's own team. build-package.ps1 re-reads all of these from the user's own files and refuses on any mismatch. Bridge mailbox: init event 1042378802 and mailbox event 1042378803 own flags 1042369800-1042369895 (block 1042369, offsets 800-895), which the build audits as unused by every event script, param and talk script of the user's game before building.",
+    "_comment": "First Step test. Companion: a dedicated copy (entity 1042360890, name c4311_9901) of the Godrick Soldier c4311_9021 (entity 1042370200, m60_42_37_00; think 43111100: logic 10000, battle goal 431000; NpcParam 43111110 team 48; no talk script), placed in m60_42_36_00 3.5 m west-south-west of The First Step grace (BonfireWarpParam 61423601); the original soldier and its rows stay as they are. The copy alone uses the control think row (a clone of 43111100 with logic 431990) and a private NpcParam row (a clone of 43111110 with teamType 47), so it loads friendly and holding. Team 47 = the teamType of the game's 115 [Spirit Summon] NpcParam rows (Paramdex TEAM_TYPE 'Spirit Summon'); it is set only in the param row, never by an event. Hostile: Man-Bat c4200_9005 in m60_42_36_00 (NpcParam 42000010 team 6); hostile_team_type must equal the hostile's own team. build-package.ps1 re-reads all of these from the user's own files and refuses on any mismatch. Bridge mailbox: init event 1042378802 and mailbox event 1042378803 own flags 1042369800-1042369895 (block 1042369, offsets 800-895), which the build audits as unused by every event script, param and talk script of the user's game before building. Attack is off (attack_enabled false): the package has follow and hold only and the mailbox refuses an attack command. To build the guarded attack path, set attack_enabled true and add attack_reach 3.0, attack_animation 3000 and attack_lease_seconds 60; it stays out of both allowlists until its in-game check passes.",
     "companion_entity": 1042360890,
     "companion_msb": "m60_42_36_00",
     "companion_name": "c4311_9901",
@@ -29,7 +29,5 @@
     "command_attack": 9102,
     "follow_min": 2.0,
     "follow_max": 4.0,
-    "attack_reach": 3.0,
-    "attack_animation": 3000,
-    "attack_lease_seconds": 60
+    "attack_enabled": false
 }

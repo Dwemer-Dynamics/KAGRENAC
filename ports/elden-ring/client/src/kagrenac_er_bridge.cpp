@@ -2,8 +2,8 @@
 // 96 event flags of the game's own save data, 1042369800-1042369895 (layout in
 // ports/elden-ring/control/kagrenac_control.js.in). This
 // thread finds that window in this process's own committed private read-write memory by its
-// beacon, verifies it is live, and then only reads it, apart from the one command byte the
-// script reserves for the DLL. It calls no game code, installs no hook and uses no address
+// beacon, links only when exactly one candidate passes the live checks, and then only reads
+// it, apart from the one command byte the script reserves for the DLL. It calls no game code, installs no hook and uses no address
 // from a symbol table; every access is ReadProcessMemory or WriteProcessMemory on this process,
 // so a freed or protected page is a failed call, never a fault.
 //
@@ -37,10 +37,16 @@ constexpr size_t kChunk = size_t(4) << 20;
 constexpr uint64_t kScanByteCap = uint64_t(16) << 30;
 constexpr ULONGLONG kScanTimeCapMs = 120000;
 #ifndef KAGRENAC_ER_TEST_HOST
-// docs/engine-packs/elden-ring.md, "Engine and version": the only build this link accepts.
-constexpr const char* kExeSha256 = "1a3547101327f65d0c76da2f9190ac0aa66871ea42bae2aecc61e11a8b597891";
-constexpr DWORD kExeTimestamp = 0x6a96b418;
-constexpr DWORD kExeSizeOfImage = 0x05e0da00;
+// The only build this link accepts, from ports/elden-ring/game-build.json (CMakeLists.txt passes
+// it in). An in-game candidate, not a qualified build.
+#if !defined(KAGRENAC_ER_GAME_VERSION) || !defined(KAGRENAC_ER_GAME_SHA256) || !defined(KAGRENAC_ER_GAME_TIMESTAMP) \
+    || !defined(KAGRENAC_ER_GAME_SIZE_OF_IMAGE)
+#error "Build with CMakeLists.txt, which reads the accepted game build from game-build.json."
+#endif
+constexpr const char* kExeSha256 = KAGRENAC_ER_GAME_SHA256;
+constexpr DWORD kExeTimestamp = KAGRENAC_ER_GAME_TIMESTAMP;
+constexpr DWORD kExeSizeOfImage = KAGRENAC_ER_GAME_SIZE_OF_IMAGE;
+static_assert(sizeof(KAGRENAC_ER_GAME_SHA256) == 65, "game-build.json sha256 must be 64 hex digits");
 #endif
 
 constexpr uint8_t reverseBits(uint8_t b)
@@ -250,15 +256,39 @@ bool buildGate(std::string& why)
         && ReadProcessMemory(GetCurrentProcess(), base + dos.e_lfanew, &nt, sizeof(nt), &n) && n == sizeof(nt)
         && nt.Signature == IMAGE_NT_SIGNATURE && nt.FileHeader.TimeDateStamp == kExeTimestamp
         && nt.OptionalHeader.SizeOfImage == kExeSizeOfImage;
-    why = ok ? "build 2.7.1.0 by SHA-256 and PE headers" : "the loaded game image headers do not match";
+    why = ok ? "build " KAGRENAC_ER_GAME_VERSION " by SHA-256 and PE headers (in-game candidate, not qualified)"
+             : "the loaded game image headers do not match";
     return ok;
 #endif
 }
 
+// One beacon match: an address and bit order, never the window's bytes. The live-check state
+// is filled in by validate().
+struct Candidate {
+    uintptr_t at = 0;
+    bool msb = false;
+    int epoch = 0;
+    int heartbeat = 0;
+    int steps = 0;
+    ULONGLONG lastStep = 0;
+    bool live = false;
+    bool dead = false;  // live checks showed it is not the live mailbox
+};
+
+// Raw matches the scan keeps; more ends the pass with none trusted. Real passes found 2-3.
+constexpr int kMaxCandidates = 16;
+constexpr int kScanCapped = -1, kScanOverflow = -2, kScanIncomplete = -3;
+
+bool scanKind(const MEMORY_BASIC_INFORMATION& m)
+{
+    return m.State == MEM_COMMIT && m.Type == MEM_PRIVATE && m.Protect == PAGE_READWRITE;
+}
+
 // Bounded scan of committed private read-write memory, outside our module, this thread's
-// stack and our scan buffer. Returns the number of candidates (the first in at/msb), -1 when
-// a cap stopped it.
-int scan(uint8_t* buffer, uintptr_t& at, bool& msb)
+// stack and our scan buffer. Returns the number of distinct candidates in out, or kScanCapped
+// (byte or time cap), kScanOverflow (more than kMaxCandidates) or kScanIncomplete (memory of
+// the scanned kind could not be read), each of which leaves no candidate trusted.
+int scan(uint8_t* buffer, Candidate* out)
 {
     ULONG_PTR stackLow = 0, stackHigh = 0;
     GetCurrentThreadStackLimits(&stackLow, &stackHigh);
@@ -276,28 +306,51 @@ int scan(uint8_t* buffer, uintptr_t& at, bool& msb)
             break;
         }
         p = end;
-        if (m.State != MEM_COMMIT || m.Type != MEM_PRIVATE || m.Protect != PAGE_READWRITE
-            || m.AllocationBase == buffer || m.AllocationBase == self.AllocationBase
+        if (!scanKind(m) || m.AllocationBase == buffer || m.AllocationBase == self.AllocationBase
             || (base < stackHigh && end > stackLow)) {
             continue;
         }
         for (uintptr_t q = base; q + kWindow <= end;) {
             if (scanned > kScanByteCap || GetTickCount64() - start > kScanTimeCapMs) {
-                return -1;
+                return kScanCapped;
             }
             size_t len = static_cast<size_t>(std::min<uintptr_t>(kChunk, end - q));
             SIZE_T n = 0;
-            if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(q), buffer, len, &n) && n == len) {
-                for (size_t i = 0; i + kWindow <= len; ++i) {
-                    const uint8_t* c = buffer + i;
-                    bool lsb = c[0] == kBeacon0 && c[1] == kBeacon1 && c[6] == kGuard6 && c[8] == kGuard8;
-                    bool rev = c[0] == m0 && c[1] == m1 && c[6] == m6 && c[8] == m8;
-                    if ((lsb || rev) && c[9] == 0 && c[10] == 0 && c[11] == 0) {
-                        if (found++ == 0) {
-                            at = q + i;
-                            msb = rev;
-                        }
+            if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(q), buffer, len, &n) || n != len) {
+                // The memory changed since the query. No longer of the scanned kind: no mailbox
+                // can be there now, skip it. Still of that kind: read once more, up to where it
+                // now ends; if that fails too, the pass is incomplete.
+                MEMORY_BASIC_INFORMATION now{};
+                if (!VirtualQuery(reinterpret_cast<LPCVOID>(q), &now, sizeof(now))) {
+                    return kScanIncomplete;
+                }
+                uintptr_t nowEnd = reinterpret_cast<uintptr_t>(now.BaseAddress) + now.RegionSize;
+                len = static_cast<size_t>(std::min<uintptr_t>(len, nowEnd > q ? nowEnd - q : 0));
+                if (!scanKind(now) || len < kWindow) {
+                    scanned += len;
+                    q = nowEnd > q ? nowEnd : end;
+                    continue;
+                }
+                if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(q), buffer, len, &n) || n != len) {
+                    return kScanIncomplete;
+                }
+            }
+            for (size_t i = 0; i + kWindow <= len; ++i) {
+                const uint8_t* c = buffer + i;
+                bool lsb = c[0] == kBeacon0 && c[1] == kBeacon1 && c[6] == kGuard6 && c[8] == kGuard8;
+                bool rev = c[0] == m0 && c[1] == m1 && c[6] == m6 && c[8] == m8;
+                if (!(lsb || rev) || c[9] != 0 || c[10] != 0 || c[11] != 0) {
+                    continue;
+                }
+                // Chunks overlap by kWindow - 1 bytes: one address and bit order is one candidate.
+                Candidate k;
+                k.at = q + i;
+                k.msb = rev;
+                if (std::none_of(out, out + found, [&](const Candidate& o) { return o.at == k.at && o.msb == k.msb; })) {
+                    if (found == kMaxCandidates) {
+                        return kScanOverflow;
                     }
+                    out[found++] = k;
                 }
             }
             scanned += len;
@@ -308,39 +361,63 @@ int scan(uint8_t* buffer, uintptr_t& at, bool& msb)
     return found;
 }
 
+// Live checks for all candidates at once, every poll, within one kVerifyMs for the whole set.
 // Live: two consecutive heartbeat steps, with the beacon, guards and epoch unchanged and the
-// sensors not mid-write at the last one.
-bool verify(uintptr_t at, bool msb, int& epoch, int& heartbeat)
+// sensors not mid-write at the second. A live candidate stays under the same checks until the
+// end, so a selected one was read and current at the last poll. Dead: shape, epoch or step
+// failed, or no step within kFreshMs. Returns the live count once every candidate is live or
+// dead, or -1 when one could not be read or was still undecided at the deadline. Reads only.
+int validate(Candidate* c, int count)
 {
-    uint8_t w[kWindow];
-    if (!pageOk(at) || !readWindow(at, msb, w) || !shapeOk(w)) {
-        return false;
+    ULONGLONG start = GetTickCount64();
+    for (int i = 0; i < count; ++i) {
+        uint8_t w[kWindow];
+        if (!pageOk(c[i].at) || !readWindow(c[i].at, c[i].msb, w)) {
+            return -1;
+        }
+        c[i].dead = !shapeOk(w);
+        c[i].epoch = w[2] >> 4;
+        c[i].heartbeat = johnson(w[2] & 0xF);
+        c[i].lastStep = start;
     }
-    epoch = w[2] >> 4;
-    heartbeat = johnson(w[2] & 0xF);
-    int steps = 0;
-    ULONGLONG start = GetTickCount64(), last = start;
-    while (GetTickCount64() - start < kVerifyMs) {
+    for (;;) {
+        int live = 0, open = 0;
+        for (int i = 0; i < count; ++i) {
+            live += c[i].live && !c[i].dead;
+            open += !c[i].live && !c[i].dead;
+        }
+        if (!open) {
+            return live;
+        }
+        if (GetTickCount64() - start >= kVerifyMs) {
+            return -1;
+        }
         Sleep(static_cast<DWORD>(kPollMs));
-        if (!pageOk(at) || !readWindow(at, msb, w) || !shapeOk(w) || (w[2] >> 4) != epoch) {
-            return false;
-        }
-        int h = johnson(w[2] & 0xF);
-        if (h != heartbeat) {
-            if (h != (heartbeat + 1) % 8) {
-                return false;
+        for (int i = 0; i < count; ++i) {
+            Candidate& k = c[i];
+            if (k.dead) {
+                continue;
             }
-            heartbeat = h;
-            last = GetTickCount64();
-            ++steps;
-        } else if (GetTickCount64() - last > kFreshMs) {
-            return false;
-        }
-        if (steps >= 2 && !bit(w[4], 7)) {
-            return true;
+            uint8_t w[kWindow];
+            if (!pageOk(k.at) || !readWindow(k.at, k.msb, w)) {
+                return -1;
+            }
+            ULONGLONG now = GetTickCount64();
+            int h = johnson(w[2] & 0xF);
+            if (!shapeOk(w) || (w[2] >> 4) != k.epoch || (h != k.heartbeat && h != (k.heartbeat + 1) % 8)) {
+                k.dead = true;
+            } else if (h != k.heartbeat) {
+                k.heartbeat = h;
+                k.lastStep = now;
+                ++k.steps;
+            } else if (now - k.lastStep > kFreshMs) {
+                k.dead = true;
+            }
+            if (!k.dead && k.steps >= 2 && !bit(w[4], 7)) {
+                k.live = true;
+            }
         }
     }
-    return false;
 }
 
 // Worker-only state of one verified link.
@@ -446,16 +523,19 @@ bool dispatch(Link& link)
     return !failed || std::strcmp(failed, "the write failed") != 0;
 }
 
-// The verified link's loop. Returns why it ended.
-const char* runLink(uintptr_t at, bool msb, int epoch, int heartbeat)
+// The verified link's loop, from validate()'s last read of the selected candidate. Returns why
+// it ended.
+const char* runLink(const Candidate& selected)
 {
     Bridge& b = bridge();
     Link link;
+    const uintptr_t at = selected.at;
+    const bool msb = selected.msb;
     link.at = at;
     link.msb = msb;
-    link.epoch = epoch;
-    link.heartbeat = heartbeat;
-    link.lastStep = GetTickCount64();
+    link.epoch = selected.epoch;
+    link.heartbeat = selected.heartbeat;
+    link.lastStep = selected.lastStep;  // its real last step, so freshness is not restarted
     uint64_t session = 0;
     {
         std::lock_guard<std::mutex> lock(b.mutex);
@@ -590,7 +670,7 @@ const char* runLink(uintptr_t at, bool msb, int epoch, int heartbeat)
                     return "the arming challenge was refused";
                 }
                 log("bridge: armed, session " + std::to_string(session));
-                note(L"Game link ready: " + toWide(context().npcName) + L" can ask the game to follow, hold or attack.");
+                note(L"Game link ready: " + toWide(context().npcName) + L" can pass the orders allowed in config.json to the game.");
             } else {
                 log("bridge: ticket " + std::to_string(link.ticket) + (accepted ? " accepted" : " refused"));
             }
@@ -655,23 +735,29 @@ void bridgeMain()
     }
     DWORD backoff = 2000;
     for (;;) {
-        uintptr_t at = 0;
-        bool msb = false;
-        int epoch = 0, heartbeat = 0;
+        // Connects only when exactly one candidate passes the live checks; discovery never writes.
+        std::array<Candidate, kMaxCandidates> candidates{};
         ULONGLONG start = GetTickCount64();
-        int found = scan(buffer, at, msb);
-        const char* reason = found < 0 ? "the scan hit its cap"
-            : found == 0               ? "no mailbox found (no save loaded, or no control package)"
-            : found > 1                ? "several mailbox candidates; none trusted"
-                                       : nullptr;
-        if (!reason && !verify(at, msb, epoch, heartbeat)) {
-            reason = "the mailbox candidate is not live";
-        }
-        log("bridge: scan " + std::to_string(GetTickCount64() - start) + " ms, " + std::to_string(found)
-            + " candidates" + (reason ? std::string("; ") + reason : ""));
+        int found = scan(buffer, candidates.data());
+        ULONGLONG scanned = GetTickCount64();
+        int live = found > 0 ? validate(candidates.data(), found) : 0;
+        const char* reason = found == kScanCapped ? "the scan hit its cap"
+            : found == kScanOverflow              ? "more than 16 raw candidates; none trusted"
+            : found == kScanIncomplete            ? "the scan could not read all memory; none trusted"
+            : found == 0                          ? "no mailbox found (no save loaded, or no control package)"
+            : live < 0                            ? "the live checks did not finish; none trusted"
+            : live == 0                           ? "no candidate is live"
+            : live > 1                            ? "several live candidates; none trusted"
+                                                  : nullptr;
+        log("bridge: scan " + std::to_string(scanned - start) + " ms, "
+            + (found >= 0 ? std::to_string(found) : std::string("no")) + " raw candidates; live checks " + std::to_string(GetTickCount64() - scanned) + " ms, "
+            + (found > 0 && live >= 0 ? std::to_string(live) + " live" : std::string("no live count"))
+            + (reason ? std::string("; ") + reason : ""));
         if (!reason) {
             backoff = 2000;
-            reason = runLink(at, msb, epoch, heartbeat);
+            auto selected = std::find_if(candidates.begin(), candidates.begin() + found,
+                                         [](const Candidate& k) { return k.live && !k.dead; });
+            reason = runLink(*selected);
             log(std::string("bridge: link ended, ") + reason);
             note(L"Game link lost: " + toWide(context().npcName) + L" cannot act until it is found again.");
         }
