@@ -61,6 +61,13 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
 
 ## Layout and copies
 
+- Keep player-facing interaction inside the game: NPC selection, text entry, replies,
+  status and cancel. Prefer the game's native UI/input APIs, then a qualified in-process
+  rendering integration. External windows, desktop overlays and companion apps are last
+  resorts, not the default prototype. Record the missing mechanism and explain the fallback
+  before adopting it. Background helpers must not require a separate conversation window;
+  use external transport/audio only when the game cannot provide a suitable supported route.
+
 - Keep the server at the repository root. In the template, the manifest id `example-server`,
   `config/config.php`, database placeholder `example_ai_mod`, service identity
   `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`

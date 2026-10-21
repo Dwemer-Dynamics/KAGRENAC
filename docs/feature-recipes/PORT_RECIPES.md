@@ -22,6 +22,10 @@ Use this route when the game exposes entity/callback APIs but not safe HTTP or d
 playback. First qualify the script API, I/O permissions and lifecycle from the installed
 documentation ([Engine planning](../ENGINE_PLANNING.md)). A script sandbox may require the
 user to enable a specific mod-menu setting. Never assume an edited setting persists.
+Keep text entry, selection, replies and cancel inside the game; the helper is a background
+implementation detail. Prefer game-side transport/audio when supported. A separate helper
+window or desktop overlay is a last resort whose blocker and tradeoff must be explained
+before adopting it, not the normal first-demo experience.
 
 - The game script owns all entity reads, input, subtitles and action handlers, on documented
   callbacks. Capture a bounded awareness snapshot when the user sends a line; no model calls
