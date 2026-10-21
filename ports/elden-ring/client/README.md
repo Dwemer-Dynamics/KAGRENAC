@@ -3,10 +3,11 @@
 A reusable native client for one Elden Ring companion. Press **F8** in the game, type a line, get
 the server's reply in a small box and, optionally, its voice. With the control package's mailbox
 verified, a line can also ask the game to follow or hold. Attack is implemented and guarded
-for one fixed hostile but **unavailable** until verified in the game
+for one configured hostile, built only with the control config's `attack_enabled` true, and
+**unavailable** until verified in the game
 ([acceptance](../../../docs/engine-packs/elden-ring.md#future-acceptance-for-hold-follow-and-attack)).
 It uses the shared `client/src/ai_client` and `config` unchanged. It is a reference for this
-port, not a universal or ready game SDK: one exact game build, one control package, one fixed hostile.
+port, not a universal or ready game SDK: one exact game build, one control package, one configured hostile.
 
 The box is a **mod-owned Win32 window over the game**, not native game UI. Apart from the game
 link below, the DLL reads no game memory, calls no game code, installs no hook and uses no
@@ -45,8 +46,9 @@ address from a symbol table.
 
 ## Game link and orders
 
-The control package's mailbox event publishes state in event flags 1042369800-1042369895
-(layout: `../control/kagrenac_control.js.in`). The bridge thread:
+The control package's mailbox event publishes state in the 96 event flags from the control
+config's `bridge_flag_base` (the example: 1042369800-1042369895; layout:
+`../control/kagrenac_control.js.in`). The bridge thread:
 
 - runs only when `eldenring.exe` matches [`../game-build.json`](../game-build.json), which the
   build compiles in: today file 2.7.2.0, SHA-256
@@ -80,11 +82,15 @@ available yet, see above) skip the model. Any
 other line goes to the model with only the actions offered right now; at most one order per
 reply is sent, several conflicting ones none.
 
-Observations sent as context: location (The First Step map tile `m60_42_36_00`, else
-`unavailable`), the companion's state, and the one fixed Man-Bat hostile (entity 1042360215).
-Once attack is accepted, it is offered only while that hostile is loaded, alive and within
-30 m; until then keep it out of both allowlists. Inventory, combat,
-other actors and line of sight are `unavailable`.
+Observations sent as context: location (the player in the companion's map tile, the control
+config's `companion_msb`, else `unavailable`), the companion's state, and the one configured
+hostile (`hostile_entity`, by entity id only), loaded and alive and whether it is within
+`bridge_hostile_near_m` of the player. Attack follows the control config's `attack_enabled`,
+compiled into the DLL: with `false` (the example) `attack_hostile` is never offered and an attack
+order (`/attack` or a model request) is refused before it is queued or written, even if
+`allowed_actions` lists it. With `true` it is offered only while that hostile is loaded, alive and
+near, and stays a guarded candidate: keep it out of both allowlists until it passes its in-game
+acceptance. Inventory, combat, other actors and line of sight are `unavailable`.
 
 ## Config
 
@@ -112,12 +118,15 @@ The DLL never reads the server's API keys.
 ## Build
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File ports\elden-ring\client\build.ps1 [-BuildDir <folder>]
+powershell -ExecutionPolicy Bypass -File ports\elden-ring\client\build.ps1 -ControlConfig <control config> [-BuildDir <folder>]
 ```
 
-A mod normally builds it through `..\mod.ps1 build`, which uses this script. CMake reads the
-accepted game build from `../game-build.json` (and reconfigures when it changes); the source
-does not compile without it.
+A mod normally builds it through `..\mod.ps1 build`, which uses this script with the same
+`-ControlConfig` as the package. CMake reads the accepted game build from `../game-build.json`
+and the companion map tile, hostile entity, near radius, bridge flag base and `attack_enabled`
+from the control config (with the package build's ranges), and reconfigures when either changes;
+the source does not compile without them. It writes what it compiled, with the config's SHA-256,
+to `<build folder>\kagrenac_er_control.json`; the DLL logs the same hash at startup.
 
 Visual Studio 2022 C++ with the Windows SDK, x64, C++17, `/W4 /WX`, static CRT. Links only
 system `winhttp winmm user32 gdi32 bcrypt` with `/DEPENDENTLOADFLAG:0x800`, so those imports

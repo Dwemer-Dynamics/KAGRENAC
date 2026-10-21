@@ -1,5 +1,5 @@
 // Game link (see kagrenac_er.h). The control package's mailbox event publishes its state in
-// 96 event flags of the game's own save data, 1042369800-1042369895 (layout in
+// 96 event flags of the game's own save data from the control config's bridge_flag_base (layout in
 // ports/elden-ring/control/kagrenac_control.js.in). This
 // thread finds that window in this process's own committed private read-write memory by its
 // beacon, links only when exactly one candidate passes the live checks, and then only reads
@@ -24,11 +24,22 @@
 namespace kagrenac_er {
 namespace {
 
-constexpr size_t kWindow = 12;          // flags 1042369800-895, byte n = flags 8n to 8n+7
+constexpr size_t kWindow = 12;          // flags kFlagBase to +95, byte n = flags 8n to 8n+7
 // Constant bytes in flag order (flag 8n+k is bit k); memory may hold either bit order.
 constexpr uint8_t kBeacon0 = 0xE5, kBeacon1 = 0x96, kGuard6 = 0x8B, kGuard8 = 0x5C;
-constexpr const char* kMapName = "m60_42_36_00";
-constexpr const char* kHostile = "1042360215";
+// From the control config the package was built from (CMakeLists.txt checks and passes them in).
+#if !defined(KAGRENAC_ER_CONTROL_SHA256) || !defined(KAGRENAC_ER_MAP_NAME) || !defined(KAGRENAC_ER_HOSTILE_ENTITY) \
+    || !defined(KAGRENAC_ER_FLAG_BASE) || !defined(KAGRENAC_ER_HOSTILE_NEAR_M) || !defined(KAGRENAC_ER_ATTACK_ENABLED)
+#error "Build with CMakeLists.txt, which reads the control values from the control config."
+#endif
+static_assert(sizeof(KAGRENAC_ER_CONTROL_SHA256) == 65, "the control config sha256 must be 64 hex digits");
+constexpr const char* kMapName = KAGRENAC_ER_MAP_NAME;
+constexpr uint32_t kHostile = KAGRENAC_ER_HOSTILE_ENTITY;
+constexpr uint64_t kFlagBase = KAGRENAC_ER_FLAG_BASE;  // + 95 may pass 2^32
+constexpr double kHostileNearM = KAGRENAC_ER_HOSTILE_NEAR_M;
+// attack_enabled false: the package has no attack step, so attack is never offered or queued,
+// whatever config.json allows.
+constexpr bool kAttackEnabled = KAGRENAC_ER_ATTACK_ENABLED;
 constexpr ULONGLONG kFreshMs = 4000;    // the mailbox steps every 0.5 s plus up to 1 s of waiting
 constexpr ULONGLONG kAnswerMs = 2500;   // a command byte not cleared by then ends the session
 constexpr ULONGLONG kPollMs = 200;
@@ -192,6 +203,9 @@ bool fresh(const Snapshot& s, ULONGLONG now)
 // Why the game would refuse this order now (nullptr: it may accept).
 const char* precondition(Order order, bool companionReady, bool hostileReady)
 {
+    if (order == Order::Attack && !kAttackEnabled) {
+        return "attack is not in this build's control package";
+    }
     if (!companionReady) {
         return "the companion is not loaded and alive";
     }
@@ -722,6 +736,9 @@ void dropLink(const char* why)
 void bridgeMain()
 {
     std::string why;
+    // The control identity mod.ps1 build also finds in this DLL's bytes and records in build.json.
+    log("bridge: control config sha256 " KAGRENAC_ER_CONTROL_SHA256 ", attack "
+        + std::string(kAttackEnabled ? "built (guarded, not qualified)" : "left out"));
     if (!buildGate(why)) {
         dropLink("unsupported game build");
         log("bridge: off, " + why);
@@ -837,21 +854,24 @@ uint64_t describeGame(GameContext& game, const std::vector<std::string>& allowed
     bool present = s.companionLoaded && s.companionAlive;
     bool hostile = s.hostileLoaded && s.hostileAlive;
     const char* order = s.order == 1 ? "follow" : s.order == 3 ? "attack" : "hold";
+    char nearText[48];
+    std::snprintf(nearText, sizeof(nearText), "within %g m of the player", kHostileNearM);
     game.details["location"] = s.inMap
-        ? std::string("The First Step area (player in map tile ") + kMapName + ")"
+        ? std::string("player in map tile ") + kMapName + " (the companion's tile)"
         : std::string("unavailable (player not in map tile ") + kMapName + ")";
-    game.details["nearby_actors"] = clip(std::string("unavailable except the configured hostile, a Man-Bat (entity ")
-        + kHostile + "): " + (hostile ? "loaded and alive" : "not loaded and alive")
-        + (s.hostileNear ? ", within 30 m of the player" : ", not within 30 m of the player"));
+    game.details["nearby_actors"] = clip(std::string("unavailable except the configured hostile (entity ")
+        + std::to_string(kHostile) + "): " + (hostile ? "loaded and alive" : "not loaded and alive")
+        + (s.hostileNear ? ", " : ", not ") + nearText);
     game.details["companion_state"] = present
         ? clip(std::string("loaded, alive; player ") + (s.within4 ? "within 4 m" : s.within15 ? "within 15 m" : "over 15 m away")
                + "; current order " + order + (s.pending ? "; an order is pending" : ""))
         : "not loaded and alive";
-    game.details["observation_source"] = clip(std::string("the companion mailbox event flags (1042369800-895), ") + age);
+    game.details["observation_source"] = clip("the companion mailbox event flags (" + std::to_string(kFlagBase) + "-"
+        + std::to_string(kFlagBase + 95) + "), " + age);
     game.details["snapshot_utc"] = stamp;
     if (armed && present) {
         for (int i = 0; i < 3; ++i) {
-            bool ready = i < 2 || (hostile && s.hostileNear);
+            bool ready = i < 2 || (kAttackEnabled && hostile && s.hostileNear);
             if (ready && std::find(allowed.begin(), allowed.end(), kActionNames[i]) != allowed.end()) {
                 game.offeredActions.push_back(kActionNames[i]);
             }

@@ -74,8 +74,10 @@ foreach ($f in @($Config, $DarkScript, $Emedf, $Luac, $Uxm, $Paramdex) + $SoulsF
     if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { Refuse "missing input $f" }
 }
 
-# 1. Config.
-$cfg = Get-Content -LiteralPath $Config -Raw | ConvertFrom-Json
+# 1. Config, parsed from the same bytes its SHA-256 (recorded in package.json) is taken from.
+$configBytes = [IO.File]::ReadAllBytes((Full $Config))
+$configSha = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($configBytes) | ForEach-Object { $_.ToString('x2') })
+try { $cfg = [Text.UTF8Encoding]::new($false, $true).GetString($configBytes).TrimStart([char] 0xFEFF) | ConvertFrom-Json } catch { Refuse "$Config is not UTF-8 JSON" }
 function Num([string] $name, [double] $min, [double] $max) {
     $v = $cfg.$name
     if ($null -eq $v -or $v -is [bool] -or -not ($v -is [ValueType])) { Refuse "$name must be a number" }
@@ -522,7 +524,10 @@ foreach ($f in 'event\common.emevd.dcx', 'script\aicommon.luabnd.dcx', $logicFil
 $manifest = [ordered]@{
     status = 'built from the user''s own files; not tested in game; nothing installed'
     game_exe_sha256 = $exeSha
+    control_config_sha256 = $configSha
     attack_enabled = $attackEnabled
+    # The orders the control event handles; the native client compiles the same list from this config.
+    supported_actions = @(@('follow_player', 'hold_position') + @(if ($attackEnabled) { 'attack_hostile' }))
     outputs = $outputs
     commands = [ordered]@{
         event = "DarkScript3 /cmd -decompile and -compile (work folder only); erpack merge-events --original <user common.emevd.dcx> --compiled <work build> --event $($ownedEvents -join ' ') --out package/event/common.emevd.dcx --expect-teams (none) --expect-entity $companion --check-events <user's original $(($mapEvents -replace '^/event/') -join ' and ')>; DarkScript3 -decompile of the merged file"

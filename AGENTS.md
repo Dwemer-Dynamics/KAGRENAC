@@ -34,7 +34,10 @@ Follow both when a change touches both.
    the user's information. A chosen provider, a key the user set up privately and a request
    to test it authorize that test, and no other paid call. Keys go on the dashboard **API
    keys** page or in the private `config/config.php`, never in chat; pair with
-   `project.ps1 pair` so the user never copies a token. Reuse a provider the user already
+   `project.ps1 pair` so the user never copies a token. Set the provider, voice and server
+   allowlist with `project.ps1 configure` (actions only against a verified `-Build` or with
+   `-ConsoleClient`; a key is reused only from a config the user names with
+   `-ReuseProviderFrom`); its `-TestProviders` is one such authorized test. Reuse a provider the user already
    configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
    `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
 5. Mock mode and the console client are developer checks, not the user's demo; the

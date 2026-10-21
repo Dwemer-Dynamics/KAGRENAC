@@ -6,7 +6,7 @@
 # Git bundle of the committed HEAD); client config is generated only through 'pair'. It starts
 # no background services and never prints tokens or keys.
 #
-# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|deploy> [options]
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|configure|deploy> [options]
 #   new     -Destination <full Windows path> -Id <id> -Name <name> [-Game <text>] [-Feature <text>]
 #           [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port folder>]
 #           Start a new mod: copy exactly the committed HEAD of this template (git archive; no
@@ -24,7 +24,9 @@
 #           that one distro's DwemerDistro tool, Apache, PostgreSQL and web protection, only if
 #           it is already running (it never starts a distro), and, for -WslServerPath or this
 #           project's own /custom-mods/<id> install, whether www-data can save its private config
-#           (the config is not read). Ends with a readiness summary;
+#           (the config is not read). For a native port's project (-Engine <port folder>, else
+#           the engine 'new -Engine' wrote into its PROJECT.md Paths) it skips the console client
+#           and points to that port's own route instead. Ends with a readiness summary;
 #           the LLM and PocketTTS are only reported as answering or not, never as working.
 #           Exit 0 means no FAIL or UNVERIFIED line was detected; WARN, SKIP and unchecked
 #           items still need action, and it never means the AI is ready. Changes nothing.
@@ -47,7 +49,28 @@
 #           and holds the same URL, token and session it is reported as already paired and kept
 #           as it is; otherwise pair refuses. The token and file contents are never printed.
 #           -NpcId, -NpcName (a game client's npc_id and npc_name) and -VoiceEnabled only shape
-#           a new file; an existing one is kept byte for byte.
+#           a new file; an existing one is kept byte for byte. With -Build <builds\<time> folder>,
+#           or an assembled runtime.json beside -OutFile, every client action (default
+#           follow_player) must be one that build supports (its build.json, package.json and DLL
+#           checked as for configure); a game client config without a build record allows only
+#           follow_player.
+#   configure -WslDistro <name> [-WslServerPath <install>] [-LlmProvider openrouter|dwemerllm|mock
+#           -LlmModel <model>] [-ReuseProviderFrom <private config.php in WSL>] [-Tts pockettts
+#           -TtsVoice <voice> | -Tts off] [-AllowedActions <name,...> (-Build <builds\<time>
+#           folder> | -ConsoleClient)] [-TestProviders] [-ServerUrl <base URL>]
+#           Set the install's dialogue provider, voice and server allowlist through its
+#           scripts/configure_server.php, run as www-data (this may start the named distro): the
+#           existing config_update() saves, keeping token, database, unknown settings, owner,
+#           group, mode and lock; the same request again writes nothing. -WslServerPath defaults
+#           to this project's /var/www/html/custom-mods/<id> and must be that install. No key
+#           is ever an argument or printed: openrouter keeps the key already configured for
+#           openrouter, or takes only llm.api_key from the openrouter config named by
+#           -ReuseProviderFrom. -Tts pockettts needs PocketTTS answering on 127.0.0.1:8086.
+#           -AllowedActions replaces the server's list: with -Build only actions that verified
+#           build supports (candidates, not qualified in game), with -ConsoleClient only
+#           follow_player. -TestProviders then calls turn.php once (no actions offered, its own
+#           test session) and speak.php once with that reply, no retry, and prints only status,
+#           timing, shape, length and the WAV's format, size and SHA-256.
 #   deploy  -WslDistro <name> [-WslServerPath <existing manual install>] [-ServerUrl <base URL>]
 #           Deploy the committed HEAD (the checkout must have no uncommitted or untracked files)
 #           under the id in its dwemer-mod.json: a Git bundle of exactly HEAD goes to a private
@@ -71,7 +94,7 @@
 #   project with its own id, and to %LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build in the template.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("new", "doctor", "setup", "check", "pair", "deploy")]
+    [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy")]
     [string]$Command,
     [string]$BuildRoot = "",
     [string]$Destination = "",
@@ -91,6 +114,13 @@ param(
     [string]$NpcId = "",
     [string]$NpcName = "",
     [switch]$VoiceEnabled,
+    [string]$Build = "",
+    [switch]$ConsoleClient,
+    [string]$LlmModel = "",
+    [string]$ReuseProviderFrom = "",
+    [string]$Tts = "",
+    [string]$TtsVoice = "",
+    [switch]$TestProviders,
     [switch]$RunServerInstaller,
     [switch]$RunSmoke,
     [switch]$SkipBuild
@@ -140,6 +170,12 @@ function Get-Printable($value) {
     $text = ([string]$value) -replace '[\x00-\x1f\x7f]', '?'
     if ($text.Length -gt 64) { $text = $text.Substring(0, 64) + "..." }
     return $text
+}
+
+# $value as one single-quoted PowerShell argument, so a printed command passes it literally ('$',
+# '$(...)' and backticks stay text; every kind of single quote is doubled).
+function ConvertTo-PsLiteral([string]$value) {
+    return "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($value) + "'"
 }
 
 # Only the known Kagrenac folders are covered by DwemerDistro Core's web protection.
@@ -304,6 +340,42 @@ function Invoke-ClientBuild {
     $script:done.Add("Client build (x64, x86) in $BuildRoot")
 }
 
+# The native port whose own route builds this project's game side: -Engine when given, else the
+# engine 'new -Engine' wrote into this project's PROJECT.md Paths (projects\<id>\<engine>\<part>).
+# "" for a project without one, which keeps the console client checks.
+function Get-NativeEngine {
+    if ($Engine) {
+        if ($Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z' -or -not (Test-Path -LiteralPath (Join-Path $repo "ports\$Engine") -PathType Container)) {
+            throw "-Engine must be a folder name under ports/, such as elden-ring."
+        }
+        return $Engine
+    }
+    if (-not (Test-ProjectId $workingId) -or $workingId -ceq "example-server") { return "" }
+    $project = ""
+    try { $project = [System.IO.File]::ReadAllText((Join-Path $repo "PROJECT.md")) } catch { }
+    if ($project -cnotmatch ('\\projects\\' + [regex]::Escape($workingId) + '\\([a-z0-9][a-z0-9-]{0,39})\\<part>')) { return "" }
+    $name = $Matches[1]
+    if (-not (Test-Path -LiteralPath (Join-Path $repo "ports\$name") -PathType Container)) {
+        Say "WARN" "PROJECT.md names the game-side port $name, but ports/$name is missing; pass -Engine <port folder> to name it."
+        return ""
+    }
+    Say "INFO" "Game-side port $name, from this project's PROJECT.md Paths (pass -Engine <port folder> to name another)."
+    return $name
+}
+
+# A native port builds, assembles and pairs its game side through its own route, so the console
+# client is not part of it (KagrenacClient.exe stays an optional developer check).
+function Show-NativeRoute([string]$name) {
+    Say "INFO" "Game side: the native $name port. It needs no console client; KagrenacClient.exe, 'setup' and its config.json are optional developer checks and were not checked."
+    if ($workingId -ceq "example-server") {
+        Say "INFO" "This is the template: make the mod its own project first (project.ps1 new -Engine $name), then run its route from that copy."
+    } elseif (Test-Path -LiteralPath (Join-Path $repo "ports\$name\mod.ps1") -PathType Leaf) {
+        Say "INFO" "Next for the game side: powershell -ExecutionPolicy Bypass -File ports\$name\mod.ps1 doctor (options in ports/$name/README.md), then its build and assemble; assemble prints the 'project.ps1 pair' command that writes the runtime's private config.json."
+    } else {
+        Say "WARN" "ports/$name has no maintained route (mod.ps1); follow ports/$name/README.md for its build and pairing."
+    }
+}
+
 function Show-Doctor {
     Say "INFO" "Repository: $repo"
     foreach ($path in @("dwemer-mod.json", "PROTOCOL.md", "client\CMakeLists.txt", "client\scripts\build.ps1")) {
@@ -327,22 +399,29 @@ function Show-Doctor {
 
     Show-Distro
 
-    foreach ($arch in @("x64", "x86")) {
-        $exe = Join-Path $BuildRoot "$arch\Release\KagrenacClient.exe"
-        if (Test-Path -LiteralPath $exe) {
-            $version = @(Invoke-Native { & $exe --version })
-            if ($LASTEXITCODE -eq 0 -and $version.Count -gt 0) { Say "OK" "Client $arch built: $(Get-Printable $version[0])" }
-            else { Fail "Client $arch at $exe did not answer --version (exit $LASTEXITCODE)." }
-        } else {
-            Say "INFO" "Client $arch not built yet ($exe); run 'setup'."
+    $native = Get-NativeEngine
+    if ($native) {
+        Show-NativeRoute $native
+    } else {
+        foreach ($arch in @("x64", "x86")) {
+            $exe = Join-Path $BuildRoot "$arch\Release\KagrenacClient.exe"
+            if (Test-Path -LiteralPath $exe) {
+                $version = @(Invoke-Native { & $exe --version })
+                if ($LASTEXITCODE -eq 0 -and $version.Count -gt 0) { Say "OK" "Client $arch built: $(Get-Printable $version[0])" }
+                else { Fail "Client $arch at $exe did not answer --version (exit $LASTEXITCODE)." }
+            } else {
+                Say "INFO" "Client $arch not built yet ($exe); run 'setup'."
+            }
         }
     }
     if (Test-Path -LiteralPath (Join-Path $repo "client\config.json")) {
-        Say "WARN" "client\config.json exists in the repository; keep the private config next to the built exe instead."
+        Say "WARN" "client\config.json exists in the repository; keep the private config outside it (next to the built exe, or in the game runtime)."
     }
     $url = $ServerUrl
     $configPath = Join-Path $BuildRoot "x64\Release\config.json"
-    if (Test-Path -LiteralPath $configPath) {
+    if ($native) {
+        # A native port's private config lives in its game runtime; its own doctor reports it.
+    } elseif (Test-Path -LiteralPath $configPath) {
         $config = $null
         try { $config = Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json } catch { }
         if ($config -is [System.Management.Automation.PSCustomObject]) {
@@ -419,7 +498,8 @@ function Show-Doctor {
     Write-Host "Readiness (exit 0 only means no FAIL or UNVERIFIED line above; WARN, SKIP and unchecked items still need action, and it never means the AI is ready):"
     Write-Host "  - DwemerDistro: $script:distroState"
     Write-Host "  - KagrenacServer: $script:serverState"
-    Write-Host "  - LLM: not tested by doctor ($script:llmState). Ready only after the dashboard LLM page's Send test returns a reply."
+    if ($native) { Write-Host "  - Game side ($native): not checked by this doctor; its own route's doctor reports the game build, build, runtime and pairing." }
+    Write-Host "  - LLM: not tested by doctor ($script:llmState). Ready only after the dashboard LLM page's Send test, or 'configure -TestProviders', returns a real reply."
     Write-Host "  - Voice (PocketTTS): not tested by doctor ($script:ttsState). Ready only after the dashboard Voice page's Speak is heard."
 }
 
@@ -448,8 +528,13 @@ function Show-ConfigSaves([string]$path) {
         Say "OK" "www-data can save $path/config/config.php from the dashboard (file checks only; contents not read)."
     } else {
         foreach ($p in $problems) { Say "INFO" "Dashboard save, as www-data: $p" }
-        Fail "The dashboard cannot save $path/config/config.php. Run 'project.ps1 deploy -WslDistro $WslDistro' to repair it (also after the launcher's Update or 'ddistro_custom_mod update'); for a manual install run 'sudo bash $path/scripts/install.sh'."
+        Fail "The dashboard cannot save $path/config/config.php. $(Get-ConfigRepairHint $path)"
     }
+}
+
+# How an install whose config www-data cannot save is repaired; never a chmod or chown by hand.
+function Get-ConfigRepairHint([string]$path) {
+    return "Run 'project.ps1 deploy -WslDistro $WslDistro' to repair it (also after the launcher's Update or 'ddistro_custom_mod update'); for a manual install run 'sudo bash $path/scripts/install.sh'."
 }
 
 # Reports the WSL distros with their state, and checks the one named by -WslDistro only when
@@ -732,6 +817,232 @@ function Write-PrivateFile([string]$path, [byte[]]$bytes) {
     }
 }
 
+# SHA-256 of a file as lowercase hex, the form build.json and runtime.json record.
+function Get-FileSha256Hex([string]$path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($path)
+    try { return -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString("x2") }) } finally { $stream.Dispose(); $sha.Dispose() }
+}
+
+# Throws unless $path and every folder above it are reached without a junction or link.
+function Assert-NoReparse([string]$path) {
+    for ($item = Get-Item -LiteralPath $path -Force; $item; $item = $(if ($item -is [System.IO.DirectoryInfo]) { $item.Parent } else { $item.Directory })) {
+        if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "Refusing $path`: $($item.FullName) is a link or junction." }
+    }
+}
+
+# A JSON object from a record file of at most 1 MiB reached without links, or $null.
+function Read-JsonRecord([string]$path) {
+    $file = New-Object System.IO.FileInfo $path
+    if (-not $file.Exists -or $file.Length -gt 1048576) { return $null }
+    Assert-NoReparse $path
+    return ConvertFrom-PairJson ([System.IO.File]::ReadAllBytes($path))
+}
+
+# What one Elden Ring build (ports\elden-ring\mod.ps1 build) supports, from its records checked
+# like assemble checks them and more: this project's id, the accepted game build, every recorded
+# file by SHA-256, a package.json that agrees with build.json on the game, control config,
+# attack_enabled, supported actions and package files, and a DLL carrying that control config's
+# hash. Returns @{ Actions; Attack; DllSha }: candidates, none qualified in game. Throws otherwise.
+function Get-BuildActions([string]$dir) {
+    $usage = "-Build must be the full local path of one build folder, <root>\elden-ring\builds\<yyyyMMdd-HHmmss>, made by ports\elden-ring\mod.ps1 build."
+    if ($dir -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z') { throw $usage }
+    $full = [System.IO.Path]::GetFullPath($dir).TrimEnd('\')
+    $builds = Split-Path -Parent $full
+    if ((Split-Path -Leaf $full) -cnotmatch '^\d{8}-\d{6}\z' -or (Split-Path -Leaf $builds) -cne "builds" -or
+        (Split-Path -Leaf (Split-Path -Parent $builds)) -cne "elden-ring" -or -not [System.IO.Directory]::Exists($full)) { throw $usage }
+    if (-not (Test-ProjectId $workingId) -or $workingId -ceq "example-server") {
+        throw "-Build needs this project's own id in dwemer-mod.json; the template has no builds (start one with project.ps1 new -Engine elden-ring)."
+    }
+    Assert-NoReparse $full
+    $game = Read-JsonRecord (Join-Path $repo "ports\elden-ring\game-build.json")
+    $gameSha = $(if ($game) { [string]$game.sha256 } else { "" })
+    if ($gameSha -cnotmatch '^[0-9a-f]{64}\z') { throw "ports/elden-ring/game-build.json is missing or has no valid sha256." }
+    $b = Read-JsonRecord (Join-Path $full "build.json")
+    $bad = "$full\build.json is not a usable build record of $workingId"
+    if (-not $b -or $b.schema_version -isnot [int] -or $b.schema_version -ne 1 -or [string]$b.id -cne $workingId) { throw "$bad (missing, malformed or another project's). Build again with ports\elden-ring\mod.ps1 build." }
+    if ([string]$b.game.sha256 -cne $gameSha) { throw "$bad`: it is for another game build than ports/elden-ring/game-build.json (stale). Build again." }
+    $configSha = [string]$b.control_config.sha256
+    if ($configSha -cnotmatch '^[0-9a-f]{64}\z' -or $b.attack_enabled -isnot [bool]) { throw "$bad`: it records no control config hash or attack_enabled. Build again." }
+    $actions = @(@("follow_player", "hold_position") + @(if ($b.attack_enabled) { "attack_hostile" }))
+    $recorded = @(if ($b.supported_actions -is [System.Management.Automation.PSCustomObject]) { $b.supported_actions.actions })
+    if (@($recorded | Where-Object { $_ -isnot [string] }).Count -or ($recorded -join ",") -cne ($actions -join ",")) {
+        throw "$bad`: its supported_actions are missing or do not match its attack_enabled $($b.attack_enabled.ToString().ToLowerInvariant()). Build again."
+    }
+    $dll = "natives/kagrenac_elden_ring.dll"
+    $props = @(if ($b.files -is [System.Management.Automation.PSCustomObject]) { $b.files.PSObject.Properties })
+    $names = @($props | ForEach-Object { $_.Name })
+    if ($names -cnotcontains $dll -or $names -cnotcontains "control/package.json") { throw "$bad`: it does not list $dll and control/package.json." }
+    $packaged = 0
+    foreach ($p in $props) {
+        if ($p.Name -cnotmatch '^(natives/kagrenac_elden_ring\.dll|control/package\.json|control/package/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*)\z' -or
+            $p.Name -match '(^|/)\.\.?(/|$)' -or $p.Value -isnot [string] -or $p.Value -cnotmatch '^[0-9a-f]{64}\z') { throw "$bad`: it lists an invalid file entry." }
+        if ($p.Name.StartsWith("control/package/", [System.StringComparison]::Ordinal)) { $packaged++ }
+        $f = Join-Path $full $p.Name.Replace("/", "\")
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "$f is missing since the build; build again." }
+        Assert-NoReparse $f
+        if ((Get-FileSha256Hex $f) -cne $p.Value) { throw "$f changed since the build (SHA-256 differs from build.json); build again." }
+    }
+    if ($packaged -eq 0) { throw "$bad`: it lists no control/package files." }
+    $pkg = Read-JsonRecord (Join-Path $full "control\package.json")
+    $outputs = @(if ($pkg -and $pkg.outputs -is [System.Management.Automation.PSCustomObject]) { $pkg.outputs.PSObject.Properties })
+    if (-not $pkg -or [string]$pkg.game_exe_sha256 -cne $gameSha -or [string]$pkg.control_config_sha256 -cne $configSha -or
+        $pkg.attack_enabled -isnot [bool] -or $pkg.attack_enabled -ne $b.attack_enabled -or (@($pkg.supported_actions) -join ",") -cne ($actions -join ",") -or
+        $outputs.Count -ne $packaged -or @($outputs | Where-Object { [string]$b.files.("control/package/" + $_.Name) -cne [string]$_.Value }).Count) {
+        throw "$full\control\package.json does not agree with build.json on the game, control config, attack_enabled, supported actions or package files; this build is not used."
+    }
+    # The identity the DLL logs at startup: built from exactly this control config.
+    $dllPath = Join-Path $full "natives\kagrenac_elden_ring.dll"
+    if (-not [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($dllPath)).Contains("control config sha256 $configSha")) {
+        throw "$dllPath does not carry the control config hash in build.json; this build is not used."
+    }
+    return @{ Actions = $actions; Attack = $b.attack_enabled; DllSha = [string]$b.files.$dll; Dir = $full }
+}
+
+# Throws unless every name in $actions is one the build supports; warns for the guarded attack.
+function Assert-BuildActions($record, [string[]]$actions, [string]$list) {
+    $unsupported = @($actions | Where-Object { $record.Actions -cnotcontains $_ })
+    if ($unsupported.Count) {
+        throw ("Refusing $list $($unsupported -join ','): build $(Split-Path -Leaf $record.Dir) supports only $($record.Actions -join ', ')" +
+            $(if (-not $record.Attack) { " (attack_enabled false: attack is not in this build)" }) + ". Nothing was changed.")
+    }
+    Say "INFO" "Build $(Split-Path -Leaf $record.Dir) supports $($actions -join ', ') (its records and files checked; candidates, none qualified in game)."
+    if ($actions -ccontains "attack_hostile") {
+        Say "WARN" "attack_hostile is built guarded but unavailable until its own in-game acceptance (ports/elden-ring/README.md); keep it out of both allowlists until then."
+    }
+}
+
+# The build an assembled runtime came from: runtime.json beside $configPath (mod.ps1 assemble),
+# checked against this project and the DLL actually in that runtime. $null when there is none.
+function Get-RuntimeBuild([string]$configPath) {
+    $folder = Split-Path -Parent $configPath
+    $record = Join-Path $folder "runtime.json"
+    if ([int](New-Object System.IO.FileInfo $record).Attributes -eq -1) { return $null }
+    $r = Read-JsonRecord $record
+    $dll = "natives/kagrenac_elden_ring.dll"
+    if (-not $r -or $r.schema_version -isnot [int] -or $r.schema_version -ne 1 -or [string]$r.id -cne $workingId -or
+        [string]$r.build -cnotmatch '^\d{8}-\d{6}\z' -or [string]$r.build_dir -cnotmatch '^[A-Za-z]:\\' -or (Split-Path -Leaf ([string]$r.build_dir)) -cne [string]$r.build -or
+        $r.files -isnot [System.Management.Automation.PSCustomObject] -or [string]$r.files.$dll -cnotmatch '^[0-9a-f]{64}\z') {
+        throw "$record is not an assembled runtime of $workingId (malformed or another project's), so its build is unknown. Nothing was changed; pass -Build, or assemble again."
+    }
+    $runtimeDll = Join-Path $folder "natives\kagrenac_elden_ring.dll"
+    if (-not (Test-Path -LiteralPath $runtimeDll -PathType Leaf) -or (Get-FileSha256Hex $runtimeDll) -cne [string]$r.files.$dll) {
+        throw "$runtimeDll is missing or changed since it was assembled. Nothing was changed; assemble again."
+    }
+    return @{ Dir = [string]$r.build_dir; DllSha = [string]$r.files.$dll }
+}
+
+# The client actions pair may write: with -Build or an assembled runtime.json beside -OutFile,
+# only those that build supports; a game client config without either, follow_player only; a
+# console client config, any valid names as before.
+function Assert-PairActions([string[]]$actions, [string]$outPath) {
+    $requested = @(if ($actions.Count -gt 0) { $actions } else { "follow_player" })
+    $runtime = Get-RuntimeBuild $outPath
+    if ($Build -or $runtime) {
+        $record = Get-BuildActions $(if ($Build) { $Build } else { $runtime.Dir })
+        if ($runtime -and ($record.DllSha -cne $runtime.DllSha -or [System.IO.Path]::GetFullPath($runtime.Dir).TrimEnd('\') -ne $record.Dir)) {
+            throw "The runtime beside $outPath was not assembled from $($record.Dir) (its DLL differs). Nothing was changed; pass the build it was assembled from, or assemble again."
+        }
+        Assert-BuildActions $record $requested "-AllowedActions"
+    } elseif ($NpcId -or $NpcName) {
+        $unsupported = @($requested | Where-Object { $_ -cne "follow_player" })
+        if ($unsupported.Count) {
+            throw "Refusing -AllowedActions $($unsupported -join ','): a game client config allows more than follow_player only with -Build <build folder>, or an assembled runtime.json beside -OutFile, whose records support it. Nothing was changed."
+        }
+    }
+}
+
+# configure: see the usage at the top. Everything on Windows is checked before WSL is used.
+function Invoke-Configure {
+    if ($WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "configure needs -WslDistro <name> made of A-Z a-z 0-9 . _ -" }
+    $own = (Test-ProjectId $workingId) -and $workingId -cne "example-server"
+    if (-not $WslServerPath) {
+        if (-not $own) { throw "In the template, name the install with -WslServerPath <path>; configure guesses no install." }
+        $script:WslServerPath = "/var/www/html/custom-mods/$workingId"
+    }
+    Test-WslServerPath $WslServerPath
+    if ($LlmProvider -and @("openrouter", "dwemerllm", "mock") -cnotcontains $LlmProvider) {
+        throw "configure -LlmProvider must be openrouter, dwemerllm or mock; set other modes on the dashboard LLM page."
+    }
+    if ($LlmProvider -and $LlmProvider -cne "mock" -and $LlmModel -cnotmatch '^[A-Za-z0-9_.:/@+-]{1,200}\z') {
+        throw "-LlmProvider $LlmProvider needs -LlmModel <model> of at most 200 letters, digits and _ . : / @ + - (recommended for openrouter: google/gemma-4-31b-it)."
+    }
+    if ($LlmModel -and $LlmProvider -cne "openrouter" -and $LlmProvider -cne "dwemerllm") { throw "-LlmModel goes with -LlmProvider openrouter or dwemerllm." }
+    if ($ReuseProviderFrom) {
+        if ($LlmProvider -cne "openrouter") { throw "-ReuseProviderFrom goes only with -LlmProvider openrouter; a key is never reused for another provider." }
+        if ($ReuseProviderFrom.Length -gt 300 -or $ReuseProviderFrom -cnotmatch '^(/[A-Za-z0-9_.-]+)+\.php\z' -or $ReuseProviderFrom -match '/\.\.?(/|$)') {
+            throw "-ReuseProviderFrom must be the absolute Linux path of another install's private config, such as /var/www/html/custom-mods/<other id>/config/config.php."
+        }
+        if ($ReuseProviderFrom -ceq "$WslServerPath/config/config.php") { throw "-ReuseProviderFrom names this install's own config; leave it out to keep the key already configured." }
+    }
+    if ($Tts -and @("pockettts", "off") -cnotcontains $Tts) { throw "-Tts must be pockettts or off; set other voice providers on the dashboard Voice page." }
+    if (($Tts -ceq "pockettts") -ne [bool]$TtsVoice -or ($TtsVoice -and $TtsVoice -cnotmatch '^[A-Za-z0-9_.:/@+-]{1,64}\z')) {
+        throw "-Tts pockettts needs -TtsVoice <voice> of at most 64 letters, digits and _ . : / @ + - (for example alba), and -TtsVoice needs it."
+    }
+    $actions = @()
+    if ($AllowedActions.Count -gt 0) {
+        $actions = ($AllowedActions -join ",").Split(",")
+        if (-not (Test-ActionNames $actions)) { throw "-AllowedActions must be 1-8 different names of 1-40 characters A-Z a-z 0-9 _, separated by commas." }
+        if ([bool]$Build -eq [bool]$ConsoleClient) {
+            throw "-AllowedActions needs exactly one of -Build <build folder> (a verified native build of this project) or -ConsoleClient (the console client, whose one handler is follow_player)."
+        }
+        if ($ConsoleClient) {
+            $unsupported = @($actions | Where-Object { $_ -cne "follow_player" })
+            if ($unsupported.Count) { throw "Refusing -AllowedActions $($unsupported -join ','): the console client handles only follow_player (client/src/main.cpp). Nothing was changed." }
+        } else {
+            Assert-BuildActions (Get-BuildActions $Build) $actions "-AllowedActions"
+        }
+    } elseif ($Build -or $ConsoleClient) {
+        throw "-Build and -ConsoleClient only go with -AllowedActions."
+    }
+    if (-not $LlmProvider -and -not $Tts -and $actions.Count -eq 0 -and -not $TestProviders) {
+        throw "configure needs -LlmProvider, -Tts, -AllowedActions or -TestProviders (usage at the top of scripts\project.ps1)."
+    }
+    # Voice is enabled only for a PocketTTS that answers; answering is still not a speech test.
+    if ($Tts -ceq "pockettts" -and (Get-AiServiceState "PocketTTS default" "http://127.0.0.1:8086/") -like "nothing answers*") {
+        throw "Voice was not enabled: nothing answers at http://127.0.0.1:8086/. Start PocketTTS from the DwemerDistro launcher first. Nothing was changed."
+    }
+    if ($LlmProvider -ceq "dwemerllm" -and (Get-AiServiceState "DwemerDistro LLM Studio" "http://127.0.0.1:1234/") -like "nothing answers*") {
+        Say "WARN" "Nothing answers on port 1234 yet; dwemerllm replies fail until LLM Studio runs with a model loaded."
+    }
+
+    Require-WslTarget
+    $helper = "$WslServerPath/scripts/configure_server.php"
+    $null = Invoke-Native { & wsl.exe -d $WslDistro -u www-data -e test -r $helper }
+    if ($LASTEXITCODE -ne 0) { throw "$helper is missing in $WslDistro or www-data cannot read it; deploy a commit that has it first. Nothing was changed." }
+    $phpArgs = @("-d", "display_errors=0", "-d", "log_errors=0", $helper)
+    if (Test-ProjectId $workingId) { $phpArgs += @("--expect-id", $workingId) }
+    if ($LlmProvider) { $phpArgs += @("--llm-mode", $LlmProvider) }
+    if ($LlmModel) { $phpArgs += @("--llm-model", $LlmModel) }
+    if ($ReuseProviderFrom) { $phpArgs += @("--reuse-llm-key-from", $ReuseProviderFrom) }
+    if ($Tts) { $phpArgs += @("--tts", $Tts) }
+    if ($TtsVoice) { $phpArgs += @("--tts-voice", $TtsVoice) }
+    if ($actions.Count -gt 0) { $phpArgs += @("--allowed-actions", ($actions -join ",")) }
+    if ($TestProviders) { $phpArgs += @("--test-providers", "--base-url", (Get-RouteUrl)) }
+    Say "INFO" ("Configuring $WslServerPath in $WslDistro as www-data (this may start the distro)" + $(if ($TestProviders) { ", then one provider test (a paid provider may charge for it)." } else { "." }))
+    $result = $null
+    $hidden = 0
+    # Only the helper's own status lines are shown; anything else could quote private values.
+    Invoke-Native { & wsl.exe -d $WslDistro -u www-data -e php @phpArgs } | ForEach-Object {
+        if ($_ -cmatch '^\[(OK|INFO|WARN|FAIL)\] ([\x20-\x7e]{1,600})$') { Say $Matches[1] $Matches[2] }
+        elseif ($_ -cmatch '^RESULT config=(saved|unchanged) test=(run|skipped)$') { $result = $_ }
+        elseif ("$_" -ne "") { $hidden++ }
+    }
+    $code = $LASTEXITCODE
+    if ($hidden -gt 0) { Say "INFO" "$hidden other output line(s) were not shown; they may quote private values." }
+    if ($code -eq 2) { Fail "www-data cannot save $WslServerPath/config/config.php, so nothing was changed. $(Get-ConfigRepairHint $WslServerPath)"; return }
+    if (-not $result -or ($code -ne 0 -and $code -ne 3)) { Fail "scripts/configure_server.php stopped (exit $code) before confirming the settings; see the lines above. Nothing was saved."; return }
+    $state = $(if ($result -cmatch 'config=saved') { "saved" } else { "unchanged" })
+    if ($code -eq 3) {
+        Fail "The provider test did not pass (see above). The settings are $state as reported; a test is never retried automatically."
+    }
+    $script:done.Add("configure $WslDistro`:$WslServerPath (settings $state$(if ($TestProviders) { "; provider test $(if ($code -eq 0) { 'passed: reply and WAV generated' } else { 'failed' })" }))")
+    if ($TestProviders) { $script:manual.Add("Voice is ready only once someone hears it: dashboard Voice page Speak, or in game. A generated WAV is not heard.") }
+    if ($actions.Count -gt 0) {
+        $script:manual.Add("The client's own allowlist comes from pair -AllowedActions; each action is usable only after its own in-game check (PROJECT.md 6d rows).")
+    }
+}
+
 # pair: see the usage at the top. Validates everything on Windows before touching WSL.
 function Invoke-Pair {
     if ($PSVersionTable.PSEdition -ne "Desktop") { throw "pair uses the Windows PowerShell file permission API; run it with powershell.exe, not pwsh." }
@@ -750,6 +1061,7 @@ function Invoke-Pair {
     if ($existing -and -not (Test-PrivateAcl (New-Object System.IO.FileInfo $outPath))) {
         throw "$outPath already exists and is not private to you, SYSTEM and Administrators. Nothing was changed; choose a new -OutFile, or delete that file yourself if it is not needed."
     }
+    Assert-PairActions $actions $outPath
     Require-WslTarget
     $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -f "$WslServerPath/scripts/pair_client.php" }
     if ($LASTEXITCODE -ne 0) { throw "$WslServerPath/scripts/pair_client.php is missing in $WslDistro; update that checkout first." }
@@ -820,7 +1132,7 @@ function Invoke-Pair {
         } else {
             Say "INFO" "It holds this server's token. Keep it next to KagrenacClient.exe as config.json, then run: KagrenacClient.exe --health"
         }
-        Say "INFO" "pair sets only the client's allowed_actions ($(@($config.allowed_actions) -join ', ')). The server returns only actions in its own allowed_actions: enable the same ones there (dashboard Settings for follow_player; others in config/config.php's allowed_actions)."
+        Say "INFO" "pair sets only the client's allowed_actions ($(@($config.allowed_actions) -join ', ')). The server returns only actions in its own allowed_actions: set the same ones with 'project.ps1 configure -WslDistro $WslDistro -AllowedActions $(@($config.allowed_actions) -join ',')' and -Build <build folder> (a native build) or -ConsoleClient (follow_player only)."
         $script:done.Add("Private client config $outPath paired with $url")
     } finally {
         if ($source) { [System.Array]::Clear($source, 0, $source.Length) }
@@ -1204,7 +1516,9 @@ function Invoke-New {
                 $text = Set-Once $text "| $part | | |" $row "PROJECT.md"
             }
             if ($text.Contains(" | | |`n")) { throw "ports/$Engine/PLAN.md does not fill every plan row of the template's PROJECT.md." }
-            $text = Set-Stage $text "2." "done (reference plan chosen; revise each row where the feature differs)" "$date, source: reference plan from ports/$Engine/PLAN.md, not verified in game"
+            # A copied reference plan is only a starting point: the agent checks each row against the
+            # starting feature and marks the stage done itself. Stages 3 to 5 do not wait for it.
+            $text = Set-Stage $text "2." "in progress: reference plan copied, not yet checked against the starting feature; the agent revises each row that differs, then marks this done" "$date, source: reference plan from ports/$Engine/PLAN.md, not checked against this brief or verified in game"
         }
         $text = Set-Stage $text "3." "in progress: own id set; commit, then deploy" ""
         if ($Voice -match '^(none|no|not wanted)$') { $text = Set-Stage $text "5." "not wanted" "$date, source: brief" }
@@ -1235,8 +1549,8 @@ function Invoke-New {
     Say "OK" "Created $Name ($Id) at $dest from template commit $short`: $($expected.Count) files, its own manifest id and name, Git initialised, nothing committed."
     Say "INFO" "$dest\PROJECT.md holds the brief$(if ($plan) { ", the $Engine reference plan" }), the paths for this id and the stage states; this checkout was not changed."
     $script:done.Add("New project $Id at $dest (from $short)")
-    $script:manual.Add("Commit the copy yourself after reviewing it: git -C `"$dest`" add -A; git -C `"$dest`" commit -m `"Start $Name from KAGRENAC AI Mod Maker $short`"")
-    $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File `"$dest\scripts\project.ps1`" deploy -WslDistro <name>")
+    $script:manual.Add("Commit the copy yourself after reviewing it: git -C $(ConvertTo-PsLiteral $dest) add -A; git -C $(ConvertTo-PsLiteral $dest) commit -m $(ConvertTo-PsLiteral "Start $Name from KAGRENAC AI Mod Maker $short")")
+    $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File $(ConvertTo-PsLiteral "$dest\scripts\project.ps1") deploy -WslDistro <name>")
     $script:manual.Add("Set project_url in the copy's dwemer-mod.json to your own repository when it has one")
 }
 
@@ -1307,6 +1621,9 @@ switch ($Command) {
     }
     "pair" {
         Invoke-Pair
+    }
+    "configure" {
+        Invoke-Configure
     }
     "deploy" {
         Invoke-Deploy
