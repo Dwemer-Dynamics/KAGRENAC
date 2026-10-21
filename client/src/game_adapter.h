@@ -25,7 +25,8 @@ struct GameContext {
     std::vector<std::string> offeredActions;
 };
 
-// Every method is called from the game's main thread only (see the loop in main.cpp).
+// Every method is called from the game's main thread only (TurnRuntime::tick() and the
+// port's own loop; see main.cpp).
 class GameAdapter {
 public:
     virtual ~GameAdapter() = default;
@@ -44,9 +45,12 @@ public:
     // replaced NPC must never receive an old reply.
     virtual bool isSameNpc(const GameContext& captured) = 0;
 
-    // The allowlisted "follow_player" action. Use the engine's own follow behaviour.
-    // npcId is always the NPC the request was sent to, never a value chosen by the model.
-    virtual void followPlayer(const std::string& npcId) = 0;
+    // Optional: the "follow_player" action, with the engine's own follow behaviour. npcId is
+    // always the NPC the request was sent to, never a value chosen by the model. Actions run
+    // only through a handler the port registers with TurnRuntime::setActionHandler(), so a
+    // port without actions need not override this. The default runs and shows nothing; a
+    // handler that calls it must return false unless the engine really ran the follow.
+    virtual void followPlayer(const std::string& /*npcId*/) {}
 
     // Optional voice: play a WAV file on the NPC.
     virtual void playVoice(const std::filesystem::path& wavFile) = 0;

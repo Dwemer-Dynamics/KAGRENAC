@@ -401,7 +401,7 @@ Voice is off by default and is never needed for text. To try it:
    speech input.
 
 Every voice call has a request id. The client prints it with the turn it belongs to, for
-example `Trace: turn req-..., voice tts-... (ok)`, and **Control Panel > Connector calls** lists
+example `Trace: voice tts-... for turn req-... (ok)`, and **Control Panel > Connector calls** lists
 the call (provider, status, time taken; never audio or text) under that turn. A profile with
 a TTS voice changes the voice for its NPCs (the client sends the NPC id with the speech).
 

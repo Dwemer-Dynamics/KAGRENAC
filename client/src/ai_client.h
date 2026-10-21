@@ -28,10 +28,11 @@ struct TurnResult {
     std::vector<TurnAction> actions;   // the game still checks its own allowlist and handler
     bool logged = true;                // false if the server says it could not log this turn
     bool logOnly = false;              // a log-only game event: no reply, no actions
-    std::filesystem::path voiceFile;   // optional voice, set when it worked
-    std::string voiceError;            // optional voice, set when it failed
+    std::filesystem::path voiceFile;   // legacy, kept for source compatibility; TurnRuntime never sets it
+    std::string voiceError;            // legacy, kept for source compatibility; TurnRuntime never sets it
     std::string listenRequestId;       // request id of the speech-to-text call, if voice input was used
-    std::string speakRequestId;        // request id of the text-to-speech call, if voice was tried
+    std::string speakRequestId;        // legacy, kept for source compatibility; TurnRuntime never sets it
+    // TurnRuntime makes voice after the turn is applied and traces it on its own line.
 };
 
 // Optional NPC selection (decision.php). The game offers the candidates; the server only

@@ -341,7 +341,8 @@ With `decision` enabled and provider `mock`, it prints `npc_scout (provider, mat
 
 The model can only *ask* with `[ACTION:name]`. The server returns only names in its
 `allowed_actions`, and the client runs a name only if it is in its own `allowed_actions`
-**and** has an explicit handler in `applyResult()`. Nothing maps action names to commands.
+**and** the port registered an explicit handler for it with `TurnRuntime::setActionHandler()`.
+Nothing maps action names to commands.
 Try it:
 
 - `--say "dance"`: reply only; the server lists `dance` in `rejected_actions`.
@@ -367,7 +368,7 @@ The safety checks, in order:
    the captured NPC is still loaded and is the same instance. `args.target_id` must equal
    the NPC the request was sent to.
 4. **Main-thread adapter.** Only the game thread calls `GameAdapter`. HTTP runs on worker
-   threads and results come back through the mailbox in `main.cpp`.
+   threads and results come back through `TurnRuntime`'s mailbox, applied in its `tick()`.
 
 Cancellation does not necessarily stop computation at the LLM provider. Failed requests
 are never retried automatically. Server check: `SMOKE_STALE=1 bash scripts/smoke.sh` with
@@ -393,8 +394,9 @@ faster-whisper, so older configs keep working.
 
 The client saves reply WAVs in `%TEMP%\dwemer-ai-example\` and does not play them. Text
 always comes first. A voice failure prints `Voice unavailable, text only: ...`, or asks the
-player to type. Every turn ends with a line such as
-`Trace: turn req-..., speech-to-text stt-..., voice tts-... (ok)`; the voice ids appear on
+player to type. Every turn prints a line such as
+`Trace: turn req-..., speech-to-text stt-... (ok)` with its text, and a reply's voice later
+prints `Trace: voice tts-... for turn req-... (ok)`; the voice ids appear on
 **Control Panel > Connector calls** with that turn as their parent. These docs make no
 claim that real speech was tested with a running service. Report voice as working only after you test it with your own services and
 recordings.

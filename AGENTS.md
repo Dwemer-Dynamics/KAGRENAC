@@ -115,7 +115,8 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
 - Prefer clear, explicit code over abstractions. Small focused `final` classes are allowed
   for one domain concern (`ActionCatalog`, `DialogueHistory`, `SpeechService`); no god
   classes, autoloader, container or base classes. Dependencies point down: endpoints,
-  then `lib/turn.php`, then services, then `lib/app.php` helpers. Services never read the
+  then `lib/turn.php`, then services, then `lib/app.php` helpers, then the data-only
+  `ActionCatalog`, which any layer may read. Services never read the
   request, check tokens, start transactions, take locks or reply. Existing functions stay as
   compatibility facades with unchanged behaviour. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

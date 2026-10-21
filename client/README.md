@@ -115,7 +115,37 @@ with `--config <file>`) overrides any key it sets.
 | `src/console_game.h` | Fake console implementation of `GameAdapter`. |
 | `src/ai_client.h/.cpp` | HTTP + JSON client for the protocol. Blocking; used from worker threads. |
 | `src/config.h/.cpp` | Loads the two config files. |
-| `src/main.cpp` | Game loop, mailbox between threads, stale-reply and action checks, command line. |
+| `src/turn_runtime.h/.cpp` | `TurnRuntime`: bounded workers, mailbox, pending request, NPC instance checks, cancellation, action handlers, voice and result reports. |
+| `src/main.cpp` | Command line and console input; calls `TurnRuntime`. |
+
+`ai_client`, `config` and `turn_runtime` build as the static library target
+`KagrenacClientCore`; the executable links it. `scripts\build.ps1` and its output paths are
+unchanged.
+
+## Adopting TurnRuntime in a port
+
+No existing port has been moved to it; this is the route for a new or updated one.
+
+1. Implement `GameAdapter` with engine APIs. `followPlayer()` is optional; a port with no
+   actions leaves it out and sets `allowed_actions` to `[]` (or offers none).
+2. Own one `TurnRuntime runtime(adapter, config)` per loaded plugin, created and used on
+   the game thread.
+3. Register one handler per action the engine really implements, e.g.
+   `runtime.setActionHandler("follow_player", ...)`. An allowlisted action without a
+   handler is rejected and reported as such; nothing generic runs. A handler returns
+   `true` only when the engine ran the action, and `false` when nothing ran (reported
+   `failed`); the default `followPlayer()` runs nothing.
+4. Call `runtime.tick()` once per game tick; call `submitTurn()` from the game's own text
+   entry, `cancel()` from its cancel input or NPC change, and `setSession()` on save load.
+   Anything a `startJob()` job captures by reference must outlive the runtime's workers.
+5. On unload, call `runtime.shutdown(...)` on the game thread from the engine's unload hook,
+   before the adapter is destroyed, then destroy the runtime there. It waits for the bounded
+   workers and applies nothing they return. `shutdown(message, false)` skips the server
+   cancel when the engine's ENGINE_PACK does not allow one at quit. Never leave the runtime
+   to `DllMain` or a global or static destructor: its wait can hang there.
+
+Then rerun the smoke checks below with the console client, and qualify every in-game
+behaviour in that engine separately; building against the runtime proves nothing in game.
 
 ## Smoke checks
 
@@ -138,6 +168,8 @@ With the server in mock mode:
 | interactive: `/unload` and `/load` together while waiting | the new instance does not get the old reply |
 | same against a server without `result.php` | reply and action, then `Result reports off: this server has no result.php.` |
 | same with `"allowed_actions": []` | `Rejected action not allowed by this mod: follow_player` |
+| same with `"allowed_actions": ["follow_player", "wave"]` and a server that returns `wave` | `Rejected action with no handler in this port: wave` |
+| interactive, voice on and a slow TTS: `follow me`, then `/cancel` after the subtitle | `[Guide] ...`, the follow and `Trace: turn req-... (ok)` first; after `/cancel`, `Its text was already shown; its voice will not play.` and later `Ignored voice that is no longer wanted ...`; no `Voice saved` line, no action repeated |
 | `KagrenacClient.exe --say "dance"` | reply only; the server rejected `dance` |
 | wrong token | `AI unavailable: HTTP 401 unauthorized: ...`, then `Trace: turn req-... (failed)`, exit 1 |
 | server stopped | `AI unavailable: cannot reach ...`, exit 1 |
@@ -151,7 +183,8 @@ With the server in mock mode:
 Every request has an id the client prints, on success and on failure, so it can be found in
 the server's Logs, Connector calls and error log (`example-ai [<id>]: ...`):
 
-- turns `req-...` (one line per turn: `Trace: turn req-..., speech-to-text stt-..., voice tts-... (ok)`),
+- turns `req-...` (one line per turn: `Trace: turn req-..., speech-to-text stt-... (ok)`, and
+  for its voice `Trace: voice tts-... for turn req-... (ok)`),
 - game events `evt-...`, NPC selection `dec-...` (in the `Decision:` line).
 
 Voice requests send their turn's id as the parent (`parent_request_id` for `speak.php`, the
@@ -188,10 +221,14 @@ enabling or testing. Set them up as described in [CONNECTORS.md](../CONNECTORS.m
 
 | Command | Expect |
 |---|---|
-| `--say "follow me"` with `"voice_enabled": true` | reply, action, `Voice saved to ...\dwemer-ai-example\<id>.wav`, `Trace: turn req-..., voice tts-... (ok)` |
+| `--say "follow me"` with `"voice_enabled": true` | reply, action and `Trace: turn req-... (ok)` first, then `Voice saved to ...\dwemer-ai-example\<id>.wav` and `Trace: voice tts-... for turn req-... (ok)` |
 | `--listen C:\path\speech.wav` (or `/listen` interactive) | `You said: ...`, then the reply |
-| TTS failing | reply text plus `Voice unavailable, text only: ...`; the trace line still names the `tts-...` id |
+| TTS failing | reply text first, then `Voice unavailable, text only: ...` and `Trace: voice tts-... for turn req-... (failed)` |
 | STT failing or hearing nothing | `AI unavailable: speech to text failed (...), please type instead (not retried; ...)`, exit 1 |
+
+Voice is requested only after the subtitle and actions were applied, so a slow voice
+service never delays them. A new line, `/cancel`, `/session`, `/quit` or the NPC leaving
+drops the voice still being made; it is then not played.
 
 WAV files must start with `RIFF` and have `WAVE` at byte 8; the client checks both. These
 examples describe the client's handling. They are not evidence that real speech works with
@@ -242,7 +279,11 @@ templates and needs testing in that engine.
 - Two bounded worker pools: at most four normal workers (turns, events, decisions, voice
   and result reports) and at most two cancel workers reserved for server cancellations. A
   request that finds all four normal workers busy is rejected with a busy message and not
-  queued; a result report is then skipped (the reply and actions are kept).
+  queued; a result report or voice is then skipped (the reply and actions are kept). When
+  only one worker is free after a turn, its result report takes it and the voice is skipped;
+  the voice still gets it when there is no report to send.
+- A worker that fails inside the client posts a fixed failure line (never the exception
+  text), so the turn, cancel, voice or job ends as failed and is not retried.
 - A new turn starts only if a cancel worker stays free for it (two if it also replaces
   another NPC's pending turn), so dropping the pending turn can send its cancel even
   while every normal worker waits on a slow provider. Otherwise the turn is refused with

@@ -9,16 +9,27 @@ if(NOT WIN32)
     message(FATAL_ERROR "KagrenacClient uses WinHTTP and only builds on Windows.")
 endif()
 
-add_executable(KagrenacClient
-    src/main.cpp
+# The reusable part a game port links: protocol client, settings and the turn runtime.
+# It has no game code; a port adds its own GameAdapter.
+add_library(KagrenacClientCore STATIC
     src/ai_client.cpp
     src/config.cpp
+    src/turn_runtime.cpp
 )
-target_include_directories(KagrenacClient PRIVATE third_party)
-target_compile_definitions(KagrenacClient PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
-    EXAMPLE_CLIENT_VERSION="${PROJECT_VERSION}")
-target_link_libraries(KagrenacClient PRIVATE winhttp)
+target_include_directories(KagrenacClientCore PUBLIC src third_party)
+# ai_client.h needs the version; the Windows macros stay private so a port's own
+# <windows.h> and engine SDK keep their settings.
+target_compile_definitions(KagrenacClientCore PUBLIC EXAMPLE_CLIENT_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(KagrenacClientCore PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(KagrenacClientCore PUBLIC winhttp)
+
+add_executable(KagrenacClient
+    src/main.cpp
+)
+target_link_libraries(KagrenacClient PRIVATE KagrenacClientCore)
+target_compile_definitions(KagrenacClient PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 if(MSVC)
+    target_compile_options(KagrenacClientCore PRIVATE /W4 /utf-8 /permissive-)
     target_compile_options(KagrenacClient PRIVATE /W4 /utf-8 /permissive-)
 endif()
 
