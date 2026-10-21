@@ -69,7 +69,9 @@
 #           -AllowedActions replaces the server's list: with -Build only actions that verified
 #           build supports (candidates, not qualified in game), with -ConsoleClient only
 #           follow_player. -TestProviders then calls turn.php once (no actions offered, its own
-#           test session) and speak.php once with that reply, no retry, and prints only status,
+#           test session; refused first when vector search, automatic memory or a default
+#           profile's mode or model would change that) and speak.php once with that reply, no
+#           retry, and prints only status,
 #           timing, shape, length and the WAV's format, size and SHA-256.
 #   deploy  -WslDistro <name> [-WslServerPath <existing manual install>] [-ServerUrl <base URL>]
 #           Deploy the committed HEAD (the checkout must have no uncommitted or untracked files)
@@ -954,6 +956,7 @@ function Assert-PairActions([string[]]$actions, [string]$outPath) {
 
 # configure: see the usage at the top. Everything on Windows is checked before WSL is used.
 function Invoke-Configure {
+    if ($PSVersionTable.PSEdition -ne "Desktop") { throw "configure reads build records the way Windows PowerShell 5.1 does (pwsh reads their numbers differently); run it with powershell.exe, not pwsh." }
     if ($WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "configure needs -WslDistro <name> made of A-Z a-z 0-9 . _ -" }
     $own = (Test-ProjectId $workingId) -and $workingId -cne "example-server"
     if (-not $WslServerPath) {

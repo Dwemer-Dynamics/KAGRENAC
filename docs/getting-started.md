@@ -209,7 +209,7 @@ its engine pack's acceptance, not `KagrenacClient.exe`.
 
 ### Configure providers, voice and actions
 
-`configure -WslDistro <name>` changes the install's private `config/config.php` the way the
+`configure -WslDistro <name>` (run with `powershell.exe`, not `pwsh`) changes the install's private `config/config.php` the way the
 dashboard does: it runs that install's `scripts/configure_server.php` as `www-data`, which
 saves through the existing `config_update()` in `lib/config_writer.php` (one lock, the latest
 config read inside it, token, database and unknown settings kept, owner, group, mode and lock
@@ -258,12 +258,16 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistr
   `attack_enabled` false, `attack_hostile` is refused); or `-ConsoleClient`, for
   `follow_player` only. Supported means a candidate: nothing is marked usable, and no other
   action is ever added.
-- `-TestProviders` (after any changes) refuses mock or voice off before calling anything,
-  then makes one `turn.php` call (its own `provider-test-...` session, `offered_actions: []`)
+- `-TestProviders` (after any changes; alone it only reads the config, so it also runs when
+  `www-data` cannot save) refuses before calling anything when the mode is mock, voice is off,
+  vector search (`embeddings.enabled`) or automatic memory (`memory.auto_notes`,
+  `memory.auto_extract`) is on, or the default profile changes the mode or model. It prints
+  the mode and model it tests, then makes one `turn.php` call (its own `provider-test-...` session, `offered_actions: []`)
   and one `speak.php` call with that reply, with no retry, fallback or NPC selection. It
   prints only HTTP status, time, reply shape and character count, and the WAV's format, size
   and SHA-256; never the text, a provider body, the token or the audio, and it saves no file.
-  The pass needs a real reply and a valid WAV. `turn.php` records the test turn in that
+  The pass needs a real reply whose event row records the configured mode, and a complete PCM
+  or float WAV whose header values agree. `turn.php` records the test turn in that
   session like any turn. A generated WAV is not heard: voice is ready only once someone
   hears it on the **Voice** page or in game. Add `-ServerUrl` when Apache uses another port.
 

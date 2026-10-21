@@ -10,7 +10,8 @@
 // - Every change goes through config_update() in lib/config_writer.php: one lock, the latest
 //   config read inside it, only the llm, tts and allowed_actions sections changed (token,
 //   database and unknown settings kept), owner, group, mode and lock kept. The same request
-//   again writes nothing. A config www-data cannot save is refused with exit code 2.
+//   again writes nothing. A config www-data cannot save is refused with exit code 2. A test
+//   alone changes nothing, so it only reads the config with config_read_fresh().
 // - No key is ever an argument, read from stdin or printed. openrouter keeps the key already
 //   configured only when llm.mode already is openrouter; otherwise --reuse-llm-key-from names
 //   another install's private config, and only its llm.api_key is taken, after checking that its
@@ -20,9 +21,11 @@
 //   given; --tts off only turns voice off. --allowed-actions replaces the server allowlist with
 //   known action names; the caller checks them against the game side first.
 // - --test-providers makes one turn.php call (offered_actions [], its own test session) and one
-//   speak.php call with that reply, no retry. Only status, timing, shape, the reply's character
-//   count and the WAV's format, size and SHA-256 are printed; text and audio are never printed
-//   or saved here. turn.php records the test turn in its own session like any turn.
+//   speak.php call with that reply, no retry. It refuses before any call when vector search or
+//   automatic memory would add model calls, or a profile would change the mode or model, and
+//   passes only when the turn's event records the configured mode. Only status, timing, shape,
+//   the reply's character count and the WAV's format, size and SHA-256 are printed; text and
+//   audio are never printed or saved here. turn.php records the test turn in its own session like any turn.
 // Exit codes: 0 done, 1 refused or failed (nothing saved), 2 the config cannot be saved,
 // 3 saved (or unchanged) but the provider test failed.
 
@@ -34,6 +37,8 @@ require __DIR__ . '/../lib/config_writer.php';
 require __DIR__ . '/../lib/app.php';
 require __DIR__ . '/../lib/llm.php';
 require __DIR__ . '/../lib/profiles.php';
+require __DIR__ . '/../lib/embeddings.php';
+require __DIR__ . '/../lib/memory.php';
 
 const CONFIGURE_LLM_MODES = ['openrouter', 'dwemerllm', 'mock'];
 const POCKETTTS_LOCAL = ['provider' => 'pockettts', 'url' => 'http://127.0.0.1:8086/v1/audio/speech', 'model' => 'pocket-tts'];
@@ -187,9 +192,13 @@ function reused_openrouter_key(string $file, string $target): string
 $path = config_file_path();
 $reusedKey = $source !== null ? reused_openrouter_key($source, $path) : null;
 $notes = [];
+$readOnly = $mode === null && $tts === null && $actions === null;
+if ($readOnly && (!is_file($path) || !is_readable($path))) {
+    refuse('www-data cannot read the config, so nothing was tested. Nothing was changed.');
+}
 try {
     $changed = false;
-    $saved = config_update(function (array $latest) use ($mode, $model, $reusedKey, $tts, $voice, $actions, &$notes, &$changed): array {
+    $saved = $readOnly ? config_read_fresh($path) : config_update(function (array $latest) use ($mode, $model, $reusedKey, $tts, $voice, $actions, &$notes, &$changed): array {
         $new = $latest;
         if ($mode !== null) {
             $llm = is_array($latest['llm'] ?? null) ? $latest['llm'] : [];
@@ -228,7 +237,7 @@ try {
     });
 } catch (ConfigWriteError $error) {
     // Exit 2 when the dashboard could not save it either; the caller adds the repair step.
-    refuse($error->getMessage(), config_write_problems($path) ? 2 : 1);
+    refuse($error->getMessage(), !$readOnly && config_write_problems($path) ? 2 : 1);
 } catch (Throwable $error) {
     refuse('The config could not be saved (' . get_class($error) . '). Nothing was changed.');
 }
@@ -239,7 +248,7 @@ foreach ($notes as $note) {
 $llm = is_array($saved['llm'] ?? null) ? $saved['llm'] : [];
 $voiceSection = is_array($saved['tts'] ?? null) ? $saved['tts'] : [];
 $printable = fn(mixed $value) => is_string($value) && preg_match('/^[\x21-\x7E]{1,200}$/D', $value) ? $value : '(not set)';
-say('OK', ($changed ? 'Saved' : 'Unchanged (the same settings were already saved; nothing was written)')
+say('OK', ($changed ? 'Saved' : ($readOnly ? 'Read (test only; nothing was written)' : 'Unchanged (the same settings were already saved; nothing was written)'))
     . ': llm.mode ' . $printable($llm['mode'] ?? 'mock') . ', llm.model ' . $printable($llm['model'] ?? '')
     . ', tts ' . (!empty($voiceSection['enabled']) ? 'on (' . $printable($voiceSection['provider'] ?? 'pockettts') . ', voice ' . $printable($voiceSection['voice'] ?? 'alba') . ')' : 'off')
     . ', allowed_actions ' . (is_array($saved['allowed_actions'] ?? null) ? ($saved['allowed_actions'] ? implode(',', array_filter($saved['allowed_actions'], fn($n) => is_string($n) && preg_match('/^[A-Za-z0-9_]{1,40}$/D', $n))) : 'none') : 'default (follow_player)') . '.');
@@ -256,6 +265,13 @@ if ($mode === 'mock' || !is_string($mode)) {
 if (empty($voiceSection['enabled'])) {
     refuse('Provider test not run: voice is off (tts.enabled false), so no WAV could be made. Nothing was called.', 3);
 }
+// The same settings run_turn() reads: each would add model calls (and memory writes) to the one turn.
+$memory = memory_settings($saved);
+$extra = array_keys(array_filter(['embeddings.enabled' => embedding_settings($saved) !== null,
+    'memory.auto_notes' => $memory['auto_notes'], 'memory.auto_extract' => $memory['auto_extract']]));
+if ($extra) {
+    refuse('Provider test not run: ' . implode(', ', $extra) . (count($extra) > 1 ? ' are' : ' is') . ' on, so the test turn would make more calls than its one reply. Turn ' . (count($extra) > 1 ? 'them' : 'it') . ' off on the dashboard Memory settings page to test here. Nothing was called.', 3);
+}
 $npcId = 'provider-test';
 $db = db_connect_quiet($saved);
 $profile = $db !== null && schema_problem($db) === null ? profile_for_npc($db, $npcId) : false;
@@ -265,6 +281,11 @@ if ($profile === false) {
 if (is_array($profile) && (string)($profile['llm_mode'] ?? '') !== '' && $profile['llm_mode'] !== $mode) {
     refuse('Provider test not run: the default profile switches every unassigned NPC to ' . $printable($profile['llm_mode']) . ', so the reply would not come from ' . $mode . '. Nothing was called.', 3);
 }
+// profile_llm() also swaps in a profile's model while keeping the provider and its key.
+if (is_array($profile) && (string)($profile['llm_model'] ?? '') !== '' && $profile['llm_model'] !== ($llm['model'] ?? null)) {
+    refuse('Provider test not run: the default profile sets model ' . $printable($profile['llm_model']) . ' for every unassigned NPC, so ' . $mode . ' would be asked for that model instead of llm.model ' . $printable($llm['model'] ?? '') . '. Nothing was called.', 3);
+}
+say('INFO', 'Testing llm.mode ' . $printable($mode) . ', llm.model ' . $printable($llm['model'] ?? '') . ' (no profile override), then voice ' . $printable($voiceSection['provider'] ?? 'pockettts') . '.');
 $headers = ['Content-Type: application/json', 'Authorization: Bearer ' . $saved['token']];
 $session = 'provider-test-' . bin2hex(random_bytes(8));
 $turnId = 'cfg-turn-' . bin2hex(random_bytes(8));
@@ -285,7 +306,17 @@ if ($status !== 200 || $reply === '' || $reply === '...' || ($data['actions'] ??
     $code = is_array($data) && is_string($data['error']['code'] ?? null) && preg_match('/^[a-z_]{1,40}$/D', $data['error']['code']) ? ', error ' . $data['error']['code'] : '';
     refuse("turn.php HTTP $status in $ms ms ($shape$code): no real reply from $mode, so speak.php was not called. Nothing was retried.", 3);
 }
-say('OK', "turn.php HTTP 200 in $ms ms ($shape): a reply of " . mb_strlen($reply) . " characters from $mode (text not shown), session $session.");
+// The turn's own event row names the mode Apache actually used (after any profile), so a reply
+// from an older cached config, such as mock, is never counted as this provider's.
+$row = ($data['request_id'] ?? null) === $turnId && ($data['logged'] ?? null) === true ? @pg_query_params($db,
+    "SELECT provider FROM ex_events WHERE request_id = $1 AND session_id = $2 AND kind = 'turn' AND status = 'complete'",
+    [$turnId, $session]) : false;
+$used = $row !== false ? pg_fetch_assoc($row) : false;
+if (!is_array($used) || $used['provider'] !== $mode) {
+    refuse("turn.php HTTP 200 in $ms ms ($shape), but " . (is_array($used) ? 'its event records provider ' . $printable($used['provider']) . " instead of $mode"
+        : "no event of this turn confirms $mode (not logged or not found)") . ', so the reply is not counted and speak.php was not called. Nothing was retried.', 3);
+}
+say('OK', "turn.php HTTP 200 in $ms ms ($shape): a reply of " . mb_strlen($reply) . " characters from $mode as its event records (text not shown), session $session.");
 
 $started = microtime(true);
 try {
@@ -296,22 +327,35 @@ try {
 }
 unset($reply, $data, $raw);
 $ms = (int)round((microtime(true) - $started) * 1000);
-// The WAV's fmt and data chunks; anything else is not a usable WAV.
+// The WAV's fmt chunk, then its data chunk; anything else is not a usable WAV. Every chunk must
+// fit in what was received; only a data chunk may declare the streaming size 0xFFFFFFFF
+// (the rest of the file).
 $format = null;
 $dataBytes = 0;
 for ($at = 12; is_wav($wav) && $at + 8 <= strlen($wav); $at += 8 + $size + ($size & 1)) {
     ['id' => $id, 'size' => $size] = unpack('a4id/Vsize', $wav, $at);
-    if ($id === 'fmt ' && $size >= 16 && $at + 24 <= strlen($wav)) {
+    $left = strlen($wav) - $at - 8;
+    if ($id === 'data' && $size === 0xFFFFFFFF) {
+        $size = $left;
+    }
+    if ($size > $left) {
+        break;
+    }
+    if ($id === 'fmt ' && $size >= 16) {
         $format = unpack('vcode/vchannels/Vrate/Vbyterate/vblock/vbits', $wav, $at + 8);
     } elseif ($id === 'data') {
-        $dataBytes = min($size, strlen($wav) - $at - 8);
+        $dataBytes = $format !== null ? $size : 0;
         break;
     }
 }
+// PCM (1) or float (3), and the byte rate, block size and data length agree with them.
 $valid = $status === 200 && $format !== null && $dataBytes > 0 && $format['channels'] >= 1 && $format['channels'] <= 8
-    && $format['rate'] >= 8000 && $format['rate'] <= 192000 && in_array($format['bits'], [8, 16, 24, 32], true);
+    && $format['rate'] >= 8000 && $format['rate'] <= 192000
+    && in_array($format['bits'], $format['code'] === 1 ? [8, 16, 24, 32] : ($format['code'] === 3 ? [32, 64] : []), true)
+    && $format['block'] === $format['channels'] * $format['bits'] / 8 && $format['byterate'] === $format['rate'] * $format['block']
+    && $dataBytes % $format['block'] === 0;
 if (!$valid) {
-    refuse("speak.php HTTP $status in $ms ms: " . (is_wav($wav) ? 'a WAV without a usable fmt and data chunk' : 'no WAV') . ' (' . strlen($wav) . ' bytes). Voice failed; nothing was retried.', 3);
+    refuse("speak.php HTTP $status in $ms ms: " . (is_wav($wav) ? 'a WAV without a usable PCM or float fmt and a complete data chunk' : 'no WAV') . ' (' . strlen($wav) . ' bytes). Voice failed; nothing was retried.', 3);
 }
 say('OK', "speak.php HTTP 200 in $ms ms: WAV format {$format['code']}, {$format['channels']} channel(s), {$format['rate']} Hz, {$format['bits']}-bit, $dataBytes data bytes, "
     . strlen($wav) . ' bytes, SHA-256 ' . hash('sha256', $wav) . ' (not saved).');
