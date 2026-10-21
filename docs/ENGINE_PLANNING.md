@@ -1,7 +1,9 @@
 # Plan the game integration before building it
 
-Start with the user's game, starting feature and mod name. The agent fills in the rest from
-the installed game and primary sources; do not hand the user a research form. Record the
+Start with the user's game, starting feature and mod name, and the Gameplay design the agent
+fills from the conversation ([Gameplay design](GAMEPLAY_DESIGN.md)); the plan serves that loop.
+The agent fills in the rest from the installed game and primary sources; do not hand the user
+a research form. Record the
 short decision in PROJECT.md and the evidence in `ports/<engine>/PLAN.md`. Use the current
 coding agent to build, test, review the actual diff in a separate pass, fix and retest. An
 external worker is optional only when the user requests one; it is not a setup prerequisite.
@@ -33,7 +35,8 @@ applies to, the permitted thread/callback, the planned check and what remains un
 | Awareness | Which exact live API supplies each value, in what units and at what time? What will be explicitly unavailable? |
 | Each action | What game-owned handler changes state? Which target, instance check, preconditions, cancel and observable result constrain it? |
 | Persistence and launch | Where is history/session identity stored? How are saves preserved and offline launch verified? |
-| First demo | What five-minute in-game sequence shows the user's actual feature, not a console simulation? |
+| Automatic trigger (if requested) | Which game event starts it, how is it bounded, and how does player input preempt it? Which participants and listeners can the game read? |
+| First demo | What five-minute in-game sequence shows the user's actual feature and its Gameplay design loop, not a console simulation? |
 
 Asset names are research leads, not callable APIs. A last-rested bonfire is not current
 location; an enemy tag is not verified hostility; a saved roster is not live nearby actors.

@@ -52,6 +52,7 @@ Each topic has one canonical document. Other pages link to it instead of repeati
 |---|---|
 | Your project brief, integration plan, stage checklist and latest evidence | [PROJECT.md](PROJECT.md) |
 | The route (brief, integration plan, DwemerDistro, LLM and voice tests, first prototype), the two copies, `scripts/project.ps1` | [docs/getting-started.md](docs/getting-started.md) |
+| Gameplay design: the player's loop, interaction modes, who decides, bounded automatic interactions | [docs/GAMEPLAY_DESIGN.md](docs/GAMEPLAY_DESIGN.md) |
 | Orientation, status, walkthrough, troubleshooting by request ID, event log, server files, porting checklist | This page |
 | Install, permissions, pairing, LLM and voice setup, backups, updates, versions, migrations, checkpoints, removal, troubleshooting by symptom | [SETUP.md](SETUP.md) |
 | Copyable LLM, voice, NPC selection, profile and memory/embedding settings | [CONNECTORS.md](CONNECTORS.md) |
