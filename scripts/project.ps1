@@ -1599,7 +1599,7 @@ function Invoke-New {
             "Starting feature (new companion or existing NPC, and what it does)" = $Feature
             "Mod name" = $Name
             "Project id and name in ``dwemer-mod.json`` (own values, set before deploy)" = "``$Id``, $Name"
-            "Voice (none, or PocketTTS replies; speech input later?)" = $Voice
+            "Voice (none, or PocketTTS replies; speech input only if asked: Parakeet push-to-talk into the editable draft)" = $Voice
             "LLM provider (name only)" = $LlmProvider
             "DwemerDistro (the one WSL distro name)" = $WslDistro
         }

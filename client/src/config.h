@@ -11,7 +11,8 @@ struct Config {
     std::string token;
     std::string sessionId = "demo-save-1";
     int timeoutSeconds = 40;
-    bool voiceEnabled = false;
+    bool voiceEnabled = false;          // text-to-speech of replies (speak.php)
+    bool speechInputEnabled = false;    // optional speech-to-text into the editable draft (listen.php)
     std::vector<std::string> allowedActions = {"follow_player"};
 };
 

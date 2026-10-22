@@ -261,8 +261,14 @@ changes history.
 ## Optional voice
 
 Voice is off by default on the server (`tts.enabled`, `stt.enabled`) and the client
-(`voice_enabled`). Always show the text first; voice is extra. On any voice error the game
-keeps the subtitle (TTS) or lets the player type (STT).
+(`voice_enabled` for replies, `speech_input_enabled` for speech input, set separately).
+Always show the text first; voice is extra. On any voice error the game keeps the subtitle
+(TTS) or lets the player type (STT).
+
+Recommended speech input flow, with no new fields: the game sends the recording to
+`listen.php` alone (no turn yet, so no `X-Parent-Request-Id`), puts `text` in the player's
+editable draft, and sends the line the player checked with `turn.php` when they press Enter.
+A transcript is never sent as a turn by itself.
 
 ### POST speak.php
 

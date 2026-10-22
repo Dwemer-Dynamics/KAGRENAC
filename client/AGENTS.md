@@ -9,9 +9,12 @@ read [../PROJECT.md](../PROJECT.md) for the user's brief before changing anythin
 - C++17 with the Windows SDK and the bundled nlohmann/json header. Do not add package
   managers, networking frameworks or large dependencies unless the user asks.
 - Keep the file layout: game code behind `GameAdapter`, protocol code in `ai_client`,
-  settings in `config`, the turn lifecycle in `turn_runtime`, console commands and input in
-  `main.cpp`. `ai_client`, `config` and `turn_runtime` form the `KagrenacClientCore` library
-  target; keep it free of game and console code.
+  settings in `config`, the turn lifecycle in `turn_runtime`, the engine-free composer
+  lifecycle in `chat_input`, console commands and input in `main.cpp`. `ai_client`,
+  `chat_input`, `config` and `turn_runtime` form the `KagrenacClientCore` library target; keep
+  it free of game and console code. `ChatInput` draws nothing and reads no keys or audio:
+  never claim it creates in-game UI. Add no pure virtuals to `GameAdapter` for input; the
+  port drives `ChatInput` from its own native field.
 - Never claim the console example works inside a real game. Only claim engine support after
   testing in that engine.
 
@@ -38,6 +41,12 @@ read [../PROJECT.md](../PROJECT.md) for the user's brief before changing anythin
   version in the server and the client together for incompatible changes.
 - **Config**: shipped defaults in `config.default.json`; secrets only in the untracked
   `config.json`.
+- **Player input**: the default is an in-game composer with free typed text sent with
+  `submitTurnTo()` to the recipient it shows; a refused line stays in the draft, and a sent
+  line that fails later returns to an empty draft for the same recipient and session, for
+  the player to resend, never queued or resent automatically. Speech input (`speech_input_enabled`,
+  separate from `voice_enabled`) is added only when asked for: `transcribe()` fills the
+  editable draft and never sends a turn; the shared code records no audio.
 - **Voice is optional**: text first; voice is made after the subtitle and actions, and is
   played only if its turn was not cancelled or replaced, the session is unchanged and the
   NPC is still the same instance. On any voice failure keep the subtitle or let the

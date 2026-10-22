@@ -23,6 +23,7 @@ bool loadConfigFile(const std::filesystem::path& path, Config& config, std::stri
         config.sessionId = json.value("session_id", config.sessionId);
         config.timeoutSeconds = json.value("timeout_seconds", config.timeoutSeconds);
         config.voiceEnabled = json.value("voice_enabled", config.voiceEnabled);
+        config.speechInputEnabled = json.value("speech_input_enabled", config.speechInputEnabled);
         config.allowedActions = json.value("allowed_actions", config.allowedActions);
     } catch (const nlohmann::json::exception&) {
         error = path.u8string() + " has a setting with the wrong type.";

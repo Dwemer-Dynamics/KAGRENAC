@@ -132,6 +132,12 @@ constexpr const char* kClientBaseline = "baseline-1";
 #endif
 constexpr const char* kClientVersion = EXAMPLE_CLIENT_VERSION;
 
+// The server's own payload limits (PROTOCOL.md): a turn's text is 1-1000 characters after
+// trimming (turn.php), and a listen.php body is at most 10 MB of WAV. A port's composer and
+// microphone capture stop at these sizes, not at a made-up time or line limit.
+constexpr size_t kMaxTurnTextChars = 1000;
+constexpr size_t kMaxSpeechWavBytes = 10000000;
+
 // The protocol's id rule: 1-64 characters of A-Z a-z 0-9 _ . : -
 bool isValidId(const std::string& id);
 

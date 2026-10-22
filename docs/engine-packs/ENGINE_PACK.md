@@ -41,7 +41,8 @@ another engine.
 | NPC instance marker for `isSameNpc()` | `isSameNpc()` | | |
 | Context sources (location, time of day, ...) | context entries | | |
 | Live observation sources: what can be read, on which thread, how fresh | context entries | | |
-| Text input from the player | recon (dialogue) | | |
+| Text input from the player: native text field, open key, input mode that keeps keys from game controls, IME/paste | recon (dialogue) | | |
+| Focus loss, pause, loading and death notifications (to release input capture) | recon (dialogue) | | |
 | Subtitle or message display | subtitle display | | |
 | NPC follow behaviour | one handler per action | | |
 | Bridge from plugin code to the engine's action or script mechanism | one handler per action | | |
@@ -50,7 +51,7 @@ another engine.
 | Private config location (server URL, token) | private `config.json` | | |
 | Plugin log facility and file location | client log | | |
 | Optional: play a WAV on the NPC | optional voice | | |
-| Optional: capture microphone to WAV | optional voice | | |
+| Optional, only if speech input was asked for: capture microphone to WAV (push-to-talk) | optional voice | | |
 
 ### Transport choice
 
@@ -71,6 +72,10 @@ no retries, main-thread apply).
 |---|---|---|---|
 | `GameAdapter` for the engine | | | |
 | Plugin glue: load, tick drain, unload, quit | | | |
+| In-game composer: "To: <recipient>", free typed text, Enter sends (`ChatInput`, `submitTurnTo`) | | | |
+| Composer: game controls blocked while open; released on send, Esc, pause, loading, death, recipient unload, focus loss, quit; no leaked Enter/Esc | | | |
+| Composer: recipient changed before Enter, so the send is refused and the draft kept | | | |
+| Composer: refused send keeps the draft; a sent line that fails later returns to an empty draft for the same recipient and session (newer text kept); Enter resends; nothing resent automatically; no cooldown | | | |
 | Typed dialogue to subtitle | | | |
 | Observation snapshot: source, time, `unavailable` for unread values | | | |
 | Action capability gate: target, instance check, preconditions, observed result | | | |
@@ -82,7 +87,7 @@ no retries, main-thread apply).
 | Server stopped: error shown, no crash or hang | | | |
 | Optional voice: WAV saved | | | |
 | Optional voice: audible on the NPC | | | |
-| Optional voice: microphone to text | | | |
+| Optional speech input: mic open only while push-to-talk is held; transcript editable in the draft; nothing sent without Enter; WAV deleted; no transcript in logs | | | |
 | Diagnostics log | | | |
 | Package installed into a clean game install | | | |
 

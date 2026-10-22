@@ -15,7 +15,7 @@ permission.
 | Starting feature (new companion or existing NPC, and what it does) | |
 | Mod name | |
 | Project id and name in `dwemer-mod.json` (own values, set before deploy) | |
-| Voice (none, or PocketTTS replies; speech input later?) | |
+| Voice (none, or PocketTTS replies; speech input only if asked: Parakeet push-to-talk into the editable draft) | |
 | LLM provider (name only) | |
 | DwemerDistro (the one WSL distro name) | |
 
@@ -55,9 +55,12 @@ offline play, cancel" row, and their checks in the first thin slice's acceptance
 already done under earlier wording keep their status; add these checks as new acceptance or
 flow-review items instead of changing a done row back.
 
-Each row: the chosen mechanism, and whether it is a cited fact (SDK file, doc or game data)
-or Unknown. For an Unknown, note the bounded research (where, and when to stop) and the
-options offered.
+"Player input in game" is by default a native in-game composer: a visible recipient, free
+typed text, Enter to send and Esc to close, with game controls captured and released by the
+engine's own input mode; push-to-talk into that editable draft only when speech input was
+asked for ([Player input](docs/GAMEPLAY_DESIGN.md#player-input)). Each row: the chosen
+mechanism, and whether it is a cited fact (SDK file, doc or game data) or Unknown. For an
+Unknown, note the bounded research (where, and when to stop) and the options offered.
 
 | Part | Plan | Fact (citation) or Unknown |
 |---|---|---|
@@ -89,7 +92,7 @@ Unknown. A blocked stage does not stop the others.
 | 5. Voice | user-reported or in-game: a PocketTTS reply heard on the dashboard **Speak** test or in the game (a generated WAV is not heard); or `not wanted` | not started | |
 | 6a. Game-side build | build: the port's preflight passed and its build finished into the folders under Paths (Elden Ring: `mod.ps1 doctor`, then `mod.ps1 build` exit 0 with its `build.json`) | not started | |
 | 6b. Game-side runtime, paired | build: the runtime folder assembled from that build (Elden Ring: `mod.ps1 assemble`), `project.ps1 pair` wrote its private `config.json`, and the mod is installed where its qualified loader loads it on a normal game launch, with no per-session command, attach or helper start ([automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)); a missing autoload mechanism keeps this blocked with its next probe; nothing launched yet | not started | |
-| 6c. First prototype | in-game: the user started the game through its normal launch (its own entry, or a cited loader's offline entry such as the Elden Ring me3 profile) and the mod loaded and connected to this project's server by itself; the Gameplay design loop seen in the game, with its automatic trigger when one was requested and heard voice when voice was wanted; with only this project's route unreachable the game stayed playable and said so in game | not started | |
+| 6c. First prototype | in-game: the user started the game through its normal launch (its own entry, or a cited loader's offline entry such as the Elden Ring me3 profile) and the mod loaded and connected to this project's server by itself; the Gameplay design loop seen in the game, with its automatic trigger when one was requested and heard voice when voice was wanted; the player's own line typed in the in-game composer to the recipient it shows (and push-to-talk into that editable draft when speech input was asked for), with controls released afterwards; with only this project's route unreachable the game stayed playable and said so in game | not started | |
 | 6d. Action `<name>` (one row per action) | in-game: that action's own check; a broad "it works" does not count | not started | |
 | 7. Expand: next feature named | source | not started | |
 

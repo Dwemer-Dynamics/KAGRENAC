@@ -27,7 +27,9 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    conversation, the agent first fills PROJECT.md's short Gameplay design
    ([Gameplay design](GAMEPLAY_DESIGN.md)): the player's fantasy, the 2-3 minute loop they will
    see and hear, the interaction mode, and what decides and changes. It then fills the plan in
-   PROJECT.md: how the player's input reaches the mod, which NPC and how long it lives, how
+   PROJECT.md: how the player's input reaches the mod (by default an in-game composer with a
+   visible recipient and free typed text; push-to-talk only if you ask for speech input),
+   which NPC and how long it lives, how
    the HTTP call runs off the game thread and comes back to it, how the reply is shown and
    the voice played, which existing mechanism carries each action (its target, instance
    check and preconditions), what the mod can observe (each value's source and freshness;
@@ -90,7 +92,8 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    Any shorter entry through me3's own documented features is an open flow-review item,
    not a promise. Only what you then see and hear fills
    6c and each action row.
-7. **Expand.** One feature at a time: more actions, events, memory, speech to text. The
+7. **Expand.** One feature at a time: more actions, events, memory, speech input
+   (push-to-talk into the editable draft; [Player input](GAMEPLAY_DESIGN.md#player-input)). The
    [wave exercise](../WAVE_ACTION.md), memory and profiles come after the first AI line in
    game, never before it.
 

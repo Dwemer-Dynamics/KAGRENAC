@@ -205,6 +205,10 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
 - **Config and secrets**: settings live in untracked `config/config.php`. Add new settings
   to `config/config.example.php` with a safe default. Optional features (LLM key, TTS, STT)
   must fail cleanly with a clear error and never pretend to succeed.
+- **Player input**: every mod gets a real in-game composer for free typed text to a visible
+  recipient by default (GAMEPLAY_DESIGN, Player input); a canned hotkey line is not chat.
+  Speech input is a separate option, added only when the user asks: push-to-talk, Parakeet
+  transcription into the editable draft, Enter to send.
 - **Voice**: optional and off by default in config; text always still works without it. If
   the user wants voice, start with PocketTTS for TTS and Parakeet for STT (the recommended
   DwemerDistro choices) before the supported alternatives. Do not assume either is installed

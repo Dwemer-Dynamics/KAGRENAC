@@ -30,7 +30,7 @@ applies to, the permitted thread/callback, the planned check and what remains un
 |---|---|
 | Loader and lifecycle | What loads the mod when the game is launched normally ([automatic load and connect](#automatic-load-and-connect))? Is that loader cited for this exact build? Where is its callback? How does it stop without leaving game calls running? |
 | NPC and player | Which entity is the speaker? How are save, run, entity instance, replacement and death distinguished? |
-| Input and display | How does a line enter the mod, how is a subtitle shown, and how are player controls restored? |
+| Input and display | Which native field, key and input mode make the default in-game composer ([Player input](GAMEPLAY_DESIGN.md#player-input)): free typed text to a recipient shown as "To: <name>", Enter to send, Esc to close? How are game controls captured while it is open and restored on send, Esc, pause, loading, death, recipient unload and focus loss? How is a subtitle shown? Push-to-talk microphone capture only if speech input was asked for |
 | Transport and voice | Who owns HTTP and audio? How do results return without blocking a game callback? Is voice positional or only audible? |
 | Awareness | Which exact live API supplies each value, in what units and at what time? What will be explicitly unavailable? |
 | Each action | What game-owned handler changes state? Which target, instance check, preconditions, cancel and observable result constrain it? |

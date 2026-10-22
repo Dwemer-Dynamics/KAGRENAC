@@ -11,7 +11,7 @@
 //   KagrenacClient.exe --version             print the client version and exit (no config needed)
 //   KagrenacClient.exe --health              check the server and exit
 //   KagrenacClient.exe --say "Follow me"     send one line and exit
-//   KagrenacClient.exe --listen speech.wav   optional voice: transcribe, send, exit
+//   KagrenacClient.exe --listen speech.wav   developer/legacy voice path: transcribe and send at once, exit
 //   KagrenacClient.exe --decide "Scout?"     optional: ask which NPC should answer, print it, exit
 //   KagrenacClient.exe --event item_given "The player gave a lantern."   log-only game event, exit
 //   KagrenacClient.exe --react item_given "The player gave a lantern."   the Guide reacts to it, exit
@@ -117,8 +117,8 @@ bool splitEvent(const std::string& rest, std::string& type, std::string& text)
 int runInteractive(TurnRuntime& runtime, GameAdapter& game, ConsoleGame& console)
 {
     auto input = std::make_shared<Input>();
-    game.showMessage("Type to talk. Commands: /cancel  /listen <file.wav>  /decide <text>  /event <type> <text>"
-                     "  /react <type> <text>  /npc guide|scout  /session <id>  /unload  /load  /quit");
+    game.showMessage("Type to talk. Commands: /cancel  /transcribe <file.wav>  /listen <file.wav>  /decide <text>"
+                     "  /event <type> <text>  /react <type> <text>  /npc guide|scout  /session <id>  /unload  /load  /quit");
 
     // getline blocks. Shared ownership keeps its queue alive until input ends.
     // /quit also ends this thread; network workers are joined by runtime.shutdown().
@@ -202,6 +202,19 @@ int runInteractive(TurnRuntime& runtime, GameAdapter& game, ConsoleGame& console
                 continue;
             }
 
+            if (line.rfind("/transcribe ", 0) == 0) {
+                // Speech input only (needs speech_input_enabled): prints what was heard and sends
+                // nothing; the player edits it and sends it as a typed line. /listen is the old
+                // direct path that sends the raw transcript at once.
+                runtime.transcribe(std::filesystem::u8path(line.substr(12)), [&game](const TurnRuntime::Transcript& heard) {
+                    if (!heard.error.empty()) {
+                        game.showMessage("Speech input failed (" + heard.error + "); type instead. Nothing was sent.");
+                    } else {
+                        game.showMessage("Heard (nothing sent; edit it and type it to send): " + heard.text);
+                    }
+                });
+                continue;
+            }
             if (line.rfind("/decide ", 0) == 0) {
                 runtime.startJob([transcript = line.substr(8)](const AiClient& client) {
                     return describeDecision(client, transcript);
