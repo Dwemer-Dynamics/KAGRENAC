@@ -173,7 +173,11 @@ heard), **handled** (the handler ran) and **observed** (the game later read the 
 
 ## Budgets and the growth path
 
-Set a cost budget for each mod (calls per exchange, exchanges per hour). Profiles may
+Keep each exchange bounded so generated dialogue cannot trigger an endless loop.
+Do not impose per-launch or hourly call quotas, test-only lockouts, or cooldowns on
+explicit player requests unless the user asks. Keep duplicate-input detection, one
+pending request and stale-result cancellation. Pace automatic ambient exchanges for
+the gameplay loop; do not turn that pacing into a manual-request usage limit. Profiles may
 optionally give an NPC its own model or a keyless mode; without one, the config applies. The
 growth path starts with the first loop of the chosen mode, then adds one bounded automatic
 interaction or one action with an observed outcome, one at a time. A director, queue or

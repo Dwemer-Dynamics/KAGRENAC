@@ -136,6 +136,12 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
 
 ## Keep it simple
 
+- Do not add per-launch, hourly or lifetime AI-call quotas, test-only lockouts, or
+  cooldowns on explicit player requests unless the user asks for them. Keep duplicate
+  input detection, one pending request, stale-result cancellation and provider-error
+  handling. Ambient-trigger pacing must serve the gameplay loop, not impose an
+  arbitrary usage budget on the player.
+
 - Plain PHP 8.2 with built-in extensions. Do not add Composer, frameworks, background
   workers, queues or embeddings unless the user asks.
 - One small file per endpoint at the top level; shared helpers in `lib/`. Library files
