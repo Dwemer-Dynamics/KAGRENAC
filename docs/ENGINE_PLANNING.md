@@ -185,26 +185,6 @@ commands remain developer and setup tools.
   status, keeps the game responsive, and is checked again when the player next uses the
   mod; turns are still never retried automatically.
 
-### Installed startup acceptance
-
-Fill this in for every shipped mod, even when its gameplay loop is still awaiting a human
-test. An installer, copied DLL or successful helper command alone does not pass it.
-
-| Check | Evidence required before handoff |
-|---|---|
-| Player entry | Exact game executable or established loader/mod-list entry, plus its one-time install/enable step. No recurring terminal command. A supported game argument for an isolated save profile may be saved in a shortcut; do not replace a native loader with a project-written launcher and call it normal loading. |
-| Client transport | Name the in-process HTTP/audio code, or the qualified game/loader callback that starts the hidden helper. Helper spawning must happen outside DLL loader lock. |
-| Ownership | Bind a helper to the exact game instance, prevent duplicate starts, and clean up on quit/crash/restart. Validate with a disposable native host when possible; keep actual game lifecycle acceptance separate. Never stop unrelated helpers by executable name. |
-| Configured use | Read the existing private pair automatically. A configured mod cannot require `start`, `arm`, `EnableProvider` or a test-only call budget each session. Deliberate in-game enable/stop controls remain valid. Starting transport must not itself call a paid provider. |
-| Installed provenance | Build from the reviewed commit, compare the installed DLL/helper/script hashes with the build record, preserve private config and old artifacts, and record the normal entry in the handoff. A source-only fix is not deployed. |
-| Failure and repeat | Test duplicate initialization, unavailable helper/server and owned-process exit using proportional fixtures. Then have the human launch normally, quit and launch again. Never start shared servers or install dependencies from a game callback. |
-
-PowerShell build/install/doctor/provider probes belong to the developer checklist, not the
-player's everyday instructions. If an engine or incomplete game installation prevents a
-qualified normal load, leave the integration gate open with the exact missing mechanism and
-next bounded probe. A hidden terminal, desktop shortcut to a wrapper, or standalone diagnostics
-do not turn that blocker into a working mod. Record each mod's state independently; a working
-startup route in one game is not evidence for another.
 - **Nothing global by default.** No Windows startup entry, service, watcher or scheduled
   task, and no change outside the game's mod folder, the mod's runtime folder, the loader's
   profile for this mod, a shortcut the user approved and the mod's own server install. The
@@ -235,6 +215,27 @@ added as extra acceptance or flow-review items, not a reset.
   running game instance, and quit or a crash leaves none.
 - The Gameplay design loop with a real reply in game, its automatic trigger when requested
   without a manual chat step, and heard voice when voice was wanted.
+
+### Installed startup acceptance
+
+Fill this in for every shipped mod, even when its gameplay loop is still awaiting a human
+test. An installer, copied DLL or successful helper command alone does not pass it.
+
+| Check | Evidence required before handoff |
+|---|---|
+| Player entry | Exact game executable or established loader/mod-list entry, plus its one-time install/enable step. No recurring terminal command. A supported game argument for an isolated save profile may be saved in a shortcut; do not replace a native loader with a project-written launcher and call it normal loading. |
+| Client transport | Name the in-process HTTP/audio code, or the qualified game/loader callback that starts the hidden helper. Helper spawning must happen outside DLL loader lock. |
+| Ownership | Bind a helper to the exact game instance, prevent duplicate starts, and clean up on quit/crash/restart. Validate with a disposable native host when possible; keep actual game lifecycle acceptance separate. Never stop unrelated helpers by executable name. |
+| Configured use | Read the existing private pair automatically. A configured mod cannot require `start`, `arm`, `EnableProvider` or a test-only call budget each session. Deliberate in-game enable/stop controls remain valid. Starting transport must not itself call a paid provider. |
+| Installed provenance | Build from the reviewed commit, compare the installed DLL/helper/script hashes with the build record, preserve private config and old artifacts, and record the normal entry in the handoff. A source-only fix is not deployed. |
+| Failure and repeat | Test duplicate initialization, unavailable helper/server and owned-process exit using proportional fixtures. Then have the human launch normally, quit and launch again. Never start shared servers or install dependencies from a game callback. |
+
+PowerShell build/install/doctor/provider probes belong to the developer checklist, not the
+player's everyday instructions. If an engine or incomplete game installation prevents a
+qualified normal load, leave the integration gate open with the exact missing mechanism and
+next bounded probe. A hidden terminal, desktop shortcut to a wrapper, or standalone diagnostics
+do not turn that blocker into a working mod. Record each mod's state independently; a working
+startup route in one game is not evidence for another.
 
 ## End-of-pass handoff
 
