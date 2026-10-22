@@ -114,6 +114,13 @@ that do not depend on it.
 
 ## Repository layout
 
+For the player handoff, use the [installed startup acceptance checklist](ENGINE_PLANNING.md#installed-startup-acceptance).
+After one-time installation, enabling the mod in its normal loader/mod list and starting the
+user's DwemerDistro is enough. Do not make the player run transport, arming or provider-budget
+commands every session. Show the exact normal play entry and keep developer commands separate.
+When the engine requires an isolated profile, configure its supported launch entry once;
+a project script hidden behind a shortcut is still a fallback, not automatic mod loading.
+
 **Default: one repository per mod.** The server lives at the root, with the game client or
 plugin under `client/` or `ports/<engine>/`. Separate installed game files and a deployed
 server are runtime copies, not separate source repositories. This is what `project.ps1 new`

@@ -92,6 +92,12 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
   console or helper works; an external fallback needs the named mechanism and the user's
   approved scope. Check an unavailable server only by making this project's own route
   unreachable; make no change to shared services without the user's explicit instruction.
+  Before handing off a playable build, audit its actual installed entry and helper ownership,
+  not only the source design. A configured provider must not need a per-session terminal
+  `start`, `arm`, `EnableProvider` or test-budget command. Keep deliberate in-game enable/stop
+  controls. Record the installed helper/artifact hashes, duplicate-start and game-exit checks,
+  and distinguish normal loading from a shortcut that hides a project-written wrapper.
+  Developer diagnostics and incomplete engine probes are never the player's required setup.
 
 - Keep the server at the repository root. In the template, the manifest id `example-server`,
   `config/config.php`, database placeholder `example_ai_mod`, service identity
