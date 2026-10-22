@@ -69,14 +69,26 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    The shipped config stays in mock mode.
 6. **First real prototype.** The agent builds the thin slice from the plan in the game
    itself: the Gameplay design loop, with its automatic trigger when one was requested. Mock mode and the console client are developer checks for the server and shared
-   code, not your demo, and no console exercise is required first. For Elden Ring, the
+   code, not your demo, and no console exercise is required first. The agent installs the
+   mod once through a qualified loader and pairs it; after that you start the game through
+   its normal launch (its executable or Steam or store **Play**, or, when the engine needs
+   one, a cited loader's documented offline entry set up once), and the mod loads,
+   connects to its own server and shows its status in game, with no terminal, script,
+   attach, extra window or project-written launcher each session, and never through an
+   anti-cheat-protected online launch
+   ([Automatic load and connect](ENGINE_PLANNING.md#automatic-load-and-connect)). If the game
+   has no qualified way to do that yet, the agent names the missing mechanism and its next
+   probe instead of calling the mod finished. For Elden Ring, the
    reference in [ports/elden-ring/](../ports/elden-ring/README.md) is reused rather than
    started over, through its maintained route
    ([Build a mod](../ports/elden-ring/README.md#build-a-mod-from-this-reference)): the agent
    runs `ports\elden-ring\mod.ps1 doctor` (read-only preflight: game build, tools, me3), then
    `build`, `assemble` and `pair` into the runtime folder, and records each in its own
    PROJECT.md row (6a build, 6b runtime and pairing). You back up your saves and launch the
-   game yourself with the printed offline command; only what you then see and hear fills
+   game yourself through me3 offline with the printed command; that offline me3 profile is
+   the reference's established loader entry, not something to replace with Steam **Play**.
+   Any shorter entry through me3's own documented features is an open flow-review item,
+   not a promise. Only what you then see and hear fills
    6c and each action row.
 7. **Expand.** One feature at a time: more actions, events, memory, speech to text. The
    [wave exercise](../WAVE_ACTION.md), memory and profiles come after the first AI line in

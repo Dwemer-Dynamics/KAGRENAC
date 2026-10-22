@@ -50,14 +50,16 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
    configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
    `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
 5. Mock mode and the console client are developer checks, not the user's demo; the
-   console's follow is a printed simulation. A full port records evidence in a copy of
+   console's follow is a printed simulation. The demo is a normal game launch that loads
+   and connects the mod by itself (Layout and copies). A full port records evidence in a copy of
    [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md).
 6. Keep PROJECT.md short and current; detailed engine history goes in `ports/<engine>/`.
    Report evidence by kind: source, build, fixture, provider, user-reported, in game. A
    user's broad "it works" is user-reported and never proof of each action; an action is
    usable only after its own in-game check.
 7. Before ending a build pass, reconcile PROJECT.md, the port plan and the flow review with
-   the actual files and validation. Record uncommitted artifacts and interrupted work. Give
+   the actual files and validation. A stage already done keeps its status when its wording
+   later grows; record the new checks as acceptance or flow-review items. Record uncommitted artifacts and interrupted work. Give
    server-ready, port-built and gameplay-verified separate results; a completed chat does not
    mean a completed mod. Leave one concrete next probe for each critical engine blocker.
 
@@ -69,6 +71,27 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
   resorts, not the default prototype. Record the missing mechanism and explain the fallback
   before adopting it. Background helpers must not require a separate conversation window;
   use external transport/audio only when the game cannot provide a suitable supported route.
+
+- Set up once, then load and connect automatically
+  ([Engine planning, Automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)).
+  The agent installs the game-side mod through the engine's own mod support or a loader cited
+  for the exact game build, deploys and pairs the server once; after that, a normal launch
+  (the game's own entry, or a cited loader's documented offline play entry when the engine
+  needs one, such as the Elden Ring me3 profile) loads the mod and connects it to its own
+  server. A loader profile or user-approved shortcut set up once is setup. A terminal or
+  script command, attach, watcher or scheduled task, helper or chat window or a launcher the
+  project wrote is never a normal per-session player step; build, install, check and test
+  commands stay developer tools. Never route a modded game through an anti-cheat-protected
+  or online launch, and never disable or bypass anti-cheat. A required hidden helper is
+  started and stopped by the game mod (or the loader's documented sidecar hook when the
+  engine cannot), owned by that game instance, single per instance and cleaned up on
+  restart, quit or crash; its token comes only from the private paired config. A missing
+  server, network or helper never blocks game start or play. Add no Windows startup entry,
+  service, watcher or scheduled task by default, and never install or start the server from
+  the game side. A missing autoload mechanism is an integration gate, not a success because a
+  console or helper works; an external fallback needs the named mechanism and the user's
+  approved scope. Check an unavailable server only by making this project's own route
+  unreachable; make no change to shared services without the user's explicit instruction.
 
 - Keep the server at the repository root. In the template, the manifest id `example-server`,
   `config/config.php`, database placeholder `example_ai_mod`, service identity

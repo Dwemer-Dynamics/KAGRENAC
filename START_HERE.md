@@ -655,14 +655,24 @@ real SDK. Record engine facts and results in
       audio, and no player text by default ([diagnostics](docs/feature-recipes/PORT_RECIPES.md#diagnostics)).
 - [ ] A plugin package, separate from the console demo, installed into a clean game
       install ([packaging](docs/feature-recipes/PORT_RECIPES.md#packaging)).
+- [ ] Set up once, then the game's normal launch (its own entry, or a cited loader's
+      offline entry when the engine needs one) loads the mod and connects it to its own
+      server, with no per-session terminal, attach, helper window or project-written
+      launcher, and never through an anti-cheat-protected online path; any required hidden
+      helper is started and stopped by the mod or its loader's documented hook, and a
+      missing server never blocks the game
+      ([automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)).
 
 Evidence levels. Report each one separately, and claim only what you actually ran:
 
 1. Server lint, migrations twice and `scripts/smoke.sh` in mock mode.
 2. The console client's smoke checks ([client/README.md](client/README.md#smoke-checks)).
 3. Real provider calls (LLM, voice, JEV), each tested on its own.
-4. In-game: talk to an NPC, see the subtitle, follow, cancel a slow reply, unload the NPC
-   while a reply is pending, and stop the server, all without a crash or hang.
+4. In-game, after a normal launch that loaded and connected the mod by itself: talk to an
+   NPC, see the subtitle, follow, cancel a slow reply, unload the NPC while a reply is
+   pending, and make this project's own route unreachable, all without a crash or hang
+   (no shared service stopped; see the
+   [unavailable-server check](docs/ENGINE_PLANNING.md#automatic-load-and-connect)).
 
 Level 1 is required when server code changed and level 2 when shared client code changed;
 neither is a warm-up that the first in-game prototype has to wait for.

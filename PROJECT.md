@@ -47,7 +47,13 @@ for unknowns and a five-minute acceptance sequence in `ports/<engine>/PLAN.md`. 
 checks the plan against this brief before game-port implementation; independent server and
 provider setup can proceed. Use the current coding agent for build, tests and a separate
 diff review, unless the user explicitly chooses delegation. Record flow friction in
-`docs/KAGRENAC_FLOW_REVIEW.md`.
+`docs/KAGRENAC_FLOW_REVIEW.md`. The target is setup once, then a normal game launch that
+loads the mod and connects by itself, with all interaction in game
+([automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)). Record
+the loader, the normal launch route and the unavailable-server behaviour in the "Saves,
+offline play, cancel" row, and their checks in the first thin slice's acceptance. Rows
+already done under earlier wording keep their status; add these checks as new acceptance or
+flow-review items instead of changing a done row back.
 
 Each row: the chosen mechanism, and whether it is a cited fact (SDK file, doc or game data)
 or Unknown. For an Unknown, note the bounded research (where, and when to stop) and the
@@ -82,8 +88,8 @@ Unknown. A blocked stage does not stop the others.
 | 4. LLM | provider: the dashboard **Send test**, or a real `turn.php` turn (same server path), returned a real reply from the chosen provider (nothing has to answer on port 1234 unless that is the provider) | not started | |
 | 5. Voice | user-reported or in-game: a PocketTTS reply heard on the dashboard **Speak** test or in the game (a generated WAV is not heard); or `not wanted` | not started | |
 | 6a. Game-side build | build: the port's preflight passed and its build finished into the folders under Paths (Elden Ring: `mod.ps1 doctor`, then `mod.ps1 build` exit 0 with its `build.json`) | not started | |
-| 6b. Game-side runtime, paired | build: the runtime folder assembled from that build (Elden Ring: `mod.ps1 assemble`) and `project.ps1 pair` wrote its private `config.json`; nothing launched yet | not started | |
-| 6c. First prototype | in-game: the Gameplay design loop seen in the game, launched by the user, with its automatic trigger when one was requested and heard voice when voice was wanted | not started | |
+| 6b. Game-side runtime, paired | build: the runtime folder assembled from that build (Elden Ring: `mod.ps1 assemble`), `project.ps1 pair` wrote its private `config.json`, and the mod is installed where its qualified loader loads it on a normal game launch, with no per-session command, attach or helper start ([automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)); a missing autoload mechanism keeps this blocked with its next probe; nothing launched yet | not started | |
+| 6c. First prototype | in-game: the user started the game through its normal launch (its own entry, or a cited loader's offline entry such as the Elden Ring me3 profile) and the mod loaded and connected to this project's server by itself; the Gameplay design loop seen in the game, with its automatic trigger when one was requested and heard voice when voice was wanted; with only this project's route unreachable the game stayed playable and said so in game | not started | |
 | 6d. Action `<name>` (one row per action) | in-game: that action's own check; a broad "it works" does not count | not started | |
 | 7. Expand: next feature named | source | not started | |
 

@@ -91,7 +91,15 @@ docs/engine-packs/ENGINE_PACK.md)
    published for the launcher, change the manifest id first (LAUNCHER_CUSTOM_MOD.md).
    Your project is a separate copy; template changes are merged by hand, if ever.
 4. Plugin lifecycle. Load, per-tick mailbox drain, NPC leaving, unload and quit, in plugin
-   glue outside GameAdapter.
+   glue outside GameAdapter. The mod loads on the game's normal launch (its own entry, or
+   a cited loader's offline entry when the engine needs one) through the engine's own mod
+   support or a loader cited for this exact build, reads its paired config and connects by
+   itself; a missing server never blocks the game. Any required hidden helper is started
+   and stopped by the mod or the loader's documented hook, one per game instance, with no
+   window. No per-session terminal, attach, watcher, scheduled task or project-written
+   launcher, and no anti-cheat-protected online launch or anti-cheat bypass
+   (docs/ENGINE_PLANNING.md, Automatic load and connect); a missing autoload mechanism is a
+   blocker to record, not a pass.
 5. Typed dialogue. Player input to turn, reply to subtitle, through a GameAdapter that
    uses only real engine APIs.
 6. Actions. follow_player with the engine's own follow behaviour. Extra actions only if
@@ -105,7 +113,8 @@ docs/engine-packs/ENGINE_PACK.md)
 9. Voice (optional, only if authorized). WAV saved and audible in game are separate
    results.
 10. Diagnostics and packaging. Recommended client log fields; ship plugin artifacts, not
-    the console program.
+    the console program. Install them once where the loader picks them up; build, install
+    and check commands are setup and developer tools, never per-session player steps.
 11. Acceptance report (below).
 
 STATUS WORDS
@@ -120,6 +129,10 @@ ACCEPTANCE REPORT
 - Evidence levels 1-4, each reported separately: what ran, its result, or "Not tested".
   Provider calls (level 3) may stay "Not tested".
 - Engine facts still Unknown, open TODOs, and stages skipped and why.
+- Normal-launch acceptance, each item on its own: loaded and connected without a command
+  or attach, the right server and project with the private paired config, this project's
+  own route unreachable without a freeze (no shared service stopped; fixture and in-game
+  results kept apart), and repeat launch, restart and quit leaving no extra helper.
 - Never call the mod working in a game until level 4 was done in that game. Keep evidence
   kinds apart (source, build, fixture, provider, user-reported, in game); a broad
   user-reported "it works" is not proof of each action, and voice counts only when heard.

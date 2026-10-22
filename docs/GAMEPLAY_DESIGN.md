@@ -208,8 +208,10 @@ existing port.
 ## Acceptance
 
 Stage 6c in PROJECT.md is the loop from the Gameplay design, seen in the game and launched by
-the user. It includes the automatic trigger when one was requested, and heard voice when
-voice was requested. Do not replace a requested companion with a narrator, and do not move
+the user the normal way, with the mod loading and connecting by itself
+([automatic load and connect](ENGINE_PLANNING.md#automatic-load-and-connect)). It includes the
+automatic trigger when one was requested, with no manual chat step needed to start an ambient
+or operator exchange, and heard voice when voice was requested. Do not replace a requested companion with a narrator, and do not move
 the interaction to an external window, just to finish. Mock mode, the console client and
 diagnostics are developer checks, not the loop, and none is required before an ambient or
 operator loop. When a mechanism is missing, name it exactly (for example "no participant
