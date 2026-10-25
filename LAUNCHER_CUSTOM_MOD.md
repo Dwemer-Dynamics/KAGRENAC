@@ -1,5 +1,8 @@
 # Installing as a launcher custom mod
 
+This page covers the compatible version 1 server-only branch route. For a published
+mod with a packaged native client and server, use [community publishing](docs/PUBLISHING.md).
+
 This installs the template's PHP server, not a game plugin. To build your own mod, use
 [guided setup](docs/getting-started.md); generated projects default to a named server root.
 The legacy identity and paths below remain unchanged for existing template installs.

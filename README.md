@@ -1,5 +1,8 @@
 # KAGRENAC AI Mod Maker
 
+Building a mod to share? See [community publishing](docs/PUBLISHING.md) for one-repo
+client/server releases, include/exclude rules, artwork and automatic installation.
+
 <img src="ui/images/kagrenac.png" alt="KAGRENAC AI Mod Maker" width="128">
 
 Build an AI mod with your coding agent: choose a game, design a useful gameplay loop,
