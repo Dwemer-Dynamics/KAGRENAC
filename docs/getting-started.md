@@ -23,7 +23,10 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    port its plan, in the new copy's PROJECT.md, so nothing is asked twice. Every later step
    runs in that copy. Default to one repository; the optional
    [two-repository layout](#repository-layout) is a deliberate choice, not a required question.
-3. **Integration plan, before any mod code is built.** The agent fills the short plan in
+3. **Gameplay design and integration plan, before any mod code is built.** From the
+   conversation, the agent first fills PROJECT.md's short Gameplay design
+   ([Gameplay design](GAMEPLAY_DESIGN.md)): the player's fantasy, the 2-3 minute loop they will
+   see and hear, the interaction mode, and what decides and changes. It then fills the plan in
    PROJECT.md: how the player's input reaches the mod, which NPC and how long it lives, how
    the HTTP call runs off the game thread and comes back to it, how the reply is shown and
    the voice played, which existing mechanism carries each action (its target, instance
@@ -65,7 +68,7 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    is you hearing it, on the dashboard or in the game; a generated WAV alone is not heard.
    The shipped config stays in mock mode.
 6. **First real prototype.** The agent builds the thin slice from the plan in the game
-   itself. Mock mode and the console client are developer checks for the server and shared
+   itself: the Gameplay design loop, with its automatic trigger when one was requested. Mock mode and the console client are developer checks for the server and shared
    code, not your demo, and no console exercise is required first. For Elden Ring, the
    reference in [ports/elden-ring/](../ports/elden-ring/README.md) is reused rather than
    started over, through its maintained route
@@ -138,7 +141,8 @@ output in the server copy: it sits in Apache's web root.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:\dev\MyMod -Id my-mod -Name "My Mod" `
-  -Game "<game, version, tools>" -Feature "<starting feature>" [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port>]
+  -Game "<game, version, tools>" -Feature "<starting feature>" [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port>] `
+  [-InteractionMode manual|ambient|companion|operator]
 ```
 
 - Runs only in the template (manifest id `example-server` at HEAD) and copies exactly its
@@ -158,6 +162,9 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   game) and then marks stage 2 done itself, while stages 3 to 5 go ahead without waiting. It
   also adds one stage row per reference action; brief text that holds
   a URL or looks like a key is refused.
+- `-InteractionMode` (optional) prefills the primary mode in the copy's Gameplay design. It is
+  planning text only and enables no feature, action, provider call or config. Pass it only
+  when the user already named the mode; the agent records any mix and fills the other rows.
 - An engine without a reference is also accepted: `new -Engine <name>` records its paths,
   creates a short `ports/<name>/PLAN.md` starter and leaves stage 2 not started. The agent
   qualifies it using [Engine planning](ENGINE_PLANNING.md), without inventing support.

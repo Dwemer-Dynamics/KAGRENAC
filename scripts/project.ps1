@@ -9,6 +9,7 @@
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|configure|deploy> [options]
 #   new     -Destination <full Windows path> -Id <id> -Name <name> [-Game <text>] [-Feature <text>]
 #           [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port folder>]
+#           [-InteractionMode manual|ambient|companion|operator]
 #           Start a new mod: copy exactly the committed HEAD of this template (git archive; no
 #           Git history, untracked or ignored files, private config, database, build output or
 #           logs) into a new folder outside every Git checkout and web root, set the copy's own
@@ -17,6 +18,8 @@
 #           there. It refuses an existing destination, an id already used by a deploy or build
 #           folder, and any source that is not the template. It commits nothing and never
 #           changes this checkout; review and commit the copy before its first deploy.
+#           -InteractionMode only prefills the primary mode in PROJECT.md's Gameplay design
+#           (planning text: it enables no feature, action, provider call or config).
 #   doctor  Report tools, WSL distros and their state, client build, client config (no secrets)
 #           and server health (ok and service identity only). On a healthy server, probe .git/
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
@@ -112,6 +115,7 @@ param(
     [string]$Voice = "",
     [string]$LlmProvider = "",
     [string]$Engine = "",
+    [string]$InteractionMode = "",
     [string]$ServerUrl = "",
     [string]$WslDistro = "",
     [string]$WslServerPath = "",
@@ -1451,6 +1455,9 @@ function Invoke-New {
     foreach ($field in @(@("Game", $Game), @("Feature", $Feature), @("Voice", $Voice), @("LlmProvider", $LlmProvider))) { Test-BriefText $field[0] $field[1] }
     if ($WslDistro -and $WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "-WslDistro must be made of A-Z a-z 0-9 . _ -" }
     if ($Engine -and $Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z') { throw "-Engine must be a folder name under ports/, such as elden-ring." }
+    if ($InteractionMode -and @("manual", "ambient", "companion", "operator") -cnotcontains $InteractionMode) {
+        throw "-InteractionMode must be manual, ambient, companion or operator (the primary mode; the agent records any mix in PROJECT.md)."
+    }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is not on PATH." }
     $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
     if (-not (Test-Path -LiteralPath $tarExe -PathType Leaf)) { throw "$tarExe (part of Windows 10 and later) is missing; new uses it to unpack the copy." }
@@ -1535,6 +1542,17 @@ function Invoke-New {
         foreach ($question in $brief.Keys) {
             if ($brief[$question]) { $text = Set-Once $text "| $question | |" "| $question | $($brief[$question]) |" "PROJECT.md" }
         }
+        # Planning text only: the mode enables nothing; the agent fills the other Gameplay design rows.
+        if ($InteractionMode) {
+            $mode = @{
+                manual = "manual: the player starts each exchange"
+                ambient = "ambient/social: automatic and bounded; one NPC remarks on a fixed game event (event.php respond true, trigger and cooldown owned by the port), or NPCs talk among themselves if the brief asks for that (needs the planned participant contract)"
+                companion = "companion: the player talks and gives orders, plus bounded reactions to game events"
+                operator = "operator: the player asks for reports and gives orders, or a fixed game event prompts a bounded report (event.php respond true)"
+            }[$InteractionMode]
+            $label = "Interaction mode (manual, ambient/social, companion or operator; a mix is fine)"
+            $text = Set-Once $text "| $label | |" "| $label | $mode (primary, from project.ps1 new; the agent records any mix) |" "PROJECT.md"
+        }
         $missing = @(foreach ($field in @(@("game", $Game), @("starting feature", $Feature))) { if (-not $field[1]) { $field[0] } })
         $text = Set-Stage $text "1." $(if ($missing.Count -eq 0) { "done" } else { "in progress: " + ($missing -join " and ") + " missing" }) "$date, source: brief given to project.ps1 new"
         if ($plan) {
@@ -1545,7 +1563,7 @@ function Invoke-New {
             if ($text.Contains(" | | |`n")) { throw "ports/$Engine/PLAN.md does not fill every plan row of the template's PROJECT.md." }
             # A copied reference plan is only a starting point: the agent checks each row against the
             # starting feature and marks the stage done itself. Stages 3 to 5 do not wait for it.
-            $text = Set-Stage $text "2." "in progress: reference plan copied, not yet checked against the starting feature; the agent revises each row that differs, then marks this done" "$date, source: reference plan from ports/$Engine/PLAN.md, not checked against this brief or verified in game"
+            $text = Set-Stage $text "2." "in progress: reference plan copied, not yet checked against the starting feature; the agent fills the Gameplay design, revises each plan row that differs, then marks this done" "$date, source: reference plan from ports/$Engine/PLAN.md, not checked against this brief or verified in game"
         } elseif ($Engine) {
             $text = Set-Stage $text '2.' 'not started: survey the installed game and qualify the integration before mod code' "$date, source: no reference plan for $Engine; follow docs/ENGINE_PLANNING.md"
             $port = Join-Path $dest "ports\$Engine"
@@ -1583,6 +1601,7 @@ function Invoke-New {
     Say "INFO" "$dest\PROJECT.md holds the brief$(if ($plan) { ", the $Engine reference plan" }), the paths for this id and the stage states; this checkout was not changed."
     $script:done.Add("New project $Id at $dest (from $short)")
     $script:manual.Add("Agent: review the independent copy and commit it before deploy, within the user's existing authorization: git -C $(ConvertTo-PsLiteral $dest) add -A; git -C $(ConvertTo-PsLiteral $dest) commit -m $(ConvertTo-PsLiteral "Start $Name from KAGRENAC AI Mod Maker $short")")
+    $script:manual.Add("Agent: fill the Gameplay design rows in the copy's PROJECT.md from the conversation (docs/GAMEPLAY_DESIGN.md) before engine-port code; server and provider setup does not wait for it")
     $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File $(ConvertTo-PsLiteral "$dest\scripts\project.ps1") deploy -WslDistro <name>")
     $script:manual.Add("Set project_url in the copy's dwemer-mod.json to your own repository when it has one")
 }

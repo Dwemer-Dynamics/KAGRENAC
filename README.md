@@ -34,9 +34,9 @@ you already know. You do not fill in any form first:
 ```text
 Read AGENTS.md, PROJECT.md and docs/getting-started.md, and take me through that route.
 Reuse what I already told you and ask only for what is missing (game, starting feature,
-mod name). Write the integration plan in PROJECT.md before building mod code; set up
-DwemerDistro, the LLM and voice meanwhile. You run the commands and setup; never ask me
-for keys in chat.
+mod name). Write the gameplay design and integration plan in PROJECT.md before building
+mod code; set up DwemerDistro, the LLM and voice meanwhile. You run the commands and
+setup; never ask me for keys in chat.
 ```
 
 ## Get started
@@ -70,6 +70,7 @@ routes. 19000 is DwemerDistro's shared loopback port for custom PHP mods
 | Read | For |
 |---|---|
 | [docs/getting-started.md](docs/getting-started.md) | The route: brief, integration plan, DwemerDistro, LLM and voice tests, first prototype |
+| [docs/GAMEPLAY_DESIGN.md](docs/GAMEPLAY_DESIGN.md) | Gameplay first: the player's loop, interaction modes, who decides, bounded automatic interactions, what exists today |
 | [START_HERE.md](START_HERE.md) | Orientation, feature status, end-to-end walkthrough, troubleshooting by request ID, porting checklist |
 | [SETUP.md](SETUP.md) | Install, web protection, pairing, LLM and voice setup, backups, updates, migrations, removal |
 | [CONNECTORS.md](CONNECTORS.md) | Copyable LLM, voice, NPC selection, profile and memory settings |

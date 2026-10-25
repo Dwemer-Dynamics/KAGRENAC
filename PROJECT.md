@@ -19,6 +19,26 @@ permission.
 | LLM provider (name only) | |
 | DwemerDistro (the one WSL distro name) | |
 
+## Gameplay design
+
+The agent fills this from the conversation before engine-port code, following
+[Gameplay design](docs/GAMEPLAY_DESIGN.md); it is not a form for the user. One short answer
+per row. A basic manual mod needs only a few words in each. JEV in "Decision and stakes"
+today only picks which NPC answers a player's line (`decision.php`); other JEV choices are
+planned.
+
+| Design question | Answer |
+|---|---|
+| Player fantasy (one sentence) | |
+| Observable loop (what the player does, sees and hears in 2-3 minutes) | |
+| Interaction mode (manual, ambient/social, companion or operator; a mix is fine) | |
+| Trigger and bounds (player line, or the one automatic event with its limits) | |
+| Participants and listeners (who is present, who can hear) | |
+| Decision and stakes (what can change; decided by a rule, the engine, JEV or dialogue) | |
+| Actions and the outcome the player sees or hears | |
+| Memory (verified events only; one session or every session) | |
+| Missing mechanism and next bounded probe (or none) | |
+
 ## Integration plan (required before building mod code)
 
 First follow [Engine planning](docs/ENGINE_PLANNING.md). Record the installation survey,
@@ -51,19 +71,19 @@ This table is the one current status of the mod; update a row whenever its state
 changes. A stage is `done` only with evidence of the kind in its second column; otherwise it is
 `not started`, `in progress`, `blocked: <what blocks it>; <next action>; <who>` or `not wanted`.
 Stages 3 to 5 do not wait for stage 2: they run while engine unknowns are researched. Only
-stage 6 needs the integration plan with an option chosen for every Unknown. A blocked stage
-does not stop the others.
+stage 6 needs the Gameplay design and the integration plan with an option chosen for every
+Unknown. A blocked stage does not stop the others.
 
 | Stage | Done only with | State | Latest evidence (date, kind) |
 |---|---|---|---|
 | 1. Brief: game, starting feature, mod name | source: the Brief rows above | not started | |
-| 2. Integration plan; each Unknown researched, with an option chosen | source: every plan row cited, or Unknown with an option chosen | not started | |
+| 2. Integration plan; each Unknown researched, with an option chosen | source: Gameplay design rows filled, with an existing mechanism for the requested loop and any automatic trigger, or the missing one named with its next probe; every plan row cited, or Unknown with an option chosen | not started | |
 | 3. DwemerDistro: own id committed, deployed | build: `project.ps1 deploy -WslDistro <name>` reported the commit deployed (health ok, exposure probes HTTP 403). Doctor output is diagnostic only; pairing is part of 6b | not started | |
 | 4. LLM | provider: the dashboard **Send test**, or a real `turn.php` turn (same server path), returned a real reply from the chosen provider (nothing has to answer on port 1234 unless that is the provider) | not started | |
 | 5. Voice | user-reported or in-game: a PocketTTS reply heard on the dashboard **Speak** test or in the game (a generated WAV is not heard); or `not wanted` | not started | |
 | 6a. Game-side build | build: the port's preflight passed and its build finished into the folders under Paths (Elden Ring: `mod.ps1 doctor`, then `mod.ps1 build` exit 0 with its `build.json`) | not started | |
 | 6b. Game-side runtime, paired | build: the runtime folder assembled from that build (Elden Ring: `mod.ps1 assemble`) and `project.ps1 pair` wrote its private `config.json`; nothing launched yet | not started | |
-| 6c. First prototype | in-game: the thin slice seen and heard in the game, launched by the user | not started | |
+| 6c. First prototype | in-game: the Gameplay design loop seen in the game, launched by the user, with its automatic trigger when one was requested and heard voice when voice was wanted | not started | |
 | 6d. Action `<name>` (one row per action) | in-game: that action's own check; a broad "it works" does not count | not started | |
 | 7. Expand: next feature named | source | not started | |
 

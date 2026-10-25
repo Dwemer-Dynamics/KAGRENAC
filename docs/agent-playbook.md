@@ -68,9 +68,10 @@ HOW TO WORK
 
 STAGES (recipes in docs/feature-recipes/PORT_RECIPES.md; record results in your copy of
 docs/engine-packs/ENGINE_PACK.md)
-0. Scope. Confirm the integration plan in PROJECT.md is filled in (write it if it is not;
-   stages 1 to 3 do not wait for it, but mod code from stage 4 on needs its options
-   chosen), and list the constraints you noted and the authorized items. Do not pause.
+0. Scope. Confirm the Gameplay design (docs/GAMEPLAY_DESIGN.md) and the integration plan
+   in PROJECT.md are filled in (write them from this conversation if not; stages 1 to 3 do
+   not wait for them, but mod code from stage 4 on needs the plan's options chosen), and
+   list the constraints you noted and the authorized items. Do not pause.
 1. Recon. Fill the "SDK facts" part of the engine pack: plugin architecture (native,
    managed or script), lifecycle hooks, main-thread tick, threading and HTTP, NPC
    identity, live observation sources and their freshness, display, follow, the bridge from

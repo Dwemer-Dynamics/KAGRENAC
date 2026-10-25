@@ -22,9 +22,11 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
    next action, tell the user, and say which independent stages you continue with.
 2. Follow the route in [docs/getting-started.md](docs/getting-started.md): ask only for what
    is missing of game, starting feature and mod name, and write the integration plan in
-   PROJECT.md before building mod code. DwemerDistro, server install, client checks, LLM
-   and voice setup do not wait for the plan. Do not replace the user's goal with a
-   different demo.
+   PROJECT.md before building mod code. Fill its Gameplay design from the conversation too
+   ([Gameplay design](docs/GAMEPLAY_DESIGN.md)): the loop the player will see and hear, not
+   only a chat. A copy made before that section existed gets it added, keeping its status and
+   work. DwemerDistro, server install, client checks, LLM and voice setup do not wait
+   for either. Do not replace the user's goal with a different demo.
 3. Inspect real capabilities before promising anything: this repository
    ([README.md](README.md#what-works-today)), the one DwemerDistro the user named
    (`scripts/project.ps1 doctor -WslDistro <name>`; diagnostic only, and a service the user
