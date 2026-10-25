@@ -20,6 +20,9 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Read-only: refuse an unpatched PHP CLI or Apache PHP runtime. Installs no packages (SETUP.md).
+bash "$APP_DIR/scripts/check-php-runtime-security.sh"
+
 # Validate accounts and paths before changing anything.
 if ! id -u "$WEB_USER" >/dev/null 2>&1 || ! id -u "$APP_OWNER" >/dev/null 2>&1; then
     echo "ERROR: user $WEB_USER or $APP_OWNER does not exist." >&2
