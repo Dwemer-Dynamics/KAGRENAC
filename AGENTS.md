@@ -35,6 +35,11 @@ Follow both when a change touches both.
 
 ## Layout and copies
 
+- For sharing, follow [community publishing](docs/PUBLISHING.md). Keep one authored
+  manifest and separate client/server release packages; review include/exclude results.
+  Package from committed source and external build output, never private runtime data.
+  Publishing requires explicit authorization for that repository and release.
+
 - One source repository per mod by default: server at root, client in `client/` or
   `ports/<engine>/`. `project.ps1 new` creates an independent committed-source copy outside
   every checkout/web root and commits nothing. A client/server split is an optional explicit

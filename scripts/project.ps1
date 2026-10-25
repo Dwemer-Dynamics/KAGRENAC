@@ -110,9 +110,13 @@
 #   keeps its specialized checks. Other server defaults and existing pairing stay unchanged.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy")]
+    [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy", "package", "publish")]
     [string]$Command,
     [string]$BuildRoot = "",
+    [string]$ClientDirectory = "",
+    [string]$ReleaseVersion = "",
+    [string]$ReleaseDirectory = "",
+    [string]$ConfirmPublish = "",
     [string]$Destination = "",
     [string]$Id = "",
     [string]$Name = "",
@@ -1697,6 +1701,22 @@ if ($ServerUrl) {
 }
 
 switch ($Command) {
+    "package" {
+        if (-not $ClientDirectory -or -not $ReleaseVersion -or -not $ReleaseDirectory) {
+            throw "package needs -ClientDirectory <build output> -ReleaseVersion <tag> -ReleaseDirectory <new folder>."
+        }
+        $python = Get-Command py -ErrorAction SilentlyContinue
+        if ($python) { & $python.Source -3 (Join-Path $PSScriptRoot 'publish.py') package --repo $repo --client-dir $ClientDirectory --version $ReleaseVersion --output $ReleaseDirectory }
+        else { & python3 (Join-Path $PSScriptRoot 'publish.py') package --repo $repo --client-dir $ClientDirectory --version $ReleaseVersion --output $ReleaseDirectory }
+        exit $LASTEXITCODE
+    }
+    "publish" {
+        if (-not $ReleaseDirectory -or -not $ConfirmPublish) { throw "Review the package, then publish with -ReleaseDirectory <folder> -ConfirmPublish <owner/repo>." }
+        $python = Get-Command py -ErrorAction SilentlyContinue
+        if ($python) { & $python.Source -3 (Join-Path $PSScriptRoot 'publish.py') publish --output $ReleaseDirectory --confirm-publish $ConfirmPublish }
+        else { & python3 (Join-Path $PSScriptRoot 'publish.py') publish --output $ReleaseDirectory --confirm-publish $ConfirmPublish }
+        exit $LASTEXITCODE
+    }
     "new" {
         Invoke-New
     }

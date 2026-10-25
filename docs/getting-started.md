@@ -201,6 +201,8 @@ Resolve an existing install from Core's registry, then the manifest, then the le
 separate explicit `ddistro_custom_mod migrate-root` operation, not an automatic update.
 The template retains its `example-server` manifest identity.
 
+For sharing a completed mod, use [community publishing](PUBLISHING.md): package selected
+client/server files from one repository, then publish after reviewing the exact release.
 For manual installation, maintenance, recovery and removal use [SETUP.md](../SETUP.md).
 For engine-specific build/install acceptance use the port's maintained route and
 [installed startup acceptance](ENGINE_PLANNING.md#installed-startup-acceptance).
