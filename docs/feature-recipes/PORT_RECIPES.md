@@ -57,15 +57,20 @@ replacement and audible voice. Keep those distinct from successful mock/provider
 
 ## Plugin lifecycle and shutdown
 
-**Seam.** `runInteractive()` in `client/src/main.cpp` is the model for plugin glue: one mailbox,
-the pending `request_id`, its captured `GameContext` and client, two bounded worker pools,
-and a loop body that drains the mailbox on the game thread. The console's `/npc`,
+**Seam.** `TurnRuntime` (`client/src/turn_runtime.h`) owns the lifecycle: one mailbox, the
+pending `request_id`, its captured `GameContext` and settings, two bounded worker pools,
+cancels serialized per session and NPC, and `tick()`, which drains the mailbox on the game
+thread. `runInteractive()` in `client/src/main.cpp` shows the glue. The console's `/npc`,
 `/unload` and `/load` call `ConsoleGame` directly and are not part of `GameAdapter`.
 
-- On load, read the config and create the client and mailbox in the plugin entry point.
-- On each main-thread tick, do what one pass of the console loop does: reap finished
-  workers, drain the mailbox, drop the pending reply if `isSameNpc()` fails, then apply
-  results.
+- On load, read the config and create one `TurnRuntime` in the plugin entry point, then
+  register a handler for each action the engine implements.
+- On each main-thread tick, call `tick()`: it reaps finished workers, drains the mailbox,
+  drops the pending reply or voice if `isSameNpc()` fails, then applies results.
+- On unload or quit, call `shutdown()` on the game thread from the engine's unload hook,
+  before the adapter goes away, then destroy the runtime there. The plugin owns it; never
+  leave `shutdown()` or the destructor (both wait) to `DllMain` or a global or static
+  destructor, where the wait can hang.
 - Lifecycle lives in the plugin glue. `GameAdapter` gains no lifecycle methods.
 - **Required on unload or quit:** clear the pending `request_id`, stop applying anything,
   and make sure no worker can call into the module after it unloads. The console waits
@@ -73,7 +78,8 @@ and a loop body that drains the mailbox on the game thread. The console's `/npc`
   [README, Limits](../../client/README.md#limits)). Whether a plugin may wait like that during unload,
   or must stop its threads another way, is an engine fact for ENGINE_PACK.md.
 - **Optional:** a server cancel on quit, as `/quit` sends, only if ENGINE_PACK.md records
-  that it can finish without blocking shutdown or outliving the module.
+  that it can finish without blocking shutdown or outliving the module. Otherwise call
+  `shutdown(message, false)`, which drops the pending turn locally without a cancel.
 - **If no cancel is sent, or it fails** (cancels are best effort and never retried), the
   server may still finish the turn and save it to that session's history as `complete`.
   The player never saw that reply, but the NPC may refer to it later.
@@ -85,9 +91,10 @@ hang on exit.
 
 ## Typed dialogue
 
-**Seam.** The console's plain-line path: `readContext()` on the game thread, a fresh
+**Seam.** `TurnRuntime::submitTurn()`: `readContext()` on the game thread, a fresh
 `newRequestId()`, `sendTurn()` on a worker, the result back through the mailbox, then
-`handleResult()`, which checks the request ID and `isSameNpc()` before `applyResult()`.
+`tick()`, which checks the request ID and `isSameNpc()` before showing the reply and
+running actions.
 
 - Take the player's text from engine input. Read the context at send time, not later.
 - If every worker is busy, a cancel for that NPC in that session is still out, or no
@@ -102,12 +109,13 @@ HTTP.
 
 ## Actions
 
-**Seam.** One explicit branch per action in `applyResult()`, one `GameAdapter` method and
-both allowlists. Follow [WAVE_ACTION.md](../../WAVE_ACTION.md) for
+**Seam.** One handler per action registered with `TurnRuntime::setActionHandler()`, one
+`GameAdapter` method and both allowlists; an allowlisted action without a handler is rejected. Follow [WAVE_ACTION.md](../../WAVE_ACTION.md) for
 any new action. Do not copy its steps here.
 
-- Implement `followPlayer()` with the engine's own follow behaviour. The target is always
-  the NPC the request was sent to.
+- Implement `followPlayer()` with the engine's own follow behaviour and register it, or
+  leave it out in a port without actions. The target is always the NPC the request was
+  sent to.
 - Add other actions only if authorized. Every action passes the gates in
   [Awareness and actions](#awareness-and-actions).
 
@@ -122,7 +130,7 @@ any new action. Do not copy its steps here.
 sent as `context` and reaches the model as quoted, untrusted data (`context_prompt()` in
 `lib/llm.php`). The prompt offers only the server's `allowed_actions` (`actions_prompt()`),
 and with none it tells the model it cannot act. Actions then pass both allowlists and one
-handler each in `applyResult()`. The loop:
+registered handler each in `TurnRuntime`. The loop:
 
 1. **Observe.** Send only what the game actually read, on a thread ENGINE_PACK.md records
    as safe for that read. The plan names each observation's source (a cited engine read)
@@ -200,8 +208,9 @@ The console sends no automatic events.
 
 ## Sessions, saves and branches
 
-**Seam.** `/session <id>` in `client/src/main.cpp`. A client's settings are fixed when it is
-created, so switching session means creating a new client with the new `session_id`.
+**Seam.** `TurnRuntime::setSession()`, called by `/session <id>` in `client/src/main.cpp`. A
+client's settings are fixed when it is created, so switching session drops anything pending
+and creates a new client with the new `session_id`.
 Requests already out keep the client they started with.
 
 - Set `session_id` per save at runtime, derived from a stable save identity and valid
@@ -225,8 +234,9 @@ commands in [README](../../client/README.md#npc-bios-knowledge-and-checkpoints).
 
 ## Voice (optional)
 
-**Seam.** `speak()` runs on the worker after the reply and writes a WAV. `applyResult()`
-then calls `playVoice()` on the game thread. The console's `playVoice()` only prints where
+**Seam.** After `tick()` has shown the reply and run its actions, `speak()` runs on a worker
+and writes a WAV. A later `tick()` calls `playVoice()` on the game thread only if that turn
+was not cancelled or replaced, the session is unchanged and `isSameNpc()` still holds. The console's `playVoice()` only prints where
 the WAV was saved. `listen()` turns a WAV into text before the turn.
 
 - Only with voice authorized and services set up ([CONNECTORS, Voice](../../CONNECTORS.md#voice)).

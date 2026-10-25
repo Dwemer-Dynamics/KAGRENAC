@@ -1,9 +1,10 @@
 // Console "fake game" that talks to the KagrenacServer AI server.
 //
 // The main thread plays the role of the game thread: it runs a small tick loop
-// and is the only thread that calls the GameAdapter. Network calls run on worker
-// threads and hand their results back through a mailbox. A real engine plugin
-// should follow the same rule.
+// and is the only thread that calls the GameAdapter. The turn lifecycle (workers,
+// mailbox, stale replies, cancellation, actions, voice) is TurnRuntime; this file
+// only parses the command line and console input. A real engine plugin owns its
+// own TurnRuntime and calls tick() from its game thread the same way.
 //
 // Usage:
 //   KagrenacClient.exe                       interactive console (/unload and /load simulate the NPC leaving)
@@ -16,12 +17,9 @@
 //   KagrenacClient.exe --react item_given "The player gave a lantern."   the Guide reacts to it, exit
 //   add --config my.json to use another private config file
 
-#include <algorithm>
 #include <chrono>
 #include <deque>
-#include <future>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -33,26 +31,18 @@
 #include "ai_client.h"
 #include "config.h"
 #include "console_game.h"
+#include "turn_runtime.h"
 
 namespace {
 
-// A server cancellation that finished (error is "" when the server confirmed it).
-struct CancelDone {
-    std::string sessionId;
-    std::string npcId;
-    unsigned long long id = 0;
-    std::string error;
-};
+// Ends the result-report status line: the console's handler is a simulation, not a game.
+constexpr const char* kConsoleReportSource = "client-reported, console simulation";
 
-// Hand-off between threads. Only the main thread reads from it.
-struct Mailbox {
+// Typed lines, handed from the blocking input thread to the main thread.
+struct Input {
     std::mutex mutex;
-    std::deque<std::string> lines;      // typed by the player
-    std::deque<TurnResult> results;     // finished turns
-    std::deque<CancelDone> cancels;     // finished server cancellations
-    std::deque<std::string> messages;   // status from other workers
-    bool inputClosed = false;
-    bool reportsOff = false;            // set when the server has no result.php
+    std::deque<std::string> lines;
+    bool closed = false;
 };
 
 std::string toUtf8(const std::wstring& wide)
@@ -73,10 +63,16 @@ std::filesystem::path exeFolder()
     return std::filesystem::path(buffer).parent_path();
 }
 
-bool isAllowed(const Config& config, const std::string& action)
+// The console's one action handler. The runtime calls it only for an allowlisted
+// follow_player, with the NPC the request was sent to. It returns true only because
+// ConsoleGame overrides followPlayer(); a port's handler returns false when its engine
+// did not run the action.
+void addConsoleHandlers(TurnRuntime& runtime, GameAdapter& game)
 {
-    const std::vector<std::string>& allowed = config.allowedActions;
-    return std::find(allowed.begin(), allowed.end(), action) != allowed.end();
+    runtime.setActionHandler("follow_player", [&game](const std::string& npcId) {
+        game.followPlayer(npcId);
+        return true;
+    });
 }
 
 // Status line for a log-only game event (event.php with respond false).
@@ -86,63 +82,6 @@ std::string describeLoggedEvent(const TurnResult& result, const std::string& typ
         return "Event not logged (not retried; request " + result.requestId + "): " + result.error;
     }
     return "Event " + type + " logged by the server (log only; no reply or actions; request " + result.requestId + ").";
-}
-
-// Status line for a finished server cancellation. Failed cancels are never retried.
-std::string describeCancel(const CancelDone& done)
-{
-    if (!done.error.empty()) {
-        return "Server cancel failed (not retried; you can send again): " + done.error;
-    }
-    return "Server confirmed the cancel for " + done.npcId + " in session " + done.sessionId + ".";
-}
-
-// Runs on a worker thread: optional speech-to-text, the AI turn, then optional voice.
-// With eventType set, the line is an explicit game event the NPC reacts to (event.php,
-// respond true); everything after the request is the same as for a typed line.
-TurnResult runTurn(const AiClient& client, const std::string& requestId, const GameContext& context,
-                   std::string text, const std::filesystem::path& speechWav, const std::string& eventType = "")
-{
-    const Config& config = client.config();
-    std::string heard;
-    // Voice calls get their own request ids, with this turn's id as their parent, so the
-    // server's Connector calls page can show them under the turn.
-    std::string listenRequestId;
-    if (!speechWav.empty()) {
-        std::string error;
-        listenRequestId = newRequestId("stt");
-        if (!client.listen(speechWav, text, error, listenRequestId, requestId)) {
-            TurnResult failed;
-            failed.requestId = requestId;
-            failed.listenRequestId = listenRequestId;
-            failed.error = "speech to text failed (" + error + "), please type instead";
-            return failed;
-        }
-        heard = text;
-        if (text.empty()) {
-            TurnResult failed;
-            failed.requestId = requestId;
-            failed.listenRequestId = listenRequestId;
-            failed.error = "no speech was recognized, please type instead";
-            return failed;
-        }
-    }
-
-    TurnResult result = eventType.empty() ? client.sendTurn(requestId, context, text)
-                                          : client.sendEvent(requestId, context, eventType, text, true);
-    result.heard = heard;
-    result.listenRequestId = listenRequestId;
-    if (result.ok && config.voiceEnabled) {
-        std::filesystem::path wav = std::filesystem::temp_directory_path() / "dwemer-ai-example" / (requestId + ".wav");
-        std::string error;
-        result.speakRequestId = newRequestId("tts");
-        if (client.speak(result.reply, wav, error, result.speakRequestId, requestId, context.npcId)) {
-            result.voiceFile = wav;
-        } else {
-            result.voiceError = error;
-        }
-    }
-    return result;
 }
 
 // Optional NPC selection demo with two fictional NPCs; the guide is the baseline.
@@ -161,87 +100,6 @@ std::string describeDecision(const AiClient& client, const std::string& transcri
         + decision.requestId + "). Display only; still talking to the same NPC.";
 }
 
-// One line naming every request id of a turn, printed on success and failure, so the server's
-// Logs and Connector calls pages can be searched for them.
-std::string traceLine(const TurnResult& result)
-{
-    std::string line = "Trace: turn " + result.requestId;
-    if (!result.listenRequestId.empty()) {
-        line += ", speech-to-text " + result.listenRequestId;
-    }
-    if (!result.speakRequestId.empty()) {
-        line += ", voice " + result.speakRequestId;
-    }
-    return line + (result.ok ? " (ok)" : " (failed)");
-}
-
-// Runs on the game thread. Only allowlisted actions with a known handler reach the game.
-// Returns what happened to each returned action, for the optional result report.
-std::vector<ActionReport> applyResult(GameAdapter& game, const Config& config, const GameContext& context,
-                                      const TurnResult& result)
-{
-    std::vector<ActionReport> reports;
-    if (!result.heard.empty()) {
-        game.showMessage("You said: " + result.heard);
-    }
-    if (!result.ok) {
-        // Never retried automatically: a retry could repeat a reply or an action.
-        game.showMessage("AI unavailable: " + result.error + " (not retried; send again for a new request)");
-        game.showMessage(traceLine(result));
-        return reports;
-    }
-    game.showSubtitle(context.npcName, result.reply);
-    for (const TurnAction& action : result.actions) {
-        bool reportable = reports.size() < 4 && !action.name.empty();  // result.php limits
-        if (!action.problem.empty()) {
-            game.showMessage("Rejected action " + (action.name.empty() ? std::string("(malformed)") : action.name)
-                             + ": " + action.problem);
-            if (reportable) {
-                reports.push_back({action.name, "rejected", action.problem});
-            }
-        } else if (action.name == "follow_player" && isAllowed(config, action.name)) {
-            // The target is the NPC this request was sent to; a sent target_id was checked
-            // against it already.
-            game.followPlayer(context.npcId);
-            if (reportable) {
-                reports.push_back({action.name, "handled", ""});
-            }
-        } else {
-            game.showMessage("Rejected action not allowed by this mod: " + action.name);
-            if (reportable) {
-                reports.push_back({action.name, "rejected", "not allowed by this mod"});
-            }
-        }
-    }
-    if (!result.voiceFile.empty()) {
-        game.playVoice(result.voiceFile);
-    } else if (!result.voiceError.empty()) {
-        game.showMessage("Voice unavailable, text only: " + result.voiceError);
-    }
-    game.showMessage(traceLine(result));
-    return reports;
-}
-
-// Runs on a worker thread (or after the turn in --say). Returns a status line for the game.
-// A failed report never changes the reply or actions already applied.
-std::string sendReport(const AiClient& client, const std::string& requestId, const std::string& npcId,
-                       const std::vector<ActionReport>& reports, bool& unsupported)
-{
-    std::string error = client.reportResult(requestId, npcId, reports, unsupported);
-    if (unsupported) {
-        return "Result reports off: this server has no result.php.";
-    }
-    if (!error.empty()) {
-        return "Result report failed (reply and actions kept): " + error;
-    }
-    std::string names;
-    for (const ActionReport& report : reports) {
-        names += (names.empty() ? "" : ", ") + report.name + " " + report.status;
-    }
-    // This is what the console client did, not a receipt from a real game engine.
-    return "Result reported to server: " + names + " (client-reported, console simulation).";
-}
-
 // "/event <type> <text>": splits off the type. Returns false when either part is missing.
 bool splitEvent(const std::string& rest, std::string& type, std::string& text)
 {
@@ -254,164 +112,40 @@ bool splitEvent(const std::string& rest, std::string& type, std::string& text)
     return !type.empty() && !text.empty();
 }
 
-// Each request keeps the client (and so the session and settings) it was started with.
-// /session makes a new client; requests already out keep using the old one.
-using ClientPtr = std::shared_ptr<const AiClient>;
-
 // console is used only for the /npc, /unload and /load test commands; everything else goes
-// through the GameAdapter interface, as a real engine port would.
-int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
+// through the GameAdapter interface and TurnRuntime, as a real engine port would.
+int runInteractive(TurnRuntime& runtime, GameAdapter& game, ConsoleGame& console)
 {
-    auto mailbox = std::make_shared<Mailbox>();
+    auto input = std::make_shared<Input>();
     game.showMessage("Type to talk. Commands: /cancel  /listen <file.wav>  /decide <text>  /event <type> <text>"
                      "  /react <type> <text>  /npc guide|scout  /session <id>  /unload  /load  /quit");
 
-    // getline blocks. Shared ownership keeps its mailbox alive until input ends.
-    // /quit also ends this thread; network workers are joined below.
-    std::thread([mailbox] {
+    // getline blocks. Shared ownership keeps its queue alive until input ends.
+    // /quit also ends this thread; network workers are joined by runtime.shutdown().
+    std::thread([input] {
         std::string line;
         while (std::getline(std::cin, line)) {
-            std::lock_guard<std::mutex> lock(mailbox->mutex);
-            mailbox->lines.push_back(line);
+            std::lock_guard<std::mutex> lock(input->mutex);
+            input->lines.push_back(line);
             if (line == "/quit") {
                 break;
             }
         }
-        std::lock_guard<std::mutex> lock(mailbox->mutex);
-        mailbox->inputClosed = true;
+        std::lock_guard<std::mutex> lock(input->mutex);
+        input->closed = true;
     }).detach();
 
-    std::vector<std::future<void>> workers;
-    constexpr size_t maxWorkers = 4;  // turn, event, decision, voice and report requests
-    // Server cancellations have their own small pool, so a cancel is sent at once even while
-    // every normal worker waits on a slow provider. A new turn starts only while a cancel slot
-    // stays free for it, so dropping the pending turn can always send its cancel. Bounded:
-    // at most maxWorkers + maxCancelWorkers threads.
-    std::vector<std::future<void>> cancelWorkers;
-    constexpr size_t maxCancelWorkers = 2;
-    std::string pendingRequestId;  // the only turn whose result we still want
-    std::string lastAppliedRequestId;  // a completed reply is applied at most once
-    GameContext pendingContext;
-    ClientPtr pendingClient;  // the client (session, allowlist) the pending turn was sent with
-    // Server cancels still out, by session and NPC id. A cancel makes every turn the server has
-    // for that NPC in that session stale, so a new turn there sent before it is answered could be
-    // cancelled by it. New turns to that NPC in that session wait until it is answered or fails.
-    // Other NPCs and sessions are not held up. Only the newest cancel's answer clears it.
-    std::map<std::pair<std::string, std::string>, unsigned long long> cancelling;
-    unsigned long long lastCancelId = 0;
-
-    // Tells the server to drop the in-flight turn, in the session it was sent in. The reply is
-    // already discarded locally. Returns false when no cancel slot was free (see maxCancelWorkers;
-    // not expected for the pending turn). A failed cancel is reported, never retried.
-    auto queueCancel = [&](const ClientPtr& sender, const std::string& npcId) {
-        if (cancelWorkers.size() >= maxCancelWorkers) {
-            return false;
-        }
-        unsigned long long id = ++lastCancelId;
-        std::string sessionId = sender->config().sessionId;
-        cancelling[{sessionId, npcId}] = id;
-        cancelWorkers.push_back(std::async(std::launch::async, [sender, mailbox, sessionId, npcId, id] {
-            std::string error = sender->cancel(npcId);
-            std::lock_guard<std::mutex> lock(mailbox->mutex);
-            mailbox->cancels.push_back({sessionId, npcId, id, error});
-        }));
-        return true;
-    };
-    // Forgets the pending turn, shows message and cancels the turn on the server. Used by
-    // /cancel, /quit, /npc, /session and when the NPC leaves. Returns false if nothing was pending.
-    auto dropPending = [&](const std::string& message) {
-        if (pendingRequestId.empty()) {
-            return false;
-        }
-        pendingRequestId.clear();
-        game.showMessage(message);
-        if (!queueCancel(pendingClient, pendingContext.npcId)) {
-            game.showMessage("Cancel slots busy; reply discarded locally. Server cancellation was not sent.");
-        }
-        return true;
-    };
-
-    auto handleResult = [&](const TurnResult& result) {
-        if (!lastAppliedRequestId.empty() && result.requestId == lastAppliedRequestId) {
-            game.showMessage("Ignored a second copy of a reply that was already applied.");
-            return;
-        }
-        if (result.requestId != pendingRequestId) {
-            game.showMessage("Ignored a stale reply (request " + result.requestId + "; it was cancelled or replaced).");
-            return;
-        }
-        pendingRequestId.clear();
-        // Recheck on the game thread right before applying: the NPC may have been unloaded,
-        // deleted or replaced while the request was out. Nothing is applied or reported then.
-        if (!game.isSameNpc(pendingContext)) {
-            game.showMessage("Dropped the reply and its actions: " + pendingContext.npcName + " is no longer here (request "
-                             + result.requestId + ").");
-            return;
-        }
-        lastAppliedRequestId = result.requestId;
-        std::vector<ActionReport> reports = applyResult(game, pendingClient->config(), pendingContext, result);
-        bool reportsOff = false;
-        {
-            std::lock_guard<std::mutex> lock(mailbox->mutex);
-            reportsOff = mailbox->reportsOff;
-        }
-        // Optional report, queued after the game thread applied the actions. Skipped when
-        // there is nothing to report or the server could not log the turn.
-        if (reports.empty() || !result.logged || reportsOff) {
-            return;
-        }
-        if (workers.size() >= maxWorkers) {
-            game.showMessage("Workers busy; result report skipped (reply and actions kept).");
-            return;
-        }
-        workers.push_back(std::async(std::launch::async, [sender = pendingClient, mailbox, requestId = result.requestId,
-                                                           npcId = pendingContext.npcId, reports] {
-            bool unsupported = false;
-            std::string message = sendReport(*sender, requestId, npcId, reports, unsupported);
-            std::lock_guard<std::mutex> lock(mailbox->mutex);
-            mailbox->reportsOff = mailbox->reportsOff || unsupported;
-            mailbox->messages.push_back(message);
-        }));
-    };
-
     bool running = true;
-    auto reap = [](std::vector<std::future<void>>& pool) {
-        for (auto worker = pool.begin(); worker != pool.end();) {
-            if (worker->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                worker->get();
-                worker = pool.erase(worker);
-            } else {
-                ++worker;
-            }
-        }
-    };
+    std::string quitMessage;
     while (running) {
-        reap(workers);
-        reap(cancelWorkers);
         std::deque<std::string> lines;
-        std::deque<TurnResult> results;
-        std::deque<CancelDone> cancels;
-        std::deque<std::string> messages;
         bool inputClosed = false;
         {
-            std::lock_guard<std::mutex> lock(mailbox->mutex);
-            lines.swap(mailbox->lines);
-            results.swap(mailbox->results);
-            cancels.swap(mailbox->cancels);
-            messages.swap(mailbox->messages);
-            inputClosed = mailbox->inputClosed;
+            std::lock_guard<std::mutex> lock(input->mutex);
+            lines.swap(input->lines);
+            inputClosed = input->closed;
         }
 
-        for (const std::string& message : messages) {
-            game.showMessage(message);
-        }
-        for (const CancelDone& done : cancels) {
-            auto waiting = cancelling.find({done.sessionId, done.npcId});
-            if (waiting != cancelling.end() && waiting->second == done.id) {
-                cancelling.erase(waiting);
-            }
-            game.showMessage(describeCancel(done));
-        }
         for (const std::string& line : lines) {
             if (line.empty()) {
                 continue;
@@ -419,12 +153,12 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
             if (line == "/quit") {
                 // Shutdown: the pending reply is never applied, and the server is told so it
                 // saves no history for it.
-                dropPending("Quitting: dropped the pending reply for " + pendingContext.npcName + ".");
+                quitMessage = "Quitting: dropped the pending reply for " + runtime.pendingNpcName() + ".";
                 running = false;
                 break;
             }
             if (line == "/cancel") {
-                if (!dropPending("Cancelled.")) {
+                if (!runtime.cancel("Cancelled.")) {
                     game.showMessage("Nothing to cancel.");
                 }
                 continue;
@@ -443,8 +177,9 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
                     continue;
                 }
                 // The player turned away: the other NPC's reply must not arrive later.
-                if (!pendingRequestId.empty() && game.readContext().npcId != pendingContext.npcId) {
-                    dropPending("Dropped the pending reply for " + pendingContext.npcName + ": you turned to another NPC.");
+                const GameContext* pending = runtime.pendingTurn();
+                if (pending && game.readContext().npcId != pending->npcId) {
+                    runtime.cancel("Dropped the pending reply for " + pending->npcName + ": you turned to another NPC.");
                 }
                 continue;
             }
@@ -454,14 +189,12 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
                     game.showMessage("Session ids are 1-64 characters of A-Z a-z 0-9 _ . : -");
                     continue;
                 }
-                if (sessionId == client->config().sessionId) {
+                if (sessionId == runtime.settings().sessionId) {
                     game.showMessage("Already in session " + sessionId + ".");
                     continue;
                 }
-                dropPending("Dropped the pending reply for " + pendingContext.npcName + ": the session changed.");
-                Config next = client->config();
-                next.sessionId = sessionId;
-                client = std::make_shared<const AiClient>(next);
+                runtime.setSession(sessionId, "Dropped the pending reply for " + runtime.pendingNpcName()
+                                                  + ": the session changed.");
                 // This client never reads or changes game saves. Server checkpoints are matched
                 // to saves by hand, by this id.
                 game.showMessage("Session is now " + sessionId + " (manual, like loading another save). "
@@ -470,15 +203,9 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
             }
 
             if (line.rfind("/decide ", 0) == 0) {
-                if (workers.size() >= maxWorkers) {
-                    game.showMessage("Workers busy; please try again when a request finishes.");
-                    continue;
-                }
-                workers.push_back(std::async(std::launch::async, [client, mailbox, transcript = line.substr(8)] {
-                    std::string message = describeDecision(*client, transcript);
-                    std::lock_guard<std::mutex> lock(mailbox->mutex);
-                    mailbox->messages.push_back(message);
-                }));
+                runtime.startJob([transcript = line.substr(8)](const AiClient& client) {
+                    return describeDecision(client, transcript);
+                });
                 continue;
             }
             if (line.rfind("/event ", 0) == 0) {
@@ -489,16 +216,9 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
                     game.showMessage("Use /event <type> <text>; types: location_entered item_given combat_started combat_ended");
                     continue;
                 }
-                if (workers.size() >= maxWorkers) {
-                    game.showMessage("Workers busy; please try again when a request finishes.");
-                    continue;
-                }
-                workers.push_back(std::async(std::launch::async, [client, mailbox, context = game.readContext(), type, text] {
-                    TurnResult result = client->sendEvent(newRequestId("evt"), context, type, text, false);
-                    std::string message = describeLoggedEvent(result, type);
-                    std::lock_guard<std::mutex> lock(mailbox->mutex);
-                    mailbox->messages.push_back(message);
-                }));
+                runtime.startJob([context = game.readContext(), type, text](const AiClient& client) {
+                    return describeLoggedEvent(client.sendEvent(newRequestId("evt"), context, type, text, false), type);
+                });
                 continue;
             }
 
@@ -517,78 +237,36 @@ int runInteractive(ClientPtr client, GameAdapter& game, ConsoleGame& console)
                 game.showMessage("Unknown command.");
                 continue;
             }
-
             // A new turn replaces any pending one; the server marks the old one stale.
-            if (workers.size() >= maxWorkers) {
-                game.showMessage("Workers busy; please try again when a request finishes.");
-                continue;
-            }
-            GameContext context = game.readContext();
-            if (context.npcId.empty()) {
-                game.showMessage("No NPC here to talk to.");
-                continue;
-            }
-            if (cancelling.count({client->config().sessionId, context.npcId}) > 0) {
-                game.showMessage("Waiting for the server to confirm the cancel for " + context.npcName
-                                 + "; send again after it answers (not queued).");
-                continue;
-            }
-            // Keep one cancel slot free for this new turn, after any cancel for the old one.
-            bool replacesOther = !pendingRequestId.empty() && context.npcId != pendingContext.npcId;
-            if (cancelWorkers.size() + (replacesOther ? 1 : 0) >= maxCancelWorkers) {
-                game.showMessage("Waiting for a server cancel to answer; send again after it does (not queued).");
-                continue;
-            }
-            if (replacesOther && !queueCancel(pendingClient, pendingContext.npcId)) {
-                // Not expected: the check above left a slot. The old reply is not wanted either way.
-                game.showMessage("Cancel slots busy; old reply discarded locally. Server cancellation was not sent.");
-            }
-            pendingContext = context;
-            pendingClient = client;
-            pendingRequestId = newRequestId();
-            game.showMessage("(waiting for " + pendingContext.npcName + "...)");
-            workers.push_back(std::async(std::launch::async, [sender = client, mailbox, requestId = pendingRequestId,
-                                                               context = pendingContext, text, speechWav, eventType] {
-                TurnResult result = runTurn(*sender, requestId, context, text, speechWav, eventType);
-                std::lock_guard<std::mutex> lock(mailbox->mutex);
-                mailbox->results.push_back(result);
-            }));
-        }
-        // If the NPC left while its reply is out, drop the reply now and tell the server.
-        if (running && !pendingRequestId.empty() && !game.isSameNpc(pendingContext)) {
-            dropPending("Dropped the pending reply for " + pendingContext.npcName + ": " + pendingContext.npcName
-                        + " is no longer here.");
+            runtime.submitTurn(text, speechWav, eventType);
         }
         if (running) {
-            for (const TurnResult& result : results) {
-                handleResult(result);
-            }
+            runtime.tick();
         }
-
-        if (inputClosed && pendingRequestId.empty()) {
+        if (inputClosed && !runtime.hasPending()) {
             running = false;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-
-    // Quit drops late replies and actions. At most maxWorkers + maxCancelWorkers requests are
-    // out and each blocking HTTP call ends within its timeouts, so this wait is bounded. Nothing they return is applied.
-    pendingRequestId.clear();
-    if (!workers.empty() || !cancelWorkers.empty()) {
-        game.showMessage("Waiting for " + std::to_string(workers.size() + cancelWorkers.size())
-                         + " request(s) to finish; replies are not applied.");
-    }
-    for (std::future<void>& worker : cancelWorkers) {
-        worker.get();
-    }
-    for (std::future<void>& worker : workers) {
-        worker.get();
-    }
-    std::lock_guard<std::mutex> lock(mailbox->mutex);
-    for (const CancelDone& done : mailbox->cancels) {
-        game.showMessage(describeCancel(done));
-    }
+    // Quit drops late replies, actions and voice, and waits for the bounded workers.
+    runtime.shutdown(quitMessage);
     return 0;
+}
+
+// --say, --listen and --react: one turn through the same runtime, then exit. The subtitle
+// and actions are shown before any voice finishes.
+int runOnce(TurnRuntime& runtime, const std::string& text, const std::filesystem::path& speechWav,
+            const std::string& eventType)
+{
+    if (runtime.submitTurn(text, speechWav, eventType).empty()) {
+        return 1;
+    }
+    while (!runtime.idle()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        runtime.tick();
+    }
+    runtime.shutdown("");
+    return runtime.lastTurnOk() ? 0 : 1;
 }
 
 }  // namespace
@@ -644,8 +322,7 @@ int wmain(int argc, wchar_t** argv)
         return 2;
     }
 
-    auto shared = std::make_shared<const AiClient>(config);
-    const AiClient& client = *shared;
+    const AiClient client(config);
     ConsoleGame game;
 
     if (mode == "--health") {
@@ -674,17 +351,14 @@ int wmain(int argc, wchar_t** argv)
         game.showMessage(message);
         return message.rfind("Decision:", 0) == 0 ? 0 : 1;
     }
-    if (mode == "--say" || mode == "--listen" || mode == "--react") {
-        GameContext context = game.readContext();
-        std::string text = mode == "--listen" ? "" : value;
-        std::filesystem::path speechWav = mode == "--listen" ? std::filesystem::u8path(value) : std::filesystem::path();
-        TurnResult result = runTurn(client, newRequestId(), context, text, speechWav, eventType);
-        std::vector<ActionReport> reports = applyResult(game, config, context, result);
-        if (!reports.empty() && result.logged) {
-            bool unsupported = false;
-            game.showMessage(sendReport(client, result.requestId, context.npcId, reports, unsupported));
-        }
-        return result.ok ? 0 : 1;
+
+    TurnRuntime runtime(game, config, kConsoleReportSource);
+    addConsoleHandlers(runtime, game);
+    if (mode == "--say" || mode == "--react") {
+        return runOnce(runtime, value, {}, eventType);
     }
-    return runInteractive(shared, game, game);
+    if (mode == "--listen") {
+        return runOnce(runtime, "", std::filesystem::u8path(value), "");
+    }
+    return runInteractive(runtime, game, game);
 }

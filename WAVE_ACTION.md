@@ -54,15 +54,15 @@ void wave(const std::string& npcId) override
 }
 ```
 
-In `client/src/main.cpp`'s `applyResult()`, insert this branch after the `follow_player` branch,
-before the final rejection `else`. It reports the action like `follow_player` does:
+In `client/src/main.cpp`'s `addConsoleHandlers()`, register its handler after the
+`follow_player` one. `TurnRuntime` calls it only when `wave` is allowlisted, with the NPC
+the request was sent to, and reports it like `follow_player`:
 
 ```cpp
-} else if (action.name == "wave" && isAllowed(config, action.name)) {
-    game.wave(context.npcId);
-    if (reportable) {
-        reports.push_back({action.name, "handled", ""});
-    }
+runtime.setActionHandler("wave", [&game](const std::string& npcId) {
+    game.wave(npcId);
+    return true;
+});
 ```
 
 The client already accepts an action without `args`, so `ai_client.cpp` needs no change.
