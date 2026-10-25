@@ -10,6 +10,8 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${EXAMPLE_AI_CONFIG:-$APP_DIR/config/config.php}"
 BASE="${1:-http://127.0.0.1:19000/custom-mods/KagrenacServer}"
 TOKEN="$(php -r '$c = require $argv[1]; echo $c["token"];' "$CONFIG")"
+FOLLOW_ALLOWED="$(php -r '$c = require $argv[1]; echo in_array("follow_player", $c["allowed_actions"] ?? ["follow_player"], true) ? "1" : "0";' "$CONFIG")"
+REJECTED_ACTION="$(php -r '$c = require $argv[1]; $i = 0; do { $name = "smoke_unknown_" . $i++; } while (in_array($name, $c["allowed_actions"] ?? ["follow_player"], true)); echo $name;' "$CONFIG")"
 RUN="$(date +%s)$RANDOM"
 CANCEL="{\"protocol\":1,\"session_id\":\"smoke-$RUN\",\"npc_id\":\"npc_smoke\"}"
 failures=0
@@ -48,14 +50,20 @@ expect "wrong protocol" 400 'bad_request' "$(post turn.php '{"protocol":2}' "$TO
 expect "bad npc id" 400 'npc.id' "$(post turn.php '{"protocol":1,"request_id":"abcdefgh","session_id":"s","npc":{"id":"bad id!","name":"x"},"player":{"name":"p"},"text":"hi"}' "$TOKEN")"
 expect "too large" 413 'too_large' "$(post turn.php "{\"protocol\":1,\"text\":\"$big_text\"}" "$TOKEN")"
 expect "mock reply" 200 'Smokey heard you say: hello' "$(post turn.php "$(turn_json "r-$RUN-2" hello)" "$TOKEN")"
-expect "follow allowed" 200 '"actions":[{"name":"follow_player","args":{"target_id":"npc_smoke"}}]' "$(post turn.php "$(turn_json "r-$RUN-3" 'follow me')" "$TOKEN")"
-expect "dance rejected" 200 '"actions":[],"rejected_actions":["dance"]' "$(post turn.php "$(turn_json "r-$RUN-4" 'dance for me')" "$TOKEN")"
-expect "duplicate id" 409 'duplicate_request' "$(post turn.php "$(turn_json "r-$RUN-4" 'dance for me')" "$TOKEN")"
+if [ "$FOLLOW_ALLOWED" = "1" ]; then
+    follow_reply='"actions":[{"name":"follow_player","args":{"target_id":"npc_smoke"}}]'
+else
+    follow_reply='"actions":[],"rejected_actions":["follow_player"]'
+fi
+expect "follow respects server allowlist" 200 "$follow_reply" "$(post turn.php "$(turn_json "r-$RUN-3" 'follow me')" "$TOKEN")"
+# The mock echoes this tag; choose a name outside this mod's allowlist, including custom actions.
+expect "unknown action rejected" 200 "\"actions\":[],\"rejected_actions\":[\"$REJECTED_ACTION\"]" "$(post turn.php "$(turn_json "r-$RUN-4" "[ACTION:$REJECTED_ACTION]")" "$TOKEN")"
+expect "duplicate id" 409 'duplicate_request' "$(post turn.php "$(turn_json "r-$RUN-4" "[ACTION:$REJECTED_ACTION]")" "$TOKEN")"
 # offer_json <request_id> <text> <offered_actions JSON>: a turn whose game offers only these actions.
 offer_json() {
     printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","npc":{"id":"npc_smoke","name":"Smokey"},"player":{"name":"Tester"},"text":"%s","offered_actions":%s}' "$1" "$RUN" "$2" "$3"
 }
-expect "offered narrowed" 200 '"actions":[{"name":"follow_player","args":{"target_id":"npc_smoke"}}]' "$(post turn.php "$(offer_json "o-$RUN-1" 'follow me' '["follow_player","hold_position"]')" "$TOKEN")"
+expect "offered narrowed" 200 "$follow_reply" "$(post turn.php "$(offer_json "o-$RUN-1" 'follow me' '["follow_player","hold_position"]')" "$TOKEN")"
 expect "offered excludes" 200 '"actions":[],"rejected_actions":["follow_player"]' "$(post turn.php "$(offer_json "o-$RUN-2" 'follow me' '["hold_position"]')" "$TOKEN")"
 expect "offered empty" 200 '"actions":[],"rejected_actions":["follow_player"]' "$(post turn.php "$(offer_json "o-$RUN-3" 'follow me' '[]')" "$TOKEN")"
 expect "offered bad name" 400 'offered_actions' "$(post turn.php "$(offer_json "o-$RUN-4" 'follow me' '["follow player"]')" "$TOKEN")"
@@ -65,9 +73,14 @@ expect "offered too many" 400 'offered_actions' "$(post turn.php "$(offer_json "
 result_json() {
     printf '{"protocol":1,"request_id":"%s","session_id":"smoke-%s","npc_id":"npc_smoke","results":[{"name":"follow_player","status":"%s"}]}' "$1" "$RUN" "$2"
 }
-expect "result reported" 200 '"repeat":false' "$(post result.php "$(result_json "r-$RUN-3" handled)" "$TOKEN")"
-expect "result repeat" 200 '"repeat":true' "$(post result.php "$(result_json "r-$RUN-3" handled)" "$TOKEN")"
-expect "result changed" 409 'already_reported' "$(post result.php "$(result_json "r-$RUN-3" failed)" "$TOKEN")"
+if [ "$FOLLOW_ALLOWED" = "1" ]; then
+    expect "result reported" 200 '"repeat":false' "$(post result.php "$(result_json "r-$RUN-3" handled)" "$TOKEN")"
+    expect "result repeat" 200 '"repeat":true' "$(post result.php "$(result_json "r-$RUN-3" handled)" "$TOKEN")"
+    expect "result changed" 409 'already_reported' "$(post result.php "$(result_json "r-$RUN-3" failed)" "$TOKEN")"
+else
+    echo "SKIP successful follow result reports: this server does not allow follow_player."
+    expect "disabled follow cannot be reported" 409 'action_not_returned' "$(post result.php "$(result_json "r-$RUN-3" handled)" "$TOKEN")"
+fi
 expect "result not returned" 409 'action_not_returned' "$(post result.php "$(result_json "r-$RUN-4" handled)" "$TOKEN")"
 expect "result unknown" 404 'unknown_request' "$(post result.php "$(result_json "r-$RUN-unknown" handled)" "$TOKEN")"
 expect "result bad status" 400 'bad_request' "$(post result.php "$(result_json "r-$RUN-3" done)" "$TOKEN")"
@@ -106,11 +119,12 @@ header_has "listen echoes request id" "x-request-id: stt-$RUN" "$(curl -sS -m 30
     -H "Authorization: Bearer $TOKEN" -H "X-Request-Id: stt-$RUN" -H "X-Parent-Request-Id: r-$RUN-2" --data 'not a wav' "$BASE/listen.php")"
 expect "health lists trace" 200 '"trace"' "$(curl -sS -m 10 -w '\n%{http_code}' "$BASE/health.php")"
 
-if curl -sS -m 10 "$BASE/config/config.php" | grep -q -- "$TOKEN"; then
-    echo "FAIL config not served: the token is visible over HTTP"
-    failures=$((failures + 1))
-else
+config_status="$(curl -sS -m 10 -o /dev/null -w '%{http_code}' "$BASE/config/config.php")"
+if [ "$config_status" = "403" ]; then
     echo "PASS config not served"
+else
+    echo "FAIL config not served: wanted HTTP 403, got $config_status (body discarded)."
+    failures=$((failures + 1))
 fi
 
 if [ "${SMOKE_STALE:-0}" = "1" ]; then

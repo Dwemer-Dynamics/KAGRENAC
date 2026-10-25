@@ -6,6 +6,12 @@ packages and asks for publication only after there is a concrete release to revi
 Existing version 1 branch installs keep working. Version 2 packages need matching
 Core and launcher support; do not add version 2 fields to a version 1 manifest.
 
+Before a player install, run **Update Distro** and use a launcher build containing
+the community browser. Core's release commands and PHP security helper must both
+be installed; a downloaded package alone does not establish distro readiness.
+If Core asks for an update, resolve that prerequisite without disabling its checks
+or overwriting unrelated local source changes.
+
 ## One authored manifest
 
 Use `schema_version: 2`, retain the existing server identity/setup/assets fields and
@@ -82,6 +88,9 @@ the source commit, package sizes, SHA-256 digests and a receipt for every file.
 The server is read from committed Git objects, not a dirty working directory.
 Inspect both ZIP file lists, then test the packaged server's migrations/health and the
 packaged native client. Fixtures are not provider, heard-voice or gameplay evidence.
+Run `scripts/smoke.sh` only against a mock-only install with speech disabled. It
+checks the configured action allowlist; a text-only mod need not enable follow.
+Real providers and native game input/presentation need their own acceptance checks.
 
 ## Publish after approval
 
