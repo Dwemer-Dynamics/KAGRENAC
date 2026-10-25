@@ -42,7 +42,7 @@ See [web protection](SETUP.md#1-install-the-server-inside-dwemerdistro) and
 | Cancellation, session changes, stale replies | [Cancellation](#10-cancellation-and-stale-replies) |
 | Action requests and outcome reports | [Actions](#9-actions-and-the-worked-extension) |
 | Optional TTS/STT | [Voice](CONNECTORS.md#voice), [client voice examples](client/README.md#voice-examples) |
-| Answering-NPC selection | [NPC selection](CONNECTORS.md#npc-selection-optional); `decision.php` has no dialogue or actions |
+| Answering-NPC selection | [NPC selection](CONNECTORS.md#npc-selection-decision-optional); `decision.php` has no dialogue or actions |
 | Optional profiles, memory and vector search | [CONNECTORS.md](CONNECTORS.md); not prerequisites for a basic mod |
 | Real engine support | [Porting evidence](#porting-to-a-real-engine); no shipped live-game verification claimed |
 
