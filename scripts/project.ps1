@@ -1328,8 +1328,8 @@ function Invoke-Deploy {
     if ($pending.Count -gt 0) {
         throw ("Refusing: {0} uncommitted or untracked path(s), for example '{1}'. deploy sends only the committed HEAD; commit, ignore or move them yourself first. Nothing was exported." -f $pending.Count, (Get-Printable $pending[0]))
     }
-    # WSL runs these two from this checkout, so they must be the committed bytes (LF, unchanged).
-    foreach ($file in @("scripts/project-runtime.sh", "scripts/update.sh")) {
+    # WSL runs these from this checkout, so they must be the committed bytes (LF, unchanged).
+    foreach ($file in @("scripts/project-runtime.sh", "scripts/update.sh", "scripts/check-php-runtime-security.sh")) {
         $blob = (Invoke-RepoGit @("rev-parse", "$($head):$file"))[0]
         if ((Invoke-RepoGit @("hash-object", "--no-filters", "--", $file))[0] -cne $blob) {
             throw "$file on disk is not byte-identical to commit $head (line endings or a hidden local change); scripts must be checked out with LF as .gitattributes says. Nothing was exported."

@@ -278,6 +278,10 @@ main() {
     for need in git python3 sha256sum runuser ss; do
         command -v "$need" >/dev/null || fail "$need is missing in this distro."
     done
+    # Read-only, before any cache, Core or folder change; deploy never installs packages. Its
+    # [FAIL]/[INFO] lines (reasons, floors, update and restart steps) reach project.ps1's console.
+    bash "$HERE/check-php-runtime-security.sh" ||
+        fail "The distro's PHP runtime is not patched or could not be verified (reasons above). Update only its PHP packages, restart Apache, PHP-FPM and PHP workers, then deploy again."
 
     stage "Checking the bundle."
     tmp="$(as_app mktemp -d /tmp/kagrenac-deploy.XXXXXXXX)"
