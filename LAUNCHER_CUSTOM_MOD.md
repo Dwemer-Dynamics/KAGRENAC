@@ -91,9 +91,12 @@ A copy of this template is a different mod. Before publishing it:
 
 - Create your own public HTTPS repository and its branches (for example `main` and `dev`),
   and set `project_url` to that repository.
-- Your new `id` is a folder Core's web protection does not know: add equivalent Apache deny
-  rules for `.git/`, `client/`, `docs/` and `ports/` under `/custom-mods/<your-id>`, or keep
-  those folders out of the repository you publish for the launcher.
+- Your new `id` is a folder Core's web protection does not know. Set `server_folder` (for
+  example `"MyModServer"`; `project.ps1 new` does): Core then installs the mod at
+  `/var/www/html/MyModServer` and denies `.git/`, the source folders, `config.json` and `.env`
+  there before the folder is made. Without it, add equivalent Apache deny rules for
+  `/custom-mods/<your-id>`, or keep those folders out of the repository you publish.
+- `project_url` is optional: leave it out until your mod has its own public repository.
 - Change `id` to your own unique value (3-32 characters, `a-z`, `0-9` and single hyphens,
   starting with a letter). It cannot change after install, and the launcher derives the
   folder and database names from it (`custom_<id>`), so your mod never shares this

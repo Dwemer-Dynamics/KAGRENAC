@@ -30,6 +30,8 @@ PROBES=(.git/HEAD .git/config client/CMakeLists.txt ports/ docs/getting-started.
         config/config.php lib/app.php sql/001_init.sql scripts/migrate.php config.json .env
         ui/config.json client/config.json)
 ZERO=0000000000000000000000000000000000000000
+# A direct server folder, /var/www/html/<Name>Server (Core refuses reserved names).
+DIRECT='[A-Z][A-Za-z0-9]{0,40}Server'
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 say() { printf '[%s] %s\n' "$1" "$2"; }
@@ -77,7 +79,8 @@ owned_dir() {
         [ $(( 8#$(stat -c %a -- "$1") & 8#022 )) -eq 0 ]
 }
 
-# id, default branch, allowed branches (space-separated), setup.config_path, health_path.
+# id, default branch, allowed branches (space-separated), setup.config_path, health_path,
+# server_folder (empty: the custom-mods/<id> layout).
 manifest_fields() {
     appgit -C "$1" show "$2:dwemer-mod.json" | as_app python3 -c '
 import json, sys
@@ -85,11 +88,12 @@ m = json.load(sys.stdin)
 b = m.get("branches") or {}
 d = b.get("default") or "main"
 print(m["id"]); print(d); print(" ".join(b.get("allowed") or [d]))
-print(m["setup"]["config_path"]); print(m["health_path"])'
+print(m["setup"]["config_path"]); print(m["health_path"]); print(m.get("server_folder") or "")'
 }
 
 # Core's public, root-owned registry entry for the id: state, repository, local_source, folder,
-# database, branch and commit into reg[]. Tombstones (state unregistered) are included.
+# database, branch, commit and legacy_route (a moved install's old URL) into reg[]. Tombstones
+# (state unregistered) are included.
 read_registry() {
     local file=$STATE_ROOT/registry/$id.json
     [ -f "$file" ] && [ ! -L "$file" ] && [ "$(stat -c %u -- "$file")" = "$ROOT_UID" ] &&
@@ -98,11 +102,11 @@ read_registry() {
     mapfile -t reg < <(python3 -c '
 import json, sys
 e = json.load(open(sys.argv[1], encoding="utf-8"))
-for k in ("state", "repository", "local_source", "folder", "database", "branch", "commit"):
+for k in ("state", "repository", "local_source", "folder", "database", "branch", "commit", "legacy_route"):
     v = str(e.get(k, "")).lower() if k == "local_source" else str(e.get(k) or "")
     if not v.isprintable() or " " in v: sys.exit(1)
     print(v)' "$file" 2>/dev/null || true)
-    [ "${#reg[@]}" -eq 7 ] || fail "Core's registry entry for $id is unreadable."
+    [ "${#reg[@]}" -eq 8 ] || fail "Core's registry entry for $id is unreadable."
 }
 
 config_hash() { if [ -f "$1" ] && [ ! -L "$1" ]; then sha256sum < "$1" | cut -d' ' -f1; else echo none; fi; }
@@ -260,7 +264,7 @@ main() {
     [[ $sha =~ ^[0-9a-f]{40}$ && $bundle_hash =~ ^[0-9a-f]{64}$ ]] || fail "Unsupported commit or bundle hash."
     [[ $bundle == /* && $bundle != */../* && -f $bundle && ! -L $bundle ]] || fail "The bundle is not a plain file."
     if [ -n "$manual" ]; then
-        [[ $manual =~ ^$WEB_ROOT/(custom-mods/[A-Za-z0-9_-][A-Za-z0-9._-]*|ExampleServer)$ ]] || fail "Unsupported manual folder."
+        [[ $manual =~ ^$WEB_ROOT/(custom-mods/[A-Za-z0-9_-][A-Za-z0-9._-]*|ExampleServer|$DIRECT)$ ]] || fail "Unsupported manual folder."
     fi
 
     stage "Checking DwemerDistro Core and tools."
@@ -292,8 +296,9 @@ main() {
     [ "$(appgit -C "$tmp/scratch.git" rev-parse --verify 'refs/heads/deploy^{commit}')" = "$sha" ] || fail "The bundle's HEAD is not commit $sha."
     local fields
     mapfile -t fields < <(manifest_fields "$tmp/scratch.git" "$sha" 2>/dev/null || true)
-    [ "${#fields[@]}" -eq 5 ] && [ "${fields[0]}" = "$id" ] || fail "dwemer-mod.json at $sha does not declare id $id."
-    branch=${fields[1]} allowed=${fields[2]} config_path=${fields[3]} health_path=${fields[4]}
+    [ "${#fields[@]}" -eq 6 ] && [ "${fields[0]}" = "$id" ] || fail "dwemer-mod.json at $sha does not declare id $id."
+    branch=${fields[1]} allowed=${fields[2]} config_path=${fields[3]} health_path=${fields[4]} server_folder=${fields[5]}
+    [[ -z $server_folder || $server_folder =~ ^$DIRECT$ ]] || fail "Unsupported server_folder in dwemer-mod.json."
     [[ " $allowed " == *" $branch "* && $allowed =~ ^[A-Za-z0-9._/\ -]+$ && $config_path =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ &&
        $health_path =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ && "$config_path$health_path" != *..* ]] || fail "Unsupported branches or setup paths in dwemer-mod.json."
     ! appgit -C "$tmp/scratch.git" cat-file -e "$sha:$config_path" 2>/dev/null || fail "Commit $sha tracks the private config $config_path."
@@ -303,21 +308,27 @@ main() {
 
     stage "Finding the install for $id."
     local reg=() folder database expected_folder=$WEB_ROOT/custom-mods/$id
+    [ -z "$server_folder" ] || expected_folder=$WEB_ROOT/$server_folder
     if [ -e "$STATE_ROOT/registry/$id.json" ] || [ -L "$STATE_ROOT/registry/$id.json" ]; then read_registry; fi
     if [ -n "$manual" ]; then
         mode=manual folder=$manual
         [ "${#reg[@]}" -eq 0 ] || [ "${reg[3]}" != "$manual" ] ||
             fail "$manual belongs to Core's entry for $id (state ${reg[0]}); deploy without -WslServerPath so Core manages it."
-    elif [ "${#reg[@]}" -eq 7 ]; then
-        folder=$expected_folder
+    elif [ "${#reg[@]}" -eq 8 ]; then
+        # Core's registered folder wins: custom-mods/<id>, or the direct root it installed or moved it to.
+        folder=${reg[3]}
         case "${reg[0]}:${reg[2]}" in
             unregistered:true) mode=restore ;;
             unregistered:*) fail "Core's removed entry for $id came from ${reg[1]}, not this deploy cache; it is not adopted." ;;
             *:true) mode=local ;;
             *) mode=remote ;;
         esac
-        [ "${reg[3]}" = "$folder" ] && [ "${reg[4]}" = "custom_${id//-/_}" ] ||
-            fail "Core's entry for $id names an unexpected folder or database."
+        [[ $folder == "$WEB_ROOT/custom-mods/$id" || $folder =~ ^$WEB_ROOT/$DIRECT$ ]] && [ "${reg[4]}" = "custom_${id//-/_}" ] &&
+            [[ -z ${reg[7]} || ${reg[7]} == "/custom-mods/$id" ]] ||
+            fail "Core's entry for $id names an unexpected folder, database or old URL."
+        if [ "$folder" != "$expected_folder" ]; then
+            say INFO "dwemer-mod.json names ${server_folder:-no server_folder}; Core keeps $id in $folder.$([ -z "$server_folder" ] || echo " To move it: sudo $CORE migrate-root $id --server-folder $server_folder")"
+        fi
         if [ "$mode" != remote ]; then
             [ "${reg[1]}" = "$APP_HOME/.local/share/kagrenac/$id/source.git" ] ||
                 fail "Core's entry for $id uses another local source; it is not repointed."
@@ -333,6 +344,10 @@ main() {
     fi
 
     local route=${folder#"$WEB_ROOT"} protect="" config before_hash
+    if [[ $route != /custom-mods/* && $route != /ExampleServer ]]; then
+        grep -qF -- "--protect-root" <<< "$help" ||
+            fail "DwemerDistro Core is too old for $folder (no 'setup-web --protect-root'). Run Update Distro from the DwemerDistro launcher, then deploy again."
+    fi
     config=$folder/$config_path
     if [ "$mode" != new ]; then
         [ -d "$folder" ] && [ ! -L "$folder" ] && [ -d "$folder/.git" ] || fail "$folder is not a plain Git checkout."
@@ -377,6 +392,11 @@ main() {
                 fail "Core cannot protect $folder (folder name is not a project id); add equivalent Apache rules yourself."
             stage "Protecting /custom-mods/$protect before any source is placed."
             core setup-web --protect-project "$protect" || fail "Core web protection for /custom-mods/$protect is not active."
+            ;;
+        *)
+            protect=${route#/}
+            stage "Protecting $route on every Apache listener before any source is placed."
+            core setup-web --protect-root "$protect" || fail "Core web protection for $route is not active."
             ;;
     esac
 
@@ -444,6 +464,12 @@ main() {
     http="$(check_http)" || { printf '%s\n' "$http" | grep -E '^\[(OK|INFO|FAIL)\] ' || true; fail "Web checks failed."; }
     printf '%s\n' "$http" | grep -E '^\[(OK|INFO|FAIL)\] ' || true
     serving="$(printf '%s\n' "$http" | sed -n 's/^SERVING //p')"
+    if [ "$mode" != manual ] && [ -n "${reg[7]}" ]; then
+        # A moved install's old URL is Core's alias to the same folder until its clients use $route.
+        stage "Checking the old URL ${reg[7]} (Core's alias to $folder; $route is canonical)."
+        http="$(route=${reg[7]} check_http)" || { printf '%s\n' "$http" | grep -E '^\[(OK|INFO|FAIL)\] ' || true; fail "Web checks of the old URL failed."; }
+        printf '%s\n' "$http" | grep -E '^\[(OK|INFO|FAIL)\] ' || true
+    fi
     local port=${serving%% *} p
     for p in $serving; do if [ "$p" -ge 19000 ] && [ "$p" -le 19999 ]; then port=$p; break; fi; done
     printf 'RESULT mode=%s action=%s id=%s commit=%s branch=%s folder=%s database=%s url=%s backup=%s previous=%s protected=%s config=%s\n' \

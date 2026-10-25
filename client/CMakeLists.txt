@@ -9,10 +9,12 @@ if(NOT WIN32)
     message(FATAL_ERROR "KagrenacClient uses WinHTTP and only builds on Windows.")
 endif()
 
-# The reusable part a game port links: protocol client, settings and the turn runtime.
-# It has no game code; a port adds its own GameAdapter.
+# The reusable part a game port links: protocol client, settings, the turn runtime and the
+# engine-free composer lifecycle. It has no game code; a port adds its own GameAdapter, UI and
+# input.
 add_library(KagrenacClientCore STATIC
     src/ai_client.cpp
+    src/chat_input.cpp
     src/config.cpp
     src/turn_runtime.cpp
 )

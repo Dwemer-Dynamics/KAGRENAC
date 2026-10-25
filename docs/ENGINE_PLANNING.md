@@ -28,13 +28,13 @@ applies to, the permitted thread/callback, the planned check and what remains un
 
 | Required part | Questions the plan must answer |
 |---|---|
-| Loader and lifecycle | What loads the mod? Where is its callback? How does it stop without leaving game calls running? |
+| Loader and lifecycle | What loads the mod when the game is launched normally ([automatic load and connect](#automatic-load-and-connect))? Is that loader cited for this exact build? Where is its callback? How does it stop without leaving game calls running? |
 | NPC and player | Which entity is the speaker? How are save, run, entity instance, replacement and death distinguished? |
-| Input and display | How does a line enter the mod, how is a subtitle shown, and how are player controls restored? |
+| Input and display | Which native field, key and input mode make the default in-game composer ([Player input](GAMEPLAY_DESIGN.md#player-input)): free typed text to a recipient shown as "To: <name>", Enter to send, Esc to close? How are game controls captured while it is open and restored on send, Esc, pause, loading, death, recipient unload and focus loss? How is a subtitle shown? Push-to-talk microphone capture only if speech input was asked for |
 | Transport and voice | Who owns HTTP and audio? How do results return without blocking a game callback? Is voice positional or only audible? |
 | Awareness | Which exact live API supplies each value, in what units and at what time? What will be explicitly unavailable? |
 | Each action | What game-owned handler changes state? Which target, instance check, preconditions, cancel and observable result constrain it? |
-| Persistence and launch | Where is history/session identity stored? How are saves preserved and offline launch verified? |
+| Persistence and launch | Where is history/session identity stored? How are saves preserved and offline launch verified? How does a normal launch find the private paired config, and what does the player see while the server is unavailable? |
 | Automatic trigger (if requested) | Which game event starts it, how is it bounded, and how does player input preempt it? Which participants and listeners can the game read? |
 | First demo | What five-minute in-game sequence shows the user's actual feature and its Gameplay design loop, not a console simulation? |
 
@@ -81,8 +81,10 @@ Before game-port implementation, the agent records:
 - **Initial capabilities:** readable fields and explicit action handlers; no action is a valid
   first-stage capability list (`configure` and `pair -AllowedActions none`). An omitted option
   retains its documented default and does not mean none.
-- **Acceptance:** one voiced exchange, an accurate changing observation, each requested action,
-  cancel, pause/death/replacement, reload and repeated setup. Mark each separately.
+- **Acceptance:** a normal launch that loads and connects by itself
+  ([below](#automatic-load-and-connect)), one voiced exchange, an accurate changing
+  observation, each requested action, cancel, pause/death/replacement, reload, an unavailable
+  server and repeated setup. Mark each separately.
 
 Stage 2 is ready when the selected thin slice has a concrete cited route and the remaining
 unknowns have a chosen bounded test. A missing critical mechanism blocks that slice, not the
@@ -100,7 +102,9 @@ works. A probe needing a live game stays pending until the human launches it.
 ## 5. Build and review the first slice
 
 For the default single repo, use maintained commands: create, commit, deploy, configure providers, build
-the port, assemble, configure capabilities, pair, install and start any helper. A new port
+the port, assemble, configure capabilities, pair and install the game-side mod (with any
+helper the mod itself starts). These are developer and one-time setup commands the agent
+runs, not steps the player repeats each session. A new port
 can use [generic capability records](PORT_BUILD_RECORDS.md) without changing the shared CLI.
 Its route owns game-specific preflight, packaging and install checks. Print complete next
 commands with literal paths, project id and distro; never require copying a token.
@@ -126,6 +130,113 @@ evidence, workaround, minimal upstream improvement, generic versus engine-specif
 first/repeat outcome. Keep successful build/provider evidence even when an engine hook is
 blocked. End with a short prioritized list that can be reviewed back into the template.
 
+## Automatic load and connect
+
+The finished player flow has two parts:
+
+1. **Once (setup).** The agent installs the game-side mod through a qualified loader or
+   in-process route, deploys the mod's own server into the user's DwemerDistro, configures it
+   and pairs the game side privately (`project.ps1 deploy`, `configure`, `pair`, and the
+   port's build and install route). The agent runs these commands itself; the user runs only
+   an installer that needs their own consent or account. Creating a loader profile, or a
+   file association or shortcut the user approves, is part of setup.
+2. **Every session (play).** The user starts the game through its normal launch (below). The
+   mod loads with the game, reads its private paired config, connects to its own server and
+   project id, and keeps selection, input, replies, status, errors and cancel inside the game.
+
+**Normal launch.** The game's own entry (its executable, or the Steam or store **Play**
+button), or, when the engine needs one, the documented play entry of an established loader
+or mod manager that is cited for this exact build and meets the game's offline requirements
+(for example a me3 profile launched offline for Elden Ring). Setting that entry up once is
+setup. Not a normal launch: a one-off script, a wrapper or launcher this project wrote,
+attaching or injecting into a running game, or a helper the player starts each session.
+Never launch a modded game through an anti-cheat-protected or online path to get a "normal"
+launch, and never disable or bypass anti-cheat. Do not promise a one-click entry, file
+association or shortcut until the loader's own documentation shows it exists.
+
+None of these is a normal per-session player step: a terminal, PowerShell or script command,
+attaching or injecting into a running game, a watcher or scheduled task, a separate helper or
+chat window, or a launcher the project wrote. Build, install, doctor, check and test
+commands remain developer and setup tools.
+
+- **Loader.** Prefer the engine's own mod or plugin support, then an established loader that
+  is cited as compatible with this exact build (the executable hash or store build from the
+  [survey](#1-survey-the-installation)) and shown by its own load probe. Never invent an entry
+  point, export, offset or API. If no qualified route loads the mod on a normal launch, that
+  is the missing mechanism: name it, give its next bounded probe and keep stage 6b open. A
+  working console client or a manually started helper does not pass this gate. A reference
+  route keeps working as documented: the Elden Ring route's offline me3 launch is its
+  established loader entry, not a gap to close by moving to Steam. If that entry is still a
+  long printed command, record a shorter entry through me3's own documented features as an
+  open flow-review item, without claiming one exists.
+- **Hidden helper (only when required).** Use one only when the engine cannot carry HTTP or
+  audio in process. The game mod starts it when it loads and stops it on quit; when the
+  engine's scripts cannot start processes, the qualified loader's documented sidecar or
+  launch hook may start it instead, under the same rules. It belongs to that exact game
+  instance and ends when that instance ends, even after a crash. It runs at most once per
+  game instance: a second launch, a game restart or a leftover helper is detected and handled
+  without stacking helpers or stopping unrelated processes. It has no console or chat window
+  and reads only this mod's own private paired config. It never receives a key or token on
+  its command line, through the game mailbox or other game IPC, or through any file other
+  than that private paired config (no game-readable unprotected file or shared mailbox).
+  Neither the helper nor the loader adds an operating-system watcher, service or startup entry.
+- **Never block the game.** Game start, loading and play never wait on the network, the
+  server, a helper or a provider. A stopped, missing or slow server shows a short in-game
+  status, keeps the game responsive, and is checked again when the player next uses the
+  mod; turns are still never retried automatically.
+
+- **Nothing global by default.** No Windows startup entry, service, watcher or scheduled
+  task, and no change outside the game's mod folder, the mod's runtime folder, the loader's
+  profile for this mod, a shortcut the user approved and the mod's own server install. The
+  game side never installs or starts the server; the DwemerDistro the user runs hosts it, and
+  the mod only reports when it is unreachable. A key is never assumed from another install
+  unless the user names that config (`configure -ReuseProviderFrom`).
+- **External fallback.** An external window, overlay, companion app or manual start step is
+  adopted only after the missing mechanism is named, the tradeoff explained and the user
+  approves that scope; record it in PROJECT.md Decisions and the flow review. It is never
+  reported as the finished port.
+
+Acceptance, each checked and recorded separately (build, fixture, provider and in-game
+evidence stay apart). Stages a copy already marked done keep their status; these checks are
+added as extra acceptance or flow-review items, not a reset.
+
+- A normal launch (above), without a per-session command or manual attach, loads the mod (an
+  in-game status or a mod log line).
+- The first authenticated request succeeds with the paired private config, against this
+  project's own install route ([Server folder](getting-started.md#server-folder)); a refused
+  token or another mod's route fails the check.
+- With this project's route unavailable, the game starts and stays playable and the in-game
+  status says so; after the route returns, the next request works. Make only this project's
+  route unreachable, for example with a temporary private runtime copy paired to an unused
+  port. Make no change to shared Apache, the DwemerDistro, TTS/STT or another mod's install
+  unless the user explicitly asks. The unused-port copy is fixture evidence; in-game evidence
+  needs the user's own launch.
+- When a helper is used, a second launch attempt and a game restart leave at most one per
+  running game instance, and quit or a crash leaves none.
+- The Gameplay design loop with a real reply in game, its automatic trigger when requested
+  without a manual chat step, and heard voice when voice was wanted.
+
+### Installed startup acceptance
+
+Fill this in for every shipped mod, even when its gameplay loop is still awaiting a human
+test. An installer, copied DLL or successful helper command alone does not pass it.
+
+| Check | Evidence required before handoff |
+|---|---|
+| Player entry | Exact game executable or established loader/mod-list entry, plus its one-time install/enable step. No recurring terminal command. A supported game argument for an isolated save profile may be saved in a shortcut; do not replace a native loader with a project-written launcher and call it normal loading. |
+| Client transport | Name the in-process HTTP/audio code, or the qualified game/loader callback that starts the hidden helper. Helper spawning must happen outside DLL loader lock. |
+| Ownership | Bind a helper to the exact game instance, prevent duplicate starts, and clean up on quit/crash/restart. Validate with a disposable native host when possible; keep actual game lifecycle acceptance separate. Never stop unrelated helpers by executable name. |
+| Configured use | Read the existing private pair automatically. A configured mod cannot require `start`, `arm`, `EnableProvider` or a test-only call budget each session. Deliberate in-game enable/stop controls remain valid. Starting transport must not itself call a paid provider. |
+| Installed provenance | Build from the reviewed commit, compare the installed DLL/helper/script hashes with the build record, preserve private config and old artifacts, and record the normal entry in the handoff. A source-only fix is not deployed. |
+| Failure and repeat | Test duplicate initialization, unavailable helper/server and owned-process exit using proportional fixtures. Then have the human launch normally, quit and launch again. Never start shared servers or install dependencies from a game callback. |
+
+PowerShell build/install/doctor/provider probes belong to the developer checklist, not the
+player's everyday instructions. If an engine or incomplete game installation prevents a
+qualified normal load, leave the integration gate open with the exact missing mechanism and
+next bounded probe. A hidden terminal, desktop shortcut to a wrapper, or standalone diagnostics
+do not turn that blocker into a working mod. Record each mod's state independently; a working
+startup route in one game is not evidence for another.
+
 ## End-of-pass handoff
 
 Before reporting, reconcile the current PROJECT.md stage table, chosen architecture in the
@@ -138,8 +249,8 @@ Report these separately:
 | Milestone | Required evidence |
 |---|---|
 | Server-ready | Exact deployed commit, health/protection, configuration and provider test results |
-| Port-built | Actual game adapter/helper build, artifact identity, runtime assembly and pairing; distinguish uncommitted source |
-| Gameplay-verified | Human-launched loader compatibility, live awareness, heard voice, controls and each action's own result |
+| Port-built | Actual game adapter/helper build, artifact identity, runtime assembly, install into the loader's folder and pairing; distinguish uncommitted source |
+| Gameplay-verified | A normal human launch that loaded and connected automatically ([acceptance](#automatic-load-and-connect)), loader compatibility, unavailable-server behaviour, live awareness, heard voice, controls and each action's own result |
 
 Generated audio does not complete heard-voice acceptance. An interruption ends that pass,
 not the remaining work: record the last completed check, preserved files and exact next
@@ -147,8 +258,13 @@ step. Do not repeat paid tests just to refresh a handoff.
 
 ## First-launch guide
 
-Give exact helper start/stop and game launch commands; the actual mod-menu switches and
-warnings; where the NPC appears; input/send/cancel keys; and one test per action. For a game
+Tell the user how to start the game through its normal launch
+([automatic load and connect](#automatic-load-and-connect)), including an established
+loader's offline entry when the engine needs one (for Elden Ring, the printed me3 offline
+launch), and what in-game status shows the mod loaded and connected; the actual mod-menu
+switches and warnings; where the NPC appears; input/send/cancel keys; and one test per action.
+Other per-session terminal commands and helper start/stop belong only in a developer section,
+or in a fallback the user approved. For a game
 requiring unrestricted script I/O, explain its own switch before launch. Do not assume a
 settings-file edit survives the game rewriting it. Back up before authorized settings changes
 and use the game's own switch when the supported route requires it. Never edit or delete saves.

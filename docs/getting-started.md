@@ -27,7 +27,9 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    conversation, the agent first fills PROJECT.md's short Gameplay design
    ([Gameplay design](GAMEPLAY_DESIGN.md)): the player's fantasy, the 2-3 minute loop they will
    see and hear, the interaction mode, and what decides and changes. It then fills the plan in
-   PROJECT.md: how the player's input reaches the mod, which NPC and how long it lives, how
+   PROJECT.md: how the player's input reaches the mod (by default an in-game composer with a
+   visible recipient and free typed text; push-to-talk only if you ask for speech input),
+   which NPC and how long it lives, how
    the HTTP call runs off the game thread and comes back to it, how the reply is shown and
    the voice played, which existing mechanism carries each action (its target, instance
    check and preconditions), what the mod can observe (each value's source and freshness;
@@ -69,16 +71,29 @@ Before game-port code, follow [Engine planning](ENGINE_PLANNING.md), with primar
    The shipped config stays in mock mode.
 6. **First real prototype.** The agent builds the thin slice from the plan in the game
    itself: the Gameplay design loop, with its automatic trigger when one was requested. Mock mode and the console client are developer checks for the server and shared
-   code, not your demo, and no console exercise is required first. For Elden Ring, the
+   code, not your demo, and no console exercise is required first. The agent installs the
+   mod once through a qualified loader and pairs it; after that you start the game through
+   its normal launch (its executable or Steam or store **Play**, or, when the engine needs
+   one, a cited loader's documented offline entry set up once), and the mod loads,
+   connects to its own server and shows its status in game, with no terminal, script,
+   attach, extra window or project-written launcher each session, and never through an
+   anti-cheat-protected online launch
+   ([Automatic load and connect](ENGINE_PLANNING.md#automatic-load-and-connect)). If the game
+   has no qualified way to do that yet, the agent names the missing mechanism and its next
+   probe instead of calling the mod finished. For Elden Ring, the
    reference in [ports/elden-ring/](../ports/elden-ring/README.md) is reused rather than
    started over, through its maintained route
    ([Build a mod](../ports/elden-ring/README.md#build-a-mod-from-this-reference)): the agent
    runs `ports\elden-ring\mod.ps1 doctor` (read-only preflight: game build, tools, me3), then
    `build`, `assemble` and `pair` into the runtime folder, and records each in its own
    PROJECT.md row (6a build, 6b runtime and pairing). You back up your saves and launch the
-   game yourself with the printed offline command; only what you then see and hear fills
+   game yourself through me3 offline with the printed command; that offline me3 profile is
+   the reference's established loader entry, not something to replace with Steam **Play**.
+   Any shorter entry through me3's own documented features is an open flow-review item,
+   not a promise. Only what you then see and hear fills
    6c and each action row.
-7. **Expand.** One feature at a time: more actions, events, memory, speech to text. The
+7. **Expand.** One feature at a time: more actions, events, memory, speech input
+   (push-to-talk into the editable draft; [Player input](GAMEPLAY_DESIGN.md#player-input)). The
    [wave exercise](../WAVE_ACTION.md), memory and profiles come after the first AI line in
    game, never before it.
 
@@ -99,6 +114,13 @@ that do not depend on it.
 
 ## Repository layout
 
+For the player handoff, use the [installed startup acceptance checklist](ENGINE_PLANNING.md#installed-startup-acceptance).
+After one-time installation, enabling the mod in its normal loader/mod list and starting the
+user's DwemerDistro is enough. Do not make the player run transport, arming or provider-budget
+commands every session. Show the exact normal play entry and keep developer commands separate.
+When the engine requires an isolated profile, configure its supported launch entry once;
+a project script hidden behind a shortcut is still a fallback, not automatic mod loading.
+
 **Default: one repository per mod.** The server lives at the root, with the game client or
 plugin under `client/` or `ports/<engine>/`. Separate installed game files and a deployed
 server are runtime copies, not separate source repositories. This is what `project.ps1 new`
@@ -117,7 +139,7 @@ choice of instructions.
 | Copy | Where | Job |
 |---|---|---|
 | Windows development copy | Any folder you own, for example `C:\dev\Kagrenac` | Edit, build, run `scripts\project.ps1` and your agent |
-| WSL server copy | `/var/www/html/custom-mods/<id>` (made by `deploy` through Core), or an existing manual or launcher install | Run the server only |
+| WSL server copy | `/var/www/html/<Name>Server` (made by `deploy` through Core; a copy without `server_folder`: `/var/www/html/custom-mods/<id>`), or an existing manual or launcher install | Run the server only |
 
 They are separate copies; `deploy` updates the server copy from your committed HEAD. Never build the client, write its `config.json` or keep build
 output in the server copy: it sits in Apache's web root.
@@ -189,7 +211,8 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 new -Destination C:
   If Core lacks them, deploy stops without changing anything (its message suggests Update
   Distro, which helps only once a compatible Core is released); wait for that version, then
   deploy again.
-- Protects `/custom-mods/<id>` with Core before any source is placed, then installs or
+- Protects the install's route (`/<Name>Server`, or `/custom-mods/<id>`) with Core on every
+  Apache listener before any source is placed, then installs or
   fast-forwards through Core from a private cache in WSL, to exactly that commit. Core
   names the database `custom_<id>` (dashes become underscores).
 - Checks the commit, `www-data` access, health and HTTP 403 for source and config paths,
@@ -241,8 +264,8 @@ its engine pack's acceptance, not `KagrenacClient.exe`.
 
 ### Configure providers, voice and actions
 
-`pair` now defaults `-WslServerPath` to `/var/www/html/custom-mods/<id>` in a project with
-its own id, like configure/deploy. The template still requires an explicit install path.
+`pair` now defaults `-WslServerPath` to this project's own install in a project with its own
+id, like configure/deploy (see [Server folder](#server-folder)). The template still requires an explicit install path.
 For a new port, use [schema-2 build/runtime records](PORT_BUILD_RECORDS.md); no shared CLI
 edit is needed. Legacy Elden Ring records keep their specialized validation below.
 For conversation-only work, set **both** lists explicitly:
@@ -261,7 +284,7 @@ dashboard does: it runs that install's `scripts/configure_server.php` as `www-da
 saves through the existing `config_update()` in `lib/config_writer.php` (one lock, the latest
 config read inside it, token, database and unknown settings kept, owner, group, mode and lock
 file kept). The same request again writes nothing. It targets this project's own
-`/var/www/html/custom-mods/<id>` (or `-WslServerPath <install>`, whose `dwemer-mod.json` must
+install ([Server folder](#server-folder)) (or `-WslServerPath <install>`, whose `dwemer-mod.json` must
 have this project's id; in the template `-WslServerPath` is required). An install `www-data`
 cannot save is refused with the same repair step doctor gives (run `deploy` again, or
 `sudo bash <install>/scripts/install.sh` for a manual install); configure never changes
@@ -275,7 +298,7 @@ powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistr
 # A fresh copy: take only llm.api_key from another install's private openrouter config:
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
   -LlmProvider openrouter -LlmModel google/gemma-4-31b-it `
-  -ReuseProviderFrom /var/www/html/custom-mods/<other id>/config/config.php
+  -ReuseProviderFrom /var/www/html/<Other>Server/config/config.php
 # Server allowlist for a native build (Elden Ring), or for the console client:
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
   -AllowedActions follow_player,hold_position -Build '<root>\elden-ring\builds\<time>'
@@ -340,13 +363,35 @@ Explicit opt-ins for an **existing** manual WSL server checkout you name:
 
 `doctor -WslDistro <name> -WslServerPath <checkout>` also checks that checkout and whether its
 private config exists (without reading it); a stopped distro is reported and skipped. With
-`-WslServerPath`, or in a project with its own id (its `/custom-mods/<id>` install), it also
+`-WslServerPath`, or in a project with its own id (its own install), it also
 checks as `www-data` whether the dashboard can save the private config, using that install's
 `lib/config_writer.php` without reading the config; a FAIL there means run `deploy` again. In
 the template (`example-server`) it guesses no install. The
 opt-ins, `pair` and `deploy` may start the distro they name.
 
 Doctor checks health and exposure at `-ServerUrl`, else the shared client config's
-`server_url`, else `/custom-mods/KagrenacServer` on port 19000. For your own route, name it
-explicitly, for example
-`doctor -WslDistro <name> -ServerUrl http://127.0.0.1:19000/custom-mods/<id> -WslServerPath /var/www/html/custom-mods/<id>`.
+`server_url`, else this project's own route (in the template `/custom-mods/KagrenacServer`) on
+port 19000. To name a route explicitly, for example
+`doctor -WslDistro <name> -ServerUrl http://127.0.0.1:19000/MyModServer -WslServerPath /var/www/html/MyModServer`.
+
+### Server folder
+
+`new` writes `"server_folder": "<Name>Server"` into the copy's `dwemer-mod.json` (`-Name` in
+CamelCase plus `Server`, for example `Common Ground` -> `CommonGroundServer`; choose another
+with `-ServerFolder`). Core installs that copy at `/var/www/html/<Name>Server`, URL
+`http://127.0.0.1:19000/<Name>Server`, still with database `custom_<id>` and Core's backups
+and lifecycle, and protects the folder on every Apache listener before it exists. It refuses
+an existing folder (any letter case), a name another mod uses, and product names such as
+`HerikaServer` or `KagrenacServer`. `pair`, `configure`, `doctor` and `deploy` find a
+project's install from Core's registry entry for its id, then the manifest, then
+`/var/www/html/custom-mods/<id>`, so copies made before this keep working unchanged.
+
+Moving an older copy is an explicit Core step (stop the game first):
+`sudo ddistro_custom_mod migrate-root <id> --server-folder <Name>Server`. It backs up the
+config, database, registry entry and Apache site, renames the folder in place (config, token,
+database and history kept) and keeps the old `/custom-mods/<id>` URL as an alias to the same
+folder; see Core's `CUSTOM_MODS.md`. The new URL is canonical. A game client with the old URL
+compiled in keeps working through the alias until it is rebuilt and paired again (`pair`
+writes the new URL); editing a config alone does not change a compiled client. Add
+`server_folder` to that copy's manifest afterwards so `deploy` and Core agree, and retire the
+alias with `migrate-root <id> --drop-legacy-url` only after every client uses the new URL.

@@ -44,9 +44,16 @@ before adopting it, not the normal first-demo experience.
 - Play audio only while its matching subtitle/instance is still current. A heartbeat must
   work at low frame rates and stop when game updates stop. Check freshness with bounded clocks.
 - The port provides `doctor`, `build`, `assemble`, `install`, `start`, `stop` (and optional
-  `restart`) through its maintained route. Start helpers hidden with logs, one instance per
-  runtime. Stop the specific helper gracefully; never kill unrelated processes. Do not launch
-  the game automatically. Print full pair/configure and first-launch instructions.
+  `restart`) through its maintained route; `start` and `stop` are developer checks. In normal
+  play the game mod starts the helper hidden, with logs, when it loads and stops it on quit:
+  one instance per game instance, ended with that instance even after a crash, never blocking
+  the game when the helper or server is missing. When the engine's scripts cannot start
+  processes, the qualified loader's documented sidecar or launch hook may start it under the
+  same rules. If neither can, that is the missing mechanism to record, not a per-session
+  manual start
+  ([automatic load and connect](../ENGINE_PLANNING.md#automatic-load-and-connect)). Stop the
+  specific helper gracefully; never kill unrelated processes. Do not launch the game
+  automatically. Print full pair/configure and first-launch instructions.
 - Use [generic build/runtime records](../PORT_BUILD_RECORDS.md) to gate action setup. Repeat
   build, pairing, install and start/stop to verify stable hashes and private config preservation.
 

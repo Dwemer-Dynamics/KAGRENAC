@@ -31,7 +31,7 @@ $er = 'ports\elden-ring\mod.ps1'
 powershell -ExecutionPolicy Bypass -File $er doctor   -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
 powershell -ExecutionPolicy Bypass -File $er build    -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
 powershell -ExecutionPolicy Bypass -File $er assemble -GameDir "<ELDEN RING>\Game" -Tools <tools> -Root <root>
-powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> -WslServerPath /var/www/html/custom-mods/<id> `
+powershell -ExecutionPolicy Bypass -File scripts\project.ps1 pair -WslDistro <name> `
   -OutFile <root>\runtime\config.json -AllowedActions follow_player,hold_position -NpcId <id> -NpcName "<name>" [-VoiceEnabled]
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 configure -WslDistro <name> `
   -AllowedActions follow_player,hold_position -Build '<root>\elden-ring\builds\<time>'

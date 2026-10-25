@@ -621,6 +621,12 @@ bool AiClient::speak(const std::string& text, const std::filesystem::path& wavFi
 bool AiClient::listen(const std::filesystem::path& wavFile, std::string& text, std::string& error,
                       const std::string& requestId, const std::string& parentRequestId) const
 {
+    std::error_code sizeError;
+    std::uintmax_t size = std::filesystem::file_size(wavFile, sizeError);
+    if (!sizeError && size > kMaxSpeechWavBytes) {
+        error = "the recording is larger than listen.php accepts (10 MB)";
+        return false;
+    }
     std::ifstream in(wavFile, std::ios::binary);
     std::string audio((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (!isWav(audio)) {

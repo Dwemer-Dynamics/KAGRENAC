@@ -31,6 +31,21 @@ public:
     // waited for, never stopped: anything it captures by reference or pointer must stay valid
     // until shutdown() or the destructor returns. A job that throws shows a fixed failure line.
     using Job = std::function<std::string(const AiClient&)>;
+    // What speech-to-text heard for the player's draft (text), or why it failed (error, and
+    // text is ""). requestId is the stt- id for the mod log. Delivered on the game thread.
+    struct Transcript {
+        std::string requestId;
+        std::string text;
+        std::string error;
+    };
+    using TranscriptHandler = std::function<void(const Transcript&)>;
+    // How the last turn that reached the game ended: applied (ok) or failed with error (server
+    // error, timeout, refused request). Cancelled, replaced and dropped turns never get here.
+    struct TurnEnd {
+        std::string requestId;
+        bool ok = false;
+        std::string error;
+    };
 
     // reportSource ends the result-report status line, e.g. "client-reported".
     TurnRuntime(GameAdapter& game, const Config& config, std::string reportSource = "client-reported");
@@ -53,6 +68,23 @@ public:
     // reason was shown).
     std::string submitTurn(const std::string& text, const std::filesystem::path& speechWav = {},
                            const std::string& eventType = "");
+
+    // The player's typed (or transcribed and edited) line, sent only to the recipient the
+    // player saw: it reads a fresh context and refuses (shown, returns "") unless that context
+    // names recipient.npcId and isSameNpc(recipient) still holds. It never retargets to
+    // whoever readContext() names now. Otherwise exactly like submitTurn(text).
+    std::string submitTurnTo(const GameContext& recipient, const std::string& text);
+
+    // Optional speech input: sends wav to listen.php on a normal worker and hands what it heard
+    // to handler in tick(), on the game thread. It never sends a turn: the port puts the text
+    // in the player's draft, and the player edits it and sends it. A new transcribe() replaces
+    // the old one; cancelTranscription(), setSession() and shutdown() drop it, and then handler
+    // is never called. With removeWav the worker deletes wav once it is done with it, also when
+    // dropped. Refused (shown, returns "") when speech_input_enabled is false, the runtime is
+    // stopped or every worker is busy; the caller still owns wav then. Returns the stt- id.
+    std::string transcribe(const std::filesystem::path& wav, TranscriptHandler handler, bool removeWav = false);
+    // Drops the pending transcription, if any. Returns false if none was pending.
+    bool cancelTranscription();
 
     // Runs a job on a normal worker, e.g. a log-only event or a decision. Returns false
     // when every worker is busy (shown, not queued).
@@ -80,8 +112,11 @@ public:
     void shutdown(const std::string& message, bool cancelOnServer = true);
 
     bool hasPending() const;                   // a turn or its voice is still wanted
-    bool idle() const;                         // nothing pending and no worker out
+    std::string pendingTranscription() const;  // the stt- id still wanted, or ""
+    bool idle() const;                         // no turn, voice or transcription pending and no worker out
     const GameContext* pendingTurn() const;    // the NPC of the pending turn, or nullptr
+    std::string pendingTurnId() const;         // the request id of the pending turn, or ""
+    const TurnEnd& lastTurnEnd() const;        // set in tick() when a turn finished
     std::string pendingNpcName() const;        // the NPC of the pending turn or voice
     const Config& settings() const;            // the settings new requests use
     bool lastTurnOk() const;                   // the last finished turn was applied
@@ -90,6 +125,7 @@ private:
     struct Mailbox;
     struct CancelDone;
     struct VoiceDone;
+    struct TranscriptDone;
     using ClientPtr = std::shared_ptr<const AiClient>;
     // A request the game still waits for; requestId is "" when there is none.
     struct Pending {
@@ -98,6 +134,8 @@ private:
         ClientPtr client;
     };
 
+    std::string startTurn(const GameContext* recipient, const std::string& text, const std::filesystem::path& speechWav,
+                          const std::string& eventType);
     size_t busyWorkers() const;
     void reapWorkers();
     void releaseTurnWorker();
@@ -107,9 +145,10 @@ private:
     std::vector<ActionReport> applyResult(const Pending& turn, const TurnResult& result);
     void startVoice(const Pending& turn, const TurnResult& result);
     void handleVoice(const VoiceDone& done);
+    void handleTranscript(const TranscriptDone& done);
     void waitAll();
 
-    static constexpr size_t kMaxWorkers = 4;        // turns, events, decisions, voice, reports
+    static constexpr size_t kMaxWorkers = 4;        // turns, events, decisions, voice, reports, transcripts
     static constexpr size_t kMaxCancelWorkers = 2;  // reserved for server cancellations
 
     GameAdapter& game_;
@@ -122,8 +161,11 @@ private:
     std::future<void> turnWorker_;  // the pending turn's worker, counted as a normal worker
     Pending turn_;
     Pending voice_;  // requestId is the turn's id while its voice is still wanted
+    std::string sttRequestId_;              // the transcription still wanted, or ""
+    TranscriptHandler sttHandler_;
     std::string lastAppliedRequestId_;
     bool lastTurnOk_ = false;
+    TurnEnd lastTurnEnd_;
     // Server cancels still out, by session and NPC id, with the newest cancel's number.
     std::map<std::pair<std::string, std::string>, unsigned long long> cancelling_;
     unsigned long long lastCancelId_ = 0;

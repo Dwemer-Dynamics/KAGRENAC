@@ -9,11 +9,13 @@
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\project.ps1 <new|doctor|setup|check|pair|configure|deploy> [options]
 #   new     -Destination <full Windows path> -Id <id> -Name <name> [-Game <text>] [-Feature <text>]
 #           [-Voice <text>] [-LlmProvider <name>] [-WslDistro <name>] [-Engine <port folder>]
-#           [-InteractionMode manual|ambient|companion|operator]
+#           [-InteractionMode manual|ambient|companion|operator] [-ServerFolder <Name>Server]
 #           Start a new mod: copy exactly the committed HEAD of this template (git archive; no
 #           Git history, untracked or ignored files, private config, database, build output or
 #           logs) into a new folder outside every Git checkout and web root, set the copy's own
-#           id and name in dwemer-mod.json, record the brief, paths and stage states in its
+#           id, name and server_folder in dwemer-mod.json (default: -Name in CamelCase plus
+#           Server, so Core installs it in /var/www/html/<Name>Server; the template's project_url
+#           is left out), record the brief, paths and stage states in its
 #           PROJECT.md (with -Engine, the plan from ports/<engine>/PLAN.md), and run 'git init'
 #           there. It refuses an existing destination, an id already used by a deploy or build
 #           folder, and any source that is not the template. It commits nothing and never
@@ -26,7 +28,7 @@
 #           other status is unverified, and both are problems. With -WslDistro <name>, check
 #           that one distro's DwemerDistro tool, Apache, PostgreSQL and web protection, only if
 #           it is already running (it never starts a distro), and, for -WslServerPath or this
-#           project's own /custom-mods/<id> install, whether www-data can save its private config
+#           project's own install, whether www-data can save its private config
 #           (the config is not read). For a native port's project (-Engine <port folder>, else
 #           the engine 'new -Engine' wrote into its PROJECT.md Paths) it skips the console client
 #           and points to that port's own route instead. Ends with a readiness summary;
@@ -65,7 +67,7 @@
 #           scripts/configure_server.php, run as www-data (this may start the named distro): the
 #           existing config_update() saves, keeping token, database, unknown settings, owner,
 #           group, mode and lock; the same request again writes nothing. -WslServerPath defaults
-#           to this project's /var/www/html/custom-mods/<id> and must be that install. No key
+#           to this project's own install and must be that install. No key
 #           is ever an argument or printed: openrouter keeps the key already configured for
 #           openrouter, or takes only llm.api_key from the openrouter config named by
 #           -ReuseProviderFrom. -Tts pockettts needs PocketTTS answering on 127.0.0.1:8086.
@@ -81,8 +83,9 @@
 #           under the id in its dwemer-mod.json: a Git bundle of exactly HEAD goes to a private
 #           folder (%LOCALAPPDATA%\DwemerDynamics\Kagrenac\deploy\<id>), then scripts/
 #           project-runtime.sh runs as root in that distro. It needs DwemerDistro Core with
-#           'setup-web --protect-project' and 'update --expect-commit' (else: Update Distro),
-#           protects /custom-mods/<id> first, and installs or updates only through Core from the
+#           'setup-web --protect-project' and 'update --expect-commit' (a server_folder also needs
+#           'setup-web --protect-root'; else: Update Distro), protects the install's route first,
+#           and installs or updates only through Core from the
 #           private cache /home/dwemer/.local/share/kagrenac/<id>/source.git, or for an existing
 #           manual install through that folder's scripts/update.sh. It refuses the template id
 #           example-server for a new install, never adopts, repoints or resets anything, and
@@ -99,7 +102,10 @@
 #   project with its own id, and to %LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build in the template.
 #   New ports: -Engine accepts an engine without a reference plan and leaves planning open.
 #   -Destination accepts either slash style. configure/pair -AllowedActions none explicitly
-#   writes an empty list (no -Build needed). pair defaults to the own-id server route.
+#   writes an empty list (no -Build needed). pair, configure, doctor and deploy find this project's
+#   own install: the folder in Core's registry entry for its id (custom-mods/<id>, or the
+#   /var/www/html/<Name>Server it was installed in or moved to with 'ddistro_custom_mod
+#   migrate-root'), else the manifest's server_folder, else /var/www/html/custom-mods/<id>.
 #   New port builds/runtimes may use schema 2 (docs/PORT_BUILD_RECORDS.md); legacy Elden Ring
 #   keeps its specialized checks. Other server defaults and existing pairing stay unchanged.
 param(
@@ -116,6 +122,7 @@ param(
     [string]$LlmProvider = "",
     [string]$Engine = "",
     [string]$InteractionMode = "",
+    [string]$ServerFolder = "",
     [string]$ServerUrl = "",
     [string]$WslDistro = "",
     [string]$WslServerPath = "",
@@ -190,11 +197,42 @@ function ConvertTo-PsLiteral([string]$value) {
     return "'" + [System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($value) + "'"
 }
 
-# Only the known Kagrenac folders are covered by DwemerDistro Core's web protection.
+# A direct server folder Core accepts: <Letters/digits>Server, not an official or Kagrenac product name
+# (the same rule as ddistro_custom_mod's validate_server_folder).
+function Test-ServerFolder([string]$name) {
+    $reserved = @("herika", "herikaserver", "chim", "stobe", "stobeserver", "dialectic", "dialecticserver", "reign", "reignserver",
+        "lorkhan", "lorkhanserver", "dwemer", "dwemerdistro", "postgres", "template", "html", "admin", "root", "example", "kagrenac",
+        "custom", "custommods")
+    return ($name -cmatch '^[A-Z][A-Za-z0-9]{0,40}Server\z' -and $reserved -notcontains $name.Substring(0, $name.Length - 6).ToLowerInvariant())
+}
+
+# Folders DwemerDistro Core's web protection can cover: custom-mods/<folder>, the legacy
+# ExampleServer, and a direct /var/www/html/<Name>Server root.
 function Test-WslServerPath([string]$path) {
-    if ($path -cnotmatch '^/var/www/html/(custom-mods/[A-Za-z0-9_-][A-Za-z0-9._-]*|ExampleServer)$') {
-        throw "Refusing WSL server path '$path': use an absolute folder directly under /var/www/html/custom-mods/ (or /var/www/html/ExampleServer), with no '..', links or trailing slash."
+    $direct = $path -cmatch '^/var/www/html/([A-Za-z0-9]+)$' -and (Test-ServerFolder $Matches[1])
+    if (-not $direct -and $path -cnotmatch '^/var/www/html/(custom-mods/[A-Za-z0-9_-][A-Za-z0-9._-]*|ExampleServer)$') {
+        throw "Refusing WSL server path '$path': use an absolute folder directly under /var/www/html/custom-mods/, a /var/www/html/<Name>Server folder (or /var/www/html/ExampleServer), with no '..', links or trailing slash."
     }
+}
+
+# This project's install folder: the folder in Core's registry entry for its id when -WslDistro
+# may be used (Core's registered location wins, legacy or moved), else the manifest's
+# server_folder, else /var/www/html/custom-mods/<id>. "" in the template, which guesses no install.
+function Get-OwnServerPath([bool]$readRegistry) {
+    if (-not (Test-ProjectId $workingId) -or $workingId -ceq "example-server") { return "" }
+    if ($readRegistry -and $WslDistro) {
+        $lines = @(Invoke-Native { & wsl.exe -d $WslDistro -e cat "/var/lib/dwemerdistro-custom-mods/registry/$workingId.json" })
+        if ($LASTEXITCODE -eq 0) {
+            $entry = $null
+            try { $entry = ($lines -join "`n") | ConvertFrom-Json } catch { }
+            $folder = $(if ($entry -is [System.Management.Automation.PSCustomObject]) { [string]$entry.folder } else { "" })
+            $direct = $folder -cmatch '^/var/www/html/([A-Za-z0-9]+)$' -and (Test-ServerFolder $Matches[1])
+            if ([string]$entry.id -ceq $workingId -and ($direct -or $folder -ceq "/var/www/html/custom-mods/$workingId")) { return $folder }
+            Say "WARN" "Core's registry entry for $workingId in $WslDistro names no usable folder, so the manifest's location is used."
+        }
+    }
+    if ($workingFolder) { return "/var/www/html/$workingFolder" }
+    return "/var/www/html/custom-mods/$workingId"
 }
 
 # Apache sections of a site file as @{ Type; Arg; Parent; Denied }, in file order. Denied is
@@ -410,6 +448,9 @@ function Show-Doctor {
     if ($gitBash) { Say "OK" "Git Bash found (for shell syntax checks): $gitBash" } else { Say "INFO" "Git Bash not found; check skips shell syntax." }
 
     Show-Distro
+    # This project's own install (Core's registry when the distro is running, else the manifest).
+    $ownPath = Get-OwnServerPath $script:distroRunning
+    if ($ownPath) { $script:defaultUrl = "http://127.0.0.1:19000" + $ownPath.Substring("/var/www/html".Length) }
 
     $native = Get-NativeEngine
     if ($native) {
@@ -495,8 +536,7 @@ function Show-Doctor {
             }
         }
     } elseif ($WslDistro -and (Test-ProjectId $workingId) -and $workingId -cne "example-server") {
-        # This project's own Core route, from its manifest id; the template guesses no mod.
-        $ownPath = "/var/www/html/custom-mods/$workingId"
+        # This project's own install, found above; the template guesses no mod.
         if (-not $script:distroRunning) {
             Say "SKIP" "Dashboard saves in $ownPath were not checked: $WslDistro is not confirmed running."
         } else {
@@ -980,7 +1020,7 @@ function Invoke-Configure {
     $own = (Test-ProjectId $workingId) -and $workingId -cne "example-server"
     if (-not $WslServerPath) {
         if (-not $own) { throw "In the template, name the install with -WslServerPath <path>; configure guesses no install." }
-        $script:WslServerPath = "/var/www/html/custom-mods/$workingId"
+        $script:WslServerPath = Get-OwnServerPath $true
     }
     Test-WslServerPath $WslServerPath
     if ($LlmProvider -and @("openrouter", "dwemerllm", "mock") -cnotcontains $LlmProvider) {
@@ -993,7 +1033,7 @@ function Invoke-Configure {
     if ($ReuseProviderFrom) {
         if ($LlmProvider -cne "openrouter") { throw "-ReuseProviderFrom goes only with -LlmProvider openrouter; a key is never reused for another provider." }
         if ($ReuseProviderFrom.Length -gt 300 -or $ReuseProviderFrom -cnotmatch '^(/[A-Za-z0-9_.-]+)+\.php\z' -or $ReuseProviderFrom -match '/\.\.?(/|$)') {
-            throw "-ReuseProviderFrom must be the absolute Linux path of another install's private config, such as /var/www/html/custom-mods/<other id>/config/config.php."
+            throw "-ReuseProviderFrom must be the absolute Linux path of another install's private config, such as /var/www/html/<Other>Server/config/config.php or /var/www/html/custom-mods/<other id>/config/config.php."
         }
         if ($ReuseProviderFrom -ceq "$WslServerPath/config/config.php") { throw "-ReuseProviderFrom names this install's own config; leave it out to keep the key already configured." }
     }
@@ -1085,7 +1125,7 @@ function Invoke-Pair {
     }
     Assert-PairActions $actions $outPath
     if (-not $WslServerPath -and (Test-ProjectId $workingId) -and $workingId -cne 'example-server') {
-        $script:WslServerPath = "/var/www/html/custom-mods/$workingId"
+        $script:WslServerPath = Get-OwnServerPath $true
     }
     Require-WslTarget
     $null = Invoke-Native { & wsl.exe -d $WslDistro -e test -f "$WslServerPath/scripts/pair_client.php" }
@@ -1301,7 +1341,8 @@ function Invoke-Deploy {
     if (-not (Test-ProjectId $id)) { throw "dwemer-mod.json at $head has no valid id (3-32 lowercase letters, digits, single hyphens)." }
     $healthPath = [string]$manifest.health_path
     if ($healthPath -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9._/-]{0,199}\z' -or $healthPath.Contains("..")) { throw "dwemer-mod.json at $head has no valid health_path." }
-    $folder = $(if ($WslServerPath) { $WslServerPath } else { "/var/www/html/custom-mods/$id" })
+    $headFolder = [string]$manifest.server_folder
+    if ($headFolder -and -not (Test-ServerFolder $headFolder)) { throw "dwemer-mod.json at $head has an invalid server_folder (<Name>Server, letters and digits, not a product name)." }
 
     $exportDir = Get-DeployDir $id
     $bundle = Export-Bundle $exportDir $id $head
@@ -1313,6 +1354,9 @@ function Invoke-Deploy {
     if ($null -eq $distros -or $distros.Code -ne 0 -or $distros.Names -notcontains $WslDistro) {
         throw "WSL distro '$WslDistro' was not found (run 'wsl -l -q'). The bundle was kept in $exportDir; nothing was deployed."
     }
+    # Where WSL must report the install: Core's registered folder, else the manifest's location.
+    $own = Get-OwnServerPath $true
+    $folder = $(if ($WslServerPath) { $WslServerPath } elseif ($own) { $own } elseif ($headFolder) { "/var/www/html/$headFolder" } else { "/var/www/html/custom-mods/$id" })
     $wslArgs = @("-d", $WslDistro, "-u", "root", "--exec", "bash", (ConvertTo-WslPath (Join-Path $repo "scripts\project-runtime.sh")),
         "deploy", $id, $head, (ConvertTo-WslPath $bundle), $bundleHash)
     if ($WslServerPath) { $wslArgs += $WslServerPath }
@@ -1402,6 +1446,15 @@ function Resolve-NewDestination {
     return $full
 }
 
+# The default server folder for -Name: its letters and digits as CamelCase words, plus Server
+# ("Farnham's Echo" -> FarnhamsEchoServer). Test-ServerFolder decides whether it is usable.
+function ConvertTo-ServerFolder([string]$name) {
+    $words = @(($name -creplace "['\u2019]", "") -split '[^A-Za-z0-9]+' | Where-Object { $_ })
+    $base = -join ($words | ForEach-Object { $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1) })
+    if ($base -cmatch 'Server\z') { $base = $base.Substring(0, $base.Length - 6) }
+    return "${base}Server"
+}
+
 # $text with the one occurrence of $old replaced by $new; throws when $old is missing or repeated.
 function Set-Once([string]$text, [string]$old, [string]$new, [string]$file) {
     $at = $text.IndexOf($old, [System.StringComparison]::Ordinal)
@@ -1455,6 +1508,11 @@ function Invoke-New {
     foreach ($field in @(@("Game", $Game), @("Feature", $Feature), @("Voice", $Voice), @("LlmProvider", $LlmProvider))) { Test-BriefText $field[0] $field[1] }
     if ($WslDistro -and $WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "-WslDistro must be made of A-Z a-z 0-9 . _ -" }
     if ($Engine -and $Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z') { throw "-Engine must be a folder name under ports/, such as elden-ring." }
+    # The direct /var/www/html folder Core installs this mod in; Core still refuses one that exists.
+    $folderName = $(if ($ServerFolder) { $ServerFolder } else { ConvertTo-ServerFolder $Name })
+    if (-not (Test-ServerFolder $folderName)) {
+        throw "Server folder '$(Get-Printable $folderName)' is not usable: pass -ServerFolder <Name>Server (7-47 ASCII letters or digits, a capital first letter, ending in Server, not a product name such as HerikaServer or KagrenacServer)."
+    }
     if ($InteractionMode -and @("manual", "ambient", "companion", "operator") -cnotcontains $InteractionMode) {
         throw "-InteractionMode must be manual, ambient, companion or operator (the primary mode; the agent records any mix in PROJECT.md)."
     }
@@ -1524,9 +1582,15 @@ function Invoke-New {
         $text = Set-Once $text '"id": "example-server"' "`"id`": `"$Id`"" "dwemer-mod.json"
         $text = Set-Once $text "`"name`": `"$($template.name)`"" "`"name`": `"$Name`"" "dwemer-mod.json"
         $text = Set-Once $text "`"description`": `"$($template.description)`"" "`"description`": `"$Name, an AI mod made with KAGRENAC AI Mod Maker.`"" "dwemer-mod.json"
+        $eol = $(if ($text.Contains("`r`n")) { "`r`n" } else { "`n" })
+        $text = Set-Once $text "`"id`": `"$Id`",$eol" "`"id`": `"$Id`",$eol  `"server_folder`": `"$folderName`",$eol" "dwemer-mod.json"
+        # The template's own page is not this mod's; project_url is optional and added once the mod has one.
+        $text = Set-Once $text "  `"project_url`": `"$($template.project_url)`",$eol" "" "dwemer-mod.json"
         [System.IO.File]::WriteAllText($manifestPath, $text, $utf8)
         $saved = [System.IO.File]::ReadAllText($manifestPath, $utf8) | ConvertFrom-Json
-        if ([string]$saved.id -cne $Id -or [string]$saved.name -cne $Name) { throw "dwemer-mod.json did not read back with id $Id and name $Name." }
+        if ([string]$saved.id -cne $Id -or [string]$saved.name -cne $Name -or [string]$saved.server_folder -cne $folderName -or $null -ne $saved.project_url) {
+            throw "dwemer-mod.json did not read back with id $Id, name $Name, server_folder $folderName and no project_url."
+        }
 
         $projectPath = Join-Path $dest "PROJECT.md"
         $text = [System.IO.File]::ReadAllText($projectPath, $utf8)
@@ -1535,7 +1599,7 @@ function Invoke-New {
             "Starting feature (new companion or existing NPC, and what it does)" = $Feature
             "Mod name" = $Name
             "Project id and name in ``dwemer-mod.json`` (own values, set before deploy)" = "``$Id``, $Name"
-            "Voice (none, or PocketTTS replies; speech input later?)" = $Voice
+            "Voice (none, or PocketTTS replies; speech input only if asked: Parakeet push-to-talk into the editable draft)" = $Voice
             "LLM provider (name only)" = $LlmProvider
             "DwemerDistro (the one WSL distro name)" = $WslDistro
         }
@@ -1581,6 +1645,7 @@ function Invoke-New {
             "id in ``dwemer-mod.json``; the template itself keeps the client build in`n" +
             "``%LOCALAPPDATA%\DwemerDynamics\KagrenacClient\build``.") "Everything built or private stays outside this repository and every web root." "PROJECT.md"
         $text = Set-Once $text "database ``custom_<id>`` with ``-`` as ``_``" "database ``custom_$($Id.Replace('-', '_'))``" "PROJECT.md"
+        $text = Set-Once $text "``/var/www/html/<server_folder>`` (``server_folder`` in ``dwemer-mod.json``; a copy without it: ``/var/www/html/custom-mods/<id>``; Core's registry entry is what counts)" "``/var/www/html/$folderName`` (``server_folder`` in ``dwemer-mod.json``)" "PROJECT.md"
         $start = $text.IndexOf("`n## Paths`n", [System.StringComparison]::Ordinal)
         $end = $text.IndexOf("`n## Decisions`n", [System.StringComparison]::Ordinal)
         if ($start -lt 0 -or $end -lt $start) { throw "The template's PROJECT.md has no Paths section before Decisions." }
@@ -1597,20 +1662,25 @@ function Invoke-New {
 
     $null = Invoke-Native { & git init --quiet -b main $dest }
     if ($LASTEXITCODE -ne 0) { throw "git init failed in $dest (exit $LASTEXITCODE); the files are there, run 'git init -b main' in it yourself." }
-    Say "OK" "Created $Name ($Id) at $dest from template commit $short`: $($expected.Count) files, its own manifest id and name, Git initialised, nothing committed."
+    Say "OK" "Created $Name ($Id) at $dest from template commit $short`: $($expected.Count) files, its own manifest id, name and server folder $folderName, Git initialised, nothing committed."
+    Say "INFO" "Its first deploy installs it at /var/www/html/$folderName (http://127.0.0.1:19000/$folderName/), database custom_$($Id.Replace('-', '_'))."
     Say "INFO" "$dest\PROJECT.md holds the brief$(if ($plan) { ", the $Engine reference plan" }), the paths for this id and the stage states; this checkout was not changed."
     $script:done.Add("New project $Id at $dest (from $short)")
     $script:manual.Add("Agent: review the independent copy and commit it before deploy, within the user's existing authorization: git -C $(ConvertTo-PsLiteral $dest) add -A; git -C $(ConvertTo-PsLiteral $dest) commit -m $(ConvertTo-PsLiteral "Start $Name from KAGRENAC AI Mod Maker $short")")
     $script:manual.Add("Agent: fill the Gameplay design rows in the copy's PROJECT.md from the conversation (docs/GAMEPLAY_DESIGN.md) before engine-port code; server and provider setup does not wait for it")
     $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File $(ConvertTo-PsLiteral "$dest\scripts\project.ps1") deploy -WslDistro <name>")
-    $script:manual.Add("Set project_url in the copy's dwemer-mod.json to your own repository when it has one")
+    $script:manual.Add("Add project_url (an https URL) to the copy's dwemer-mod.json once the mod has its own public repository; it is optional and left out until then")
 }
 
 # A project with its own id builds the client into its own folder; the template keeps the shared one.
 $workingId = ""
 try { $workingId = [string](Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json).id } catch { }
+# This project's direct server folder, if its manifest names one.
+$workingFolder = ""
+try { $workingFolder = [string](Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json).server_folder } catch { }
+if ($workingFolder -and -not (Test-ServerFolder $workingFolder)) { Say "WARN" "dwemer-mod.json has an unusable server_folder; Core will refuse it."; $workingFolder = "" }
 # A project with its own id serves its own route; the template keeps KagrenacServer.
-if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { $defaultUrl = "http://127.0.0.1:19000/custom-mods/$workingId" }
+if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { $defaultUrl = "http://127.0.0.1:19000" + (Get-OwnServerPath $false).Substring("/var/www/html".Length) }
 if (-not $BuildRoot) {
     $BuildRoot = $(if ((Test-ProjectId $workingId) -and $workingId -cne "example-server") { Join-Path $env:LOCALAPPDATA "DwemerDynamics\Kagrenac\projects\$workingId\client" }
         else { Join-Path $env:LOCALAPPDATA "DwemerDynamics\KagrenacClient\build" })

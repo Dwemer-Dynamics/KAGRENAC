@@ -15,7 +15,8 @@ player talks to one NPC) fills each row in a few words and needs nothing else fr
 | `turn.php` | One player line to one NPC: one reply, and only allowlisted actions targeting that NPC | No NPC-to-NPC exchange, listener or participant list |
 | `decision.php` | Picks which of up to 8 NPCs offered by the game answers a **player's line**, or falls back to the baseline | Choosing actions, ambient moments or any other kind of id |
 | `event.php` | Four fixed types (`location_entered`, `item_given`, `combat_started`, `combat_ended`). `respond: true` is a normal turn for one NPC that the port sends when its own trigger fires. History stores it as a player-role line marked `Game event (<type>): <text>`; it is the game's report, not something the player said | Built-in triggers, schedulers, queues or cooldowns: the port owns them. Accepts only the four fixed types; a new type needs an explicit server, client and `PROTOCOL.md` change |
-| `TurnRuntime` (client) | One pending turn per runtime. `submitTurn()` (with `eventType` for an event) replaces any pending turn or voice; `cancel()` drops it and tells the server | Running an ambient exchange beside the player's turn |
+| `TurnRuntime` (client) | One pending turn per runtime. `submitTurn()` (with `eventType` for an event) replaces any pending turn or voice; `submitTurnTo()` sends only to the recipient the player saw; `transcribe()` runs `listen.php` alone and hands the text back for editing; `cancel()` drops a turn and tells the server | Running an ambient exchange beside the player's turn |
+| `ChatInput` (client) | The engine-free composer lifecycle: recipient, draft, Enter/Esc, optional push-to-talk, and when input capture and the microphone must be on | Drawing a field, reading keys or recording audio: the port does that with engine APIs |
 | `result.php` | Records that a handler ran (`handled`), was refused (`rejected`) or failed (`failed`) | Reporting that the outcome happened in the game |
 | Memory | History, plus optional summary and diary notes (off by default), per `session_id` and NPC; the port decides which save a session is (`setSession`). Bios and approved facts belong to one NPC or are global, across every session; fact candidates wait for a person's approval | Tracking listeners or overheard lines, or keeping private and overheard knowledge apart |
 
@@ -74,6 +75,35 @@ Use a persistent `npc.id` where the engine provides one, with its citation. Othe
 id scoped to the run, and drop it when the session or the NPC instance changes. Never invent
 an identity that carries across saves.
 
+## Player input
+
+Every mod has, by default, a real in-game composer for free text, whatever its interaction
+mode: the player opens it with a key, sees **To: <recipient>** (an NPC, the suit AI or an
+operator, each with an identity as above), types an editable line and presses Enter. A
+canned hotkey line or report button does not count as chat. It is drawn and fed by the
+engine's own UI and input APIs (Layout in [AGENTS.md](../AGENTS.md)); `ChatInput` in the
+client is only the shared lifecycle and creates no UI.
+
+- **Recipient.** Read when the composer opens and shown in its header. The line goes only to
+  that recipient: at Enter, `submitTurnTo()` reads a fresh context and refuses, keeping the
+  draft, if the recipient left or was replaced. It never retargets silently.
+- **Controls.** While the composer is open the game gets no movement, camera, attack or
+  interact input. Capture is released on send, Esc, pause, loading screen, death, recipient
+  unload, focus loss and shutdown, and whenever the field is not visible.
+- **Size and duplicates.** 1-1000 characters after `turn.php`'s cleaning (control characters
+  become spaces, then trimmed); an empty line or invalid UTF-8 sends nothing and keeps the
+  draft; a repeat of the line still waiting is ignored. No cooldown or quota.
+- **Refusals and failures.** Shown in game. A refused line stays in the draft. A sent line
+  whose turn fails later (server error, timeout) goes back into the draft for the same
+  recipient and session, never over newer text or for another recipient; the player sends it
+  again with Enter. Nothing is queued, retried or resent automatically.
+- **Speech input, only when the user asks for it.** Push-to-talk with Parakeet
+  (`speech_input_enabled` on the client, `stt.enabled` on the server): the microphone is
+  open only while the key is held, the recording is at most `listen.php`'s 10 MB, and the
+  transcript lands in the editable draft. The player checks it and presses Enter; nothing is
+  sent by the microphone alone. PocketTTS replies (`voice_enabled`) are a separate choice. A
+  mod that did not ask for speech input records nothing.
+
 ## NPC-to-NPC exchanges (planned)
 
 - **Participants** are NPCs the game reads as present, alive and able to talk now, each with
@@ -116,14 +146,14 @@ Start with **one** automatic interaction and keep it bounded:
   `submitTurn()`: it replaces the pending ambient turn or voice at once (same NPC: the
   player's turn makes the ambient one stale on the server; another NPC: the runtime queues
   the old turn's cancel itself). Late ambient results and voice are discarded locally, but
-  text already presented or actions already executed are not undone. If `submitTurn()` is
-  refused, or the port called `cancel()` first and that queued a server cancel (a turn, not
-  only its voice, was pending and a cancel slot was free), the port keeps at most one pending
-  player line, stays responsive, and submits it once after `tick()` lets it. A voice-only
-  `cancel()` is local and needs no wait. The port never replays the old HTTP request or the
-  ambient turn. If that submit is refused or fails, show it; never lose the player's line
-  silently. "First" means ambient speech never queues ahead of the player; it does not bypass
-  the server's cancel ordering.
+  text already presented or actions already executed are not undone. The player's send needs
+  no `cancel()` first. If `submitTurn()` is refused (for example while a server cancel for
+  that NPC is still out), show why and keep the line in the composer's draft; the player
+  sends it again with Enter. The port never queues or resends the line by itself, and never
+  replays the old HTTP request or the ambient turn. A voice-only `cancel()` is local and
+  needs no wait. Never lose the player's line silently. No new ambient line starts while the
+  composer is open or recording. "First" means ambient speech never queues ahead of the
+  player; it does not bypass the server's cancel ordering.
 - **Cancel limits.** The generation fence (`cancel.php`, `409 stale`) only stops a save that
   has not yet committed. It cannot undo an ambient reply already saved to history, and an old
   request that reaches the server after the cancel starts a new, current generation. Muting
@@ -173,7 +203,11 @@ heard), **handled** (the handler ran) and **observed** (the game later read the 
 
 ## Budgets and the growth path
 
-Set a cost budget for each mod (calls per exchange, exchanges per hour). Profiles may
+Keep each exchange bounded so generated dialogue cannot trigger an endless loop.
+Do not impose per-launch or hourly call quotas, test-only lockouts, or cooldowns on
+explicit player requests unless the user asks. Keep duplicate-input detection, one
+pending request and stale-result cancellation. Pace automatic ambient exchanges for
+the gameplay loop; do not turn that pacing into a manual-request usage limit. Profiles may
 optionally give an NPC its own model or a keyless mode; without one, the config applies. The
 growth path starts with the first loop of the chosen mode, then adds one bounded automatic
 interaction or one action with an observed outcome, one at a time. A director, queue or
@@ -208,8 +242,12 @@ existing port.
 ## Acceptance
 
 Stage 6c in PROJECT.md is the loop from the Gameplay design, seen in the game and launched by
-the user. It includes the automatic trigger when one was requested, and heard voice when
-voice was requested. Do not replace a requested companion with a narrator, and do not move
+the user the normal way, with the mod loading and connecting by itself
+([automatic load and connect](ENGINE_PLANNING.md#automatic-load-and-connect)). It includes the
+automatic trigger when one was requested, with no manual chat step needed to start an ambient
+or operator exchange, heard voice when voice was requested, and the in-game composer from
+[Player input](#player-input): a line typed to the recipient it shows, controls released
+afterwards, and push-to-talk into the editable draft when speech input was requested. Do not replace a requested companion with a narrator, and do not move
 the interaction to an external window, just to finish. Mock mode, the console client and
 diagnostics are developer checks, not the loop, and none is required before an ambient or
 operator loop. When a mechanism is missing, name it exactly (for example "no participant

@@ -22,12 +22,20 @@ struct TurnRuntime::VoiceDone {
     std::string error;
 };
 
+// A finished transcription-only request (text is "" when it failed).
+struct TurnRuntime::TranscriptDone {
+    std::string requestId;  // the stt- id
+    std::string text;
+    std::string error;
+};
+
 // Hand-off between threads. Workers only push; only the game thread (tick, shutdown) reads.
 struct TurnRuntime::Mailbox {
     std::mutex mutex;
     std::deque<TurnResult> results;    // finished turns
     std::deque<CancelDone> cancels;    // finished server cancellations
     std::deque<VoiceDone> voices;      // finished voice for applied turns
+    std::deque<TranscriptDone> transcripts;  // finished transcription-only requests
     std::deque<std::string> messages;  // status lines from other workers
     bool reportsOff = false;           // set when the server has no result.php
 };
@@ -224,6 +232,17 @@ bool TurnRuntime::queueCancel(const ClientPtr& sender, const std::string& npcId)
 std::string TurnRuntime::submitTurn(const std::string& text, const std::filesystem::path& speechWav,
                                     const std::string& eventType)
 {
+    return startTurn(nullptr, text, speechWav, eventType);
+}
+
+std::string TurnRuntime::submitTurnTo(const GameContext& recipient, const std::string& text)
+{
+    return startTurn(&recipient, text, {}, "");
+}
+
+std::string TurnRuntime::startTurn(const GameContext* recipient, const std::string& text,
+                                   const std::filesystem::path& speechWav, const std::string& eventType)
+{
     if (stopped_) {
         return "";
     }
@@ -233,8 +252,14 @@ std::string TurnRuntime::submitTurn(const std::string& text, const std::filesyst
         return "";
     }
     GameContext context = game_.readContext();
-    if (context.npcId.empty()) {
+    if (context.npcId.empty() && !recipient) {
         game_.showMessage("No NPC here to talk to.");
+        return "";
+    }
+    // The line goes only to the recipient the player saw, never to whoever is current now.
+    if (recipient && (recipient->npcId.empty() || context.npcId != recipient->npcId || !game_.isSameNpc(*recipient))) {
+        game_.showMessage("Not sent: " + (recipient->npcName.empty() ? std::string("that NPC") : recipient->npcName)
+                          + " is no longer here.");
         return "";
     }
     if (cancelling_.count({client_->config().sessionId, context.npcId}) > 0) {
@@ -276,6 +301,57 @@ std::string TurnRuntime::submitTurn(const std::string& text, const std::filesyst
         mailbox->results.push_back(std::move(result));
     });
     return turn_.requestId;
+}
+
+std::string TurnRuntime::transcribe(const std::filesystem::path& wav, TranscriptHandler handler, bool removeWav)
+{
+    if (stopped_ || !handler) {
+        return "";
+    }
+    if (!client_->config().speechInputEnabled) {
+        game_.showMessage("Speech input is off in this mod (speech_input_enabled); type instead.");
+        return "";
+    }
+    reapWorkers();
+    if (busyWorkers() >= kMaxWorkers) {
+        game_.showMessage("Workers busy; please try again when a request finishes.");
+        return "";
+    }
+    // A replaced transcription keeps its worker until it finishes; its result is ignored.
+    sttRequestId_ = newRequestId("stt");
+    sttHandler_ = std::move(handler);
+    workers_.push_back(std::async(std::launch::async, [sender = client_, mailbox = mailbox_, requestId = sttRequestId_,
+                                                       wav, removeWav] {
+        // No parent id: no turn exists yet. Worker failures use a fixed text, never what().
+        TranscriptDone done{requestId, {}, {}};
+        try {
+            if (!sender->listen(wav, done.text, done.error, requestId)) {
+                done.text.clear();
+            } else if (done.text.empty()) {
+                done.error = "no speech was recognized";
+            }
+        } catch (...) {
+            done.text.clear();
+            done.error = "the client failed while transcribing";
+        }
+        if (removeWav) {
+            std::error_code ignored;
+            std::filesystem::remove(wav, ignored);
+        }
+        std::lock_guard<std::mutex> lock(mailbox->mutex);
+        mailbox->transcripts.push_back(std::move(done));
+    }));
+    return sttRequestId_;
+}
+
+bool TurnRuntime::cancelTranscription()
+{
+    if (sttRequestId_.empty()) {
+        return false;
+    }
+    sttRequestId_.clear();
+    sttHandler_ = nullptr;
+    return true;
 }
 
 bool TurnRuntime::startJob(Job job)
@@ -337,6 +413,7 @@ bool TurnRuntime::setSession(const std::string& sessionId, const std::string& dr
         return false;
     }
     cancel(dropMessage);
+    cancelTranscription();  // a transcript for the old session never reaches a draft
     Config next = client_->config();
     next.sessionId = sessionId;
     client_ = std::make_shared<const AiClient>(next);
@@ -352,12 +429,14 @@ void TurnRuntime::tick()
     std::deque<TurnResult> results;
     std::deque<CancelDone> cancels;
     std::deque<VoiceDone> voices;
+    std::deque<TranscriptDone> transcripts;
     std::deque<std::string> messages;
     {
         std::lock_guard<std::mutex> lock(mailbox_->mutex);
         results.swap(mailbox_->results);
         cancels.swap(mailbox_->cancels);
         voices.swap(mailbox_->voices);
+        transcripts.swap(mailbox_->transcripts);
         messages.swap(mailbox_->messages);
     }
     for (const std::string& message : messages) {
@@ -383,6 +462,29 @@ void TurnRuntime::tick()
     }
     for (const VoiceDone& done : voices) {
         handleVoice(done);
+    }
+    for (const TranscriptDone& done : transcripts) {
+        handleTranscript(done);
+    }
+}
+
+// Hands a transcript to the port only if it is still the one wanted. Its text is never shown
+// here or put in a trace line: the port puts it in the player's draft.
+void TurnRuntime::handleTranscript(const TranscriptDone& done)
+{
+    std::string trace = "Trace: speech-to-text " + done.requestId;
+    if (sttRequestId_.empty() || done.requestId != sttRequestId_) {
+        game_.showMessage("Ignored a transcript that is no longer wanted (cancelled or replaced). " + trace + " (dropped)");
+        return;
+    }
+    sttRequestId_.clear();
+    TranscriptHandler handler = std::move(sttHandler_);
+    sttHandler_ = nullptr;
+    game_.showMessage(trace + (done.error.empty() ? " (ok)" : " (failed)"));
+    try {
+        handler({done.requestId, done.text, done.error});
+    } catch (...) {
+        game_.showMessage("The port's transcript handler failed.");
     }
 }
 
@@ -411,6 +513,7 @@ void TurnRuntime::handleResult(const TurnResult& result)
     }
     lastAppliedRequestId_ = result.requestId;
     lastTurnOk_ = result.ok;
+    lastTurnEnd_ = {result.requestId, result.ok, result.ok ? std::string() : result.error};
     std::vector<ActionReport> reports = applyResult(turn, result);
     bool reportsOff = false;
     {
@@ -554,6 +657,7 @@ void TurnRuntime::shutdown(const std::string& message, bool cancelOnServer)
         return;
     }
     drop(message, cancelOnServer);
+    cancelTranscription();
     stopped_ = true;
     releaseTurnWorker();
     // At most kMaxWorkers + kMaxCancelWorkers requests are out and each blocking HTTP call
@@ -605,12 +709,27 @@ bool TurnRuntime::hasPending() const
 
 bool TurnRuntime::idle() const
 {
-    return !hasPending() && workers_.empty() && cancelWorkers_.empty() && !turnWorker_.valid();
+    return !hasPending() && sttRequestId_.empty() && workers_.empty() && cancelWorkers_.empty() && !turnWorker_.valid();
+}
+
+std::string TurnRuntime::pendingTranscription() const
+{
+    return sttRequestId_;
 }
 
 const GameContext* TurnRuntime::pendingTurn() const
 {
     return turn_.requestId.empty() ? nullptr : &turn_.context;
+}
+
+std::string TurnRuntime::pendingTurnId() const
+{
+    return turn_.requestId;
+}
+
+const TurnRuntime::TurnEnd& TurnRuntime::lastTurnEnd() const
+{
+    return lastTurnEnd_;
 }
 
 std::string TurnRuntime::pendingNpcName() const

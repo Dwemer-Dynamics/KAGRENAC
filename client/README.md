@@ -75,7 +75,8 @@ root copy.
    KagrenacClient.exe                  (interactive: type lines and the commands below)
    ```
 
-   Interactive commands: `/cancel`, `/listen <wav>`, `/decide <text>`, `/event <type> <text>`
+   Interactive commands: `/cancel`, `/transcribe <wav>` (speech input only; prints what was
+   heard and sends nothing), `/listen <wav>`, `/decide <text>`, `/event <type> <text>`
    (log only), `/react <type> <text>` (the NPC you face reacts), `/npc guide|scout` (face
    another fake NPC), `/session <id>` (switch session, like loading another save), `/unload`,
    `/load`, `/quit`. Event types: `location_entered`, `item_given`, `combat_started`,
@@ -104,7 +105,8 @@ with `--config <file>`) overrides any key it sets.
 | `token` | empty | Required. From the server's `config/config.php`. |
 | `session_id` | `demo-save-1` | Keeps NPC history apart, e.g. one per save game. |
 | `timeout_seconds` | `40` | HTTP timeout per phase (connect, send, waiting for the reply headers, each read), 1-300. WinHTTP checks it coarsely (a 1 second setting fired after about 2-4 seconds in tests), so a call can block longer; any reply that completes after `timeout_seconds` is discarded with an error, never applied. A timed-out turn is never retried. |
-| `voice_enabled` | `false` | Ask the server for a WAV of each reply. |
+| `voice_enabled` | `false` | Text-to-speech only: ask the server for a WAV of each reply. |
+| `speech_input_enabled` | `false` | Optional speech input, separate from `voice_enabled`: lets `TurnRuntime::transcribe()` (and `ChatInput` push-to-talk) send a recording to `listen.php`. The server's `stt.enabled` still decides. A missing key means `false`. |
 | `allowed_actions` | `["follow_player"]` | Actions this game accepts. Set `[]` to see rejection. |
 
 ## Files
@@ -115,10 +117,11 @@ with `--config <file>`) overrides any key it sets.
 | `src/console_game.h` | Fake console implementation of `GameAdapter`. |
 | `src/ai_client.h/.cpp` | HTTP + JSON client for the protocol. Blocking; used from worker threads. |
 | `src/config.h/.cpp` | Loads the two config files. |
-| `src/turn_runtime.h/.cpp` | `TurnRuntime`: bounded workers, mailbox, pending request, NPC instance checks, cancellation, action handlers, voice and result reports. |
+| `src/turn_runtime.h/.cpp` | `TurnRuntime`: bounded workers, mailbox, pending request, NPC instance checks, cancellation, action handlers, voice and result reports, recipient-checked sends (`submitTurnTo`) and transcription-only speech input (`transcribe`). |
+| `src/chat_input.h/.cpp` | `ChatInput`: the engine-free composer lifecycle (recipient, draft, push-to-talk, capture and microphone release). It draws nothing and reads no keys. |
 | `src/main.cpp` | Command line and console input; calls `TurnRuntime`. |
 
-`ai_client`, `config` and `turn_runtime` build as the static library target
+`ai_client`, `chat_input`, `config` and `turn_runtime` build as the static library target
 `KagrenacClientCore`; the executable links it. `scripts\build.ps1` and its output paths are
 unchanged.
 
@@ -135,9 +138,10 @@ No existing port has been moved to it; this is the route for a new or updated on
    handler is rejected and reported as such; nothing generic runs. A handler returns
    `true` only when the engine ran the action, and `false` when nothing ran (reported
    `failed`); the default `followPlayer()` runs nothing.
-4. Call `runtime.tick()` once per game tick; call `submitTurn()` from the game's own text
-   entry, `cancel()` from its cancel input or NPC change, and `setSession()` on save load.
-   Anything a `startJob()` job captures by reference must outlive the runtime's workers.
+4. Call `runtime.tick()` once per game tick; send the player's line from the game's own text
+   entry (see [In-game chat](#in-game-chat-the-default-player-input)), `cancel()` from its
+   cancel input or NPC change, and `setSession()` on save load. Anything a `startJob()` job
+   captures by reference must outlive the runtime's workers.
 5. On unload, call `runtime.shutdown(...)` on the game thread from the engine's unload hook,
    before the adapter is destroyed, then destroy the runtime there. It waits for the bounded
    workers and applies nothing they return. `shutdown(message, false)` skips the server
@@ -146,6 +150,55 @@ No existing port has been moved to it; this is the route for a new or updated on
 
 Then rerun the smoke checks below with the console client, and qualify every in-game
 behaviour in that engine separately; building against the runtime proves nothing in game.
+
+## In-game chat: the default player input
+
+Every mod gets a real in-game composer by default: the player opens it with a key, sees
+"To: <recipient>", types free text in an editable field and presses Enter. A canned hotkey
+line does not count. `ChatInput` is the shared, engine-free part; the port owns the native
+field, header, key bindings, focus capture and, only when speech input was asked for, the
+microphone. No C++ class here creates in-game UI or captures input: building against it
+proves nothing in game.
+
+- Own one `ChatInput chat(runtime)` next to the runtime (constructed after it, destroyed
+  before it) and call `chat.tick()` after `runtime.tick()`.
+- Open: `chat.open(adapter.readContext())`; with no recipient it stays closed and the port
+  shows that there is no one to talk to. Show `chat.recipient().npcName` as the header.
+- While `chat.wantsInputCapture()` is true the game gets no movement, camera, attack or
+  interact input, through the engine's own UI input mode (never a global hook); release it
+  the moment it turns false, without leaking the Enter or Esc key-up. Call `chat.close()` on
+  pause, loading screen, death, recipient unload, focus loss, shutdown and whenever the field
+  is not visible; it is safe to repeat.
+- Copy field edits in with `chat.setDraft()`; when `chat.draftRevision()` changes, copy
+  `chat.draft()` back into the field with the caret at the end. Show `chat.statusLine()`.
+- Enter calls `chat.enter()`. It sends only to the shown recipient through
+  `runtime.submitTurnTo()`, which reads a fresh context and refuses if that recipient is no
+  longer there; it never retargets to whoever `readContext()` names now. Text is 1-1000
+  characters after `turn.php`'s cleaning (`kMaxTurnTextChars`; control-character runs become
+  one space, then trimmed); invalid UTF-8 is refused before sending. A refused line stays
+  in the draft; the player presses Enter again. A sent line whose turn fails later (server
+  error, timeout; `runtime.lastTurnEnd()`) is put back by `chat.tick()` into an empty draft
+  for the same recipient instance and session, or at the next `chat.open()` for them; newer
+  text or another recipient is never overwritten. Nothing is queued or resent automatically,
+  and there is no cooldown or quota on explicit lines. Esc follows `chat.escape()`; the
+  port's cancel key during the wait calls `runtime.cancel()`.
+- Ambient lines never start while the composer is open; the player's send replaces a pending
+  ambient turn or voice ([Automatic interactions](../docs/GAMEPLAY_DESIGN.md#automatic-interactions)).
+
+**Optional speech input (only when the user asks for it).** Set `speech_input_enabled` and
+the server's `stt.enabled` with Parakeet (verified running first); TTS (`voice_enabled`,
+PocketTTS) is a separate choice. Push-to-talk: `chat.pttDown()` when the key goes down while
+Editing (the microphone opens only while `chat.wantsMicOpen()`), then on key-up the port
+closes the device, writes a WAV of at most `kMaxSpeechWavBytes` (`listen.php`'s 10 MB; stop
+capture there rather than at an invented time limit) and calls `chat.pttUp(wav)` (or
+`pttUp({}, reason)` when capture failed). `runtime.transcribe()` runs `listen.php` only; the
+transcript lands in the draft for the player to edit and send with Enter, and the worker
+deletes the WAV. A replaced, cancelled or session-switched transcription never reaches the
+draft. Logs carry the `stt-` id, never audio or the transcript. Capture uses the engine's
+audio API or in-process WASAPI in the port; nothing records audio in the shared code.
+
+`submitTurn(text, speechWav)` (console `/listen`, `--listen`) still transcribes and sends
+the raw transcript at once; it is a developer and legacy path, not the default player flow.
 
 ## Smoke checks
 
@@ -188,7 +241,8 @@ the server's Logs, Connector calls and error log (`example-ai [<id>]: ...`):
 - game events `evt-...`, NPC selection `dec-...` (in the `Decision:` line).
 
 Voice requests send their turn's id as the parent (`parent_request_id` for `speak.php`, the
-`X-Parent-Request-Id` header for `listen.php`), and `speak.php` also gets the NPC id so the
+`X-Parent-Request-Id` header for `listen.php`; `transcribe()` sends none, as no turn exists
+yet), and `speak.php` also gets the NPC id so the
 server can use that NPC's profile voice. When a reply names a `request_id` that is not the
 one sent, the client ignores the reply. Older servers ignore the extra fields and send no id
 back; the client still works. Profiles and memory need no client change.
@@ -222,7 +276,8 @@ enabling or testing. Set them up as described in [CONNECTORS.md](../CONNECTORS.m
 | Command | Expect |
 |---|---|
 | `--say "follow me"` with `"voice_enabled": true` | reply, action and `Trace: turn req-... (ok)` first, then `Voice saved to ...\dwemer-ai-example\<id>.wav` and `Trace: voice tts-... for turn req-... (ok)` |
-| `--listen C:\path\speech.wav` (or `/listen` interactive) | `You said: ...`, then the reply |
+| `--listen C:\path\speech.wav` (or `/listen` interactive; developer path that sends at once) | `You said: ...`, then the reply |
+| interactive `/transcribe C:\path\speech.wav` with `"speech_input_enabled": true` | `Trace: speech-to-text stt-... (ok)` and `Heard (nothing sent; ...): ...`; no turn is sent until you type a line. With it `false`: `Speech input is off in this mod ...` |
 | TTS failing | reply text first, then `Voice unavailable, text only: ...` and `Trace: voice tts-... for turn req-... (failed)` |
 | STT failing or hearing nothing | `AI unavailable: speech to text failed (...), please type instead (not retried; ...)`, exit 1 |
 

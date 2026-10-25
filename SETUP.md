@@ -76,7 +76,8 @@ any `config.json` or `.env` file under `/custom-mods/KagrenacServer`,
 `/custom-mods/example-server` and `/ExampleServer`. Any other folder (a renamed copy or a
 fork) is covered only after `sudo ddistro_custom_mod setup-web --protect-project <folder>`
 (a folder directly under `custom-mods/`, run **before** you clone into it, same Core
-requirement), or by equivalent server-side Apache rules of your own; nothing protects
+requirement), `sudo ddistro_custom_mod setup-web --protect-root <Name>Server` (a direct
+`/var/www/html/<Name>Server` folder; Core's install and `migrate-root` do this themselves), or by equivalent server-side Apache rules of your own; nothing protects
 arbitrary paths by itself. The `grep` only shows the rules exist: after installing, check
 for HTTP 403 on every Apache port that serves `/var/www/html` as
 [START_HERE.md](START_HERE.md#deployment-and-exposure) describes, using your own folder in
