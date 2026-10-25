@@ -2,8 +2,9 @@
 
 Start from a copy of [KAGRENAC AI Mod Maker](https://github.com/Dwemer-Dynamics/Kagrenac)
 (KagrenacServer at the root, KagrenacClient in `client/`) in your own repository, with your
-own branches (for example `main` and `dev`). Run [SETUP.md](SETUP.md) first
-(orientation is in [START_HERE.md](START_HERE.md)). Keep private settings out of Git.
+own branches. Use [guided setup](docs/getting-started.md) first; `project.ps1 new` sets
+the manifest identity, named server root and project record. This page is an optional
+customization map, not another required setup route. Keep private settings out of Git.
 Then use this map for your own project. A copy made with GitHub's **Use this template** has
 its own, unrelated Git history: to take later template changes, compare them with your project and copy or adapt
 the ones you want by hand. A clone that keeps the template's history can instead keep the
@@ -13,7 +14,7 @@ template as an extra remote and merge reviewed updates on a working branch.
 | Change | Edit |
 |---|---|
 | Project/build name | `client/CMakeLists.txt` (`project`, every `KagrenacClient` target reference including POST_BUILD/TARGET_FILE_DIR), `client/scripts/build.ps1` build folder and output message (and the matching default in `scripts/project.ps1`), the `--version` label in `client/src/main.cpp`, and README commands |
-| Server folder/route | Clone into `/var/www/html/custom-mods/your-folder` (the shared port serves it at `/custom-mods/your-folder`); change the default base URL in server `scripts/smoke.sh` and `client/config.default.json` and `client/src/config.h`, and set the client's private `server_url` to that route. Core's web protection covers only the known Kagrenac folders, so add equivalent Apache deny rules for `.git/`, `client/`, `docs/` and `ports/` in your folder ([SETUP.md](SETUP.md#before-you-install-web-protection)) |
+| Server folder/route | `new` sets `server_folder` to `<Name>Server`; Core protects and installs that named root. `pair` resolves the registered route and writes the private `server_url`. Legacy manual routes remain in [SETUP.md](SETUP.md#before-you-install-web-protection); do not move an existing install or hand-edit shared Apache rules as a renaming exercise |
 | Database | Server `config/config.php`: set `database.name` to a new lowercase identifier; `install.sh` creates it |
 | Manifest (do this first) | Server `dwemer-mod.json`: your own unique `id` and `name` before the first deploy (`scripts\project.ps1 new` sets them in a new copy, [getting-started](docs/getting-started.md#new-project); `project.ps1 deploy` refuses the template's `example-server` for a new install; Core names the database `custom_<id>`; the route is `/<server_folder>`, which `new` sets to
 `<Name>Server`, or `/custom-mods/<id>` without it), then `description`, `project_url` and `branches`. Leave the `setup` placeholders as they are. One repository per mod; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md#making-your-own-launcher-mod-from-this-template) |

@@ -78,6 +78,8 @@ no retries, main-thread apply).
 | Composer: refused send keeps the draft; a sent line that fails later returns to an empty draft for the same recipient and session (newer text kept); Enter resends; nothing resent automatically; no cooldown | | | |
 | Typed dialogue to subtitle | | | |
 | Observation snapshot: source, time, `unavailable` for unread values | | | |
+| Readable self/player/location facts from qualified engine sources; no hidden/future knowledge | | | |
+| Actual compiled adapter serialization and server round trip, including nested context | | | |
 | Action capability gate: target, instance check, preconditions, observed result | | | |
 | `follow_player` handler | | | |
 | Other authorized actions | | | |

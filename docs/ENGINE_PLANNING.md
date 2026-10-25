@@ -101,6 +101,10 @@ works. A probe needing a live game stays pending until the human launches it.
 
 ## 5. Build and review the first slice
 
+Use [readable awareness and actual wire data](feature-recipes/PORT_RECIPES.md#readable-awareness-and-actual-wire-data)
+to check the real adapter path, including nested serialization and current self/player/location
+facts. A handcrafted request cannot qualify that path.
+
 For the default single repo, use maintained commands: create, commit, deploy, configure providers, build
 the port, assemble, configure capabilities, pair and install the game-side mod (with any
 helper the mod itself starts). These are developer and one-time setup commands the agent

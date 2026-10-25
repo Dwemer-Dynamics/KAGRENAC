@@ -1,5 +1,10 @@
 # Installing as a launcher custom mod
 
+This installs the template's PHP server, not a game plugin. To build your own mod, use
+[guided setup](docs/getting-started.md); generated projects default to a named server root.
+The legacy identity and paths below remain unchanged for existing template installs.
+Check [Core compatibility](docs/getting-started.md#before-you-start) before deployment.
+
 `dwemer-mod.json` lets the DwemerDistro launcher install KagrenacServer for you. In the
 launcher, open **Mods > Custom mods > Add custom mod** and paste:
 

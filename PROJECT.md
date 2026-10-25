@@ -41,26 +41,16 @@ planned.
 
 ## Integration plan (required before building mod code)
 
-First follow [Engine planning](docs/ENGINE_PLANNING.md). Record the installation survey,
-selected loader/tool versions and primary sources, the chosen architecture, bounded probes
-for unknowns and a five-minute acceptance sequence in `ports/<engine>/PLAN.md`. The agent
-checks the plan against this brief before game-port implementation; independent server and
-provider setup can proceed. Use the current coding agent for build, tests and a separate
-diff review, unless the user explicitly chooses delegation. Record flow friction in
-`docs/KAGRENAC_FLOW_REVIEW.md`. The target is setup once, then a normal game launch that
-loads the mod and connects by itself, with all interaction in game
-([automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)). Record
-the loader, the normal launch route and the unavailable-server behaviour in the "Saves,
-offline play, cancel" row, and their checks in the first thin slice's acceptance. Rows
-already done under earlier wording keep their status; add these checks as new acceptance or
-flow-review items instead of changing a done row back.
+Follow [Engine planning](docs/ENGINE_PLANNING.md). Keep detailed sources and probes in
+`ports/<engine>/PLAN.md`; summarize the chosen mechanisms below. Each row needs a cited
+fact or an Unknown with its next bounded probe and chosen alternative. Server/provider
+preparation can proceed while the game route is researched.
 
-"Player input in game" is by default a native in-game composer: a visible recipient, free
-typed text, Enter to send and Esc to close, with game controls captured and released by the
-engine's own input mode; push-to-talk into that editable draft only when speech input was
-asked for ([Player input](docs/GAMEPLAY_DESIGN.md#player-input)). Each row: the chosen
-mechanism, and whether it is a cited fact (SDK file, doc or game data) or Unknown. For an
-Unknown, note the bounded research (where, and when to stop) and the options offered.
+Default input is free typed text to a visible recipient in game, with controls captured
+and released. Speech input is optional. Record the normal loader entry, offline/save
+strategy and unavailable-server behavior. Use [installed startup acceptance](docs/ENGINE_PLANNING.md#installed-startup-acceptance)
+for the handoff. Keep one current status below and generic friction in
+`docs/KAGRENAC_FLOW_REVIEW.md`; do not restart completed stages when wording changes.
 
 | Part | Plan | Fact (citation) or Unknown |
 |---|---|---|

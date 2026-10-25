@@ -1,16 +1,15 @@
 # Setup: KAGRENAC AI Mod Maker (KagrenacServer + KagrenacClient)
 
-This walkthrough installs KagrenacServer inside DwemerDistro, builds the KagrenacClient
-console client on Windows, and connects the two. Both come from one repository: the server
-is the repository root and the client is `client/`. The short developer path, including
-`scripts\project.ps1`, is [docs/getting-started.md](docs/getting-started.md). Allow about 15 minutes. It is the
-canonical reference for installation and operations; for orientation, the feature checklist
-and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
+This is the manual installation and maintenance reference. For a new mod, start with
+[guided setup](docs/getting-started.md), which creates an independent project and deploys
+its named server root. This page also covers pairing, providers, backups, updates and
+removal. The console steps are developer checks, not prerequisites for a game port.
 
 ## What this is, and what it is not
 
 - **KagrenacServer** is a small PHP 8.2 + PostgreSQL server. It gives an NPC a reply (mock or
-  a real LLM) and at most one safe action, `follow_player`.
+  a real LLM) and allowlisted action requests. Both sides validate actions; the game must
+  supply the handler and observe its outcome.
 - **KagrenacClient** is a Windows console program that plays a fake game. It shows the
   `GameAdapter` boundary you replace with a real engine's APIs.
 - It is **not** a plugin for any real game. Your copy of the repository has no automatic
@@ -20,15 +19,15 @@ and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 - This guide is a **manual install** into `/var/www/html/custom-mods/KagrenacServer`; the official
   launcher and updater do not install, update or back up that copy. Alternatively, the
   launcher can install the server under **Mods > Custom mods** in its own folder and
-  database; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md). The client is always built
-  as described in section 2.
+  database; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md). Section 2 builds the console;
+  real game ports use their own maintained build/install route.
 
 ## Requirements
 
 | Where | What |
 |---|---|
 | Windows | DwemerDistro installed and started (it provides WSL, Apache with the shared custom mods port 19000, PostgreSQL, PHP 8.2 at 8.2.35 or later: [patched PHP](#before-you-install-patched-php)). |
-| Windows | Visual Studio 2022 with "Desktop development with C++" (MSVC, CMake). |
+| C++ client/ports only | Visual Studio 2022 with "Desktop development with C++" (MSVC, CMake). Script/managed ports use their qualified engine tools. |
 | Optional | An OpenAI-compatible LLM endpoint (cloud or local). Not needed for the mock. |
 | Optional | For voice, start with DwemerDistro PocketTTS (text-to-speech, audio.cpp, port 8086) and Parakeet (speech-to-text, port 8022); faster-whisper (port 9876) is an alternative. |
 
@@ -52,6 +51,11 @@ The server copy is not synced from the Windows copy. From Windows,
 HEAD through DwemerDistro Core
 ([getting-started](docs/getting-started.md#deploy-and-pair)); a manual clone is updated with
 `update.sh`, and a launcher install with the launcher. This page describes the manual route.
+
+New generated projects instead use `/var/www/html/<Name>Server`; resolve existing paths
+from Core's registry. Check [Core compatibility](docs/getting-started.md#before-you-start)
+before promising guided deployment. Public Core v1.0.8 lacks the required project/root
+protection switches and named-folder support; do not bypass the checks.
 
 ## Before you install: web protection
 

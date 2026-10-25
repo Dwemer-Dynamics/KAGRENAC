@@ -7,138 +7,68 @@ Follow both when a change touches both.
 
 ## Start of every task
 
-Use the user's chosen coding agent for implementation, tests and a separate review of the
-actual diff. There is no mandatory external worker or model-specific setup. Delegate only
-when the user asks. Follow [Engine planning](docs/ENGINE_PLANNING.md) before game-port code;
-use [the tool catalogue](docs/research/MODDING_TOOLS.md) as leads, never compatibility proof.
-Track first-run/repeat friction in the mod's `docs/KAGRENAC_FLOW_REVIEW.md` with evidence,
-minimal proposed fixes and generic versus engine-specific scope. Preserve the original brief.
-
-1. Read [PROJECT.md](PROJECT.md) and resume at the first stage in its Stages and readiness
-   table that is not done and is ready to work on; that table is the one current status.
-   If it is blank or incomplete, fill it in yourself from the conversation and the user's
-   earlier instructions; never send the user a form or ask them to confirm what they
-   already said. A blocked stage does not freeze the rest: record what blocks it and the
-   next action, tell the user, and say which independent stages you continue with.
-2. Follow the route in [docs/getting-started.md](docs/getting-started.md): ask only for what
-   is missing of game, starting feature and mod name, and write the integration plan in
-   PROJECT.md before building mod code. Fill its Gameplay design from the conversation too
-   ([Gameplay design](docs/GAMEPLAY_DESIGN.md)): the loop the player will see and hear, not
-   only a chat. A copy made before that section existed gets it added, keeping its status and
-   work. DwemerDistro, server install, client checks, LLM and voice setup do not wait
-   for either. Do not replace the user's goal with a different demo.
-3. Inspect real capabilities before promising anything: this repository
-   ([README.md](README.md#what-works-today)), the one DwemerDistro the user named
-   (`scripts/project.ps1 doctor -WslDistro <name>`; diagnostic only, and a service the user
-   did not choose, such as port 1234 beside OpenRouter, blocks nothing), any reference port
-   already in `ports/<engine>/` (reuse it), and what the engine's SDK and files
-   actually offer. Cite every engine fact; never invent an API or address. For an unknown,
-   do bounded research with a stated stopping point, then summarize two or three concrete
-   options with a recommendation; it is a short step, not a detour.
-4. Permissions the user already gave stay in force: continue routine, reversible setup
-   within them without asking again. Do the service, dashboard and browser work yourself
-   when you have the tools and that authority; only when a step is a GUI you cannot drive,
-   give the user its exact steps. Silence never grants a side effect (installs, provider
-   calls, commits, publishing); ask only for a missing provider, key or install that needs
-   the user's information. A chosen provider, a key the user set up privately and a request
-   to test it authorize that test, and no other paid call. Keys go on the dashboard **API
-   keys** page or in the private `config/config.php`, never in chat; pair with
-   `project.ps1 pair` so the user never copies a token. Set the provider, voice and server
-   allowlist with `project.ps1 configure` (nonempty actions only against a verified `-Build`
-   or with `-ConsoleClient`; `-AllowedActions none` needs neither; a key is reused only from a config the user names with
-   `-ReuseProviderFrom`); its `-TestProviders` is one such authorized test. Reuse a provider the user already
-   configured; otherwise recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
-   `typesafe/jev-1.13` only for `decision.php` choices, and PocketTTS for voice.
-5. Mock mode and the console client are developer checks, not the user's demo; the
-   console's follow is a printed simulation. The demo is a normal game launch that loads
-   and connects the mod by itself (Layout and copies). A full port records evidence in a copy of
-   [docs/engine-packs/ENGINE_PACK.md](docs/engine-packs/ENGINE_PACK.md).
-6. Keep PROJECT.md short and current; detailed engine history goes in `ports/<engine>/`.
-   Report evidence by kind: source, build, fixture, provider, user-reported, in game. A
-   user's broad "it works" is user-reported and never proof of each action; an action is
-   usable only after its own in-game check.
-7. Before ending a build pass, reconcile PROJECT.md, the port plan and the flow review with
-   the actual files and validation. A stage already done keeps its status when its wording
-   later grows; record the new checks as acceptance or flow-review items. Record uncommitted artifacts and interrupted work. Give
-   server-ready, port-built and gameplay-verified separate results; a completed chat does not
-   mean a completed mod. Leave one concrete next probe for each critical engine blocker.
+1. Read [PROJECT.md](PROJECT.md). Fill missing facts from the conversation, without a form
+   or repeated questions. Resume the first unfinished stage that can proceed. Preserve the
+   original brief, current status and unrelated work.
+2. Follow [guided setup](docs/getting-started.md). Plan the observable gameplay loop and
+   qualify the installed game/loader using [Engine planning](docs/ENGINE_PLANNING.md) before
+   port code. Cite primary sources; unknown mechanisms get bounded research and a next
+   concrete probe. Server/provider preparation can proceed independently.
+3. Use the user's chosen coding agent for implementation, checks and a separate review of
+   the actual diff. No mandatory external worker. Delegate only when requested. Use the
+   [playbook](docs/agent-playbook.md) and [recipes](docs/feature-recipes/PORT_RECIPES.md) as
+   references, not extra setup gates.
+4. Continue within existing authority. Silence grants no install, provider call, commit or
+   publication. Reuse a private key only from the source the user names. Keys go on **API
+   keys** or in private config, never chat. Pair with `project.ps1 pair`; configure through
+   `project.ps1 configure`. A chosen provider, privately configured key and request to test
+   authorize that test only. Recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
+   `typesafe/jev-1.13` for supported decisions and PocketTTS for requested voice.
+5. Report source, build, fixture, provider, user-reported and in-game evidence separately.
+   Server-ready, port-built and gameplay-verified are different results. A broad "it works"
+   does not verify each action. Keep PROJECT.md current; detailed evidence belongs in
+   `ports/<engine>/`, generic flow friction in `docs/KAGRENAC_FLOW_REVIEW.md`.
+6. Before handoff reconcile the actual source, build, install and plan. Record pending
+   uncommitted work and one next probe for each blocker. Do not reset completed stages when
+   wording changes; record new checks as acceptance items. The user launches games; never
+   copy or delete their saves.
 
 ## Layout and copies
 
-- Keep player-facing interaction inside the game: NPC selection, text entry, replies,
-  status and cancel. Prefer the game's native UI/input APIs, then a qualified in-process
-  rendering integration. External windows, desktop overlays and companion apps are last
-  resorts, not the default prototype. Record the missing mechanism and explain the fallback
-  before adopting it. Background helpers must not require a separate conversation window;
-  use external transport/audio only when the game cannot provide a suitable supported route.
-
-- Set up once, then load and connect automatically
-  ([Engine planning, Automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)).
-  The agent installs the game-side mod through the engine's own mod support or a loader cited
-  for the exact game build, deploys and pairs the server once; after that, a normal launch
-  (the game's own entry, or a cited loader's documented offline play entry when the engine
-  needs one, such as the Elden Ring me3 profile) loads the mod and connects it to its own
-  server. A loader profile or user-approved shortcut set up once is setup. A terminal or
-  script command, attach, watcher or scheduled task, helper or chat window or a launcher the
-  project wrote is never a normal per-session player step; build, install, check and test
-  commands stay developer tools. Never route a modded game through an anti-cheat-protected
-  or online launch, and never disable or bypass anti-cheat. A required hidden helper is
-  started and stopped by the game mod (or the loader's documented sidecar hook when the
-  engine cannot), owned by that game instance, single per instance and cleaned up on
-  restart, quit or crash; its token comes only from the private paired config. A missing
-  server, network or helper never blocks game start or play. Add no Windows startup entry,
-  service, watcher or scheduled task by default, and never install or start the server from
-  the game side. A missing autoload mechanism is an integration gate, not a success because a
-  console or helper works; an external fallback needs the named mechanism and the user's
-  approved scope. Check an unavailable server only by making this project's own route
-  unreachable; make no change to shared services without the user's explicit instruction.
-  Before handing off a playable build, audit its actual installed entry and helper ownership,
-  not only the source design. A configured provider must not need a per-session terminal
-  `start`, `arm`, `EnableProvider` or test-budget command. Keep deliberate in-game enable/stop
-  controls. Record the installed helper/artifact hashes, duplicate-start and game-exit checks,
-  and distinguish normal loading from a shortcut that hides a project-written wrapper.
-  Developer diagnostics and incomplete engine probes are never the player's required setup.
-
-- Keep the server at the repository root. In the template, the manifest id `example-server`,
-  `config/config.php`, database placeholder `example_ai_mod`, service identity
-  `example-ai-server`, port and routes stay unchanged. A user's new copy sets its own `id`
-  and `name` in `dwemer-mod.json` before its first deploy (deploy refuses `example-server`
-  for a new install); Core then names the database `custom_<id>`. `new` also sets `server_folder`
-  (`<Name>Server`), so Core installs the copy at `/var/www/html/<Name>Server`; a copy without it
-  stays in `custom-mods/<id>` until `ddistro_custom_mod migrate-root` moves it (getting-started,
-  Server folder). Find an install from Core's registry, never by guessing the path. Default to one repository per mod:
-  in the template, start a mod with `scripts/project.ps1 new` (getting-started, New project),
-  which writes an independent copy outside every checkout and web root and leaves the
-  template unchanged; the copy is committed explicitly before its first deploy.
-- Offer a separate game-client repository and server repository as an optional layout when
-  discussing independent maintenance or when the user asks. Keep the single-repository
-  default without adding a setup question. Record the choice in PROJECT.md Decisions before
-  creating a split. The current `new` command creates one repo; a split needs an explicit
-  plan for shared protocol/client sources, build paths, deploy and pairing. Do not pretend
-  there is a split-repo CLI switch or split an existing project without a request. See
-  [Repository layout](docs/getting-started.md#repository-layout).
-- `client/`, `docs/` and `ports/` are source only. The server copy in Apache's web root
-  contains them because it is one repository; DwemerDistro Core's custom mod web protection
-  must be installed before a server install or update (SETUP.md). Never build the client,
-  write a client `config.json` or put build output inside the server copy or the
-  repository; builds go outside both (the client script defaults to `%LOCALAPPDATA%`).
-- New ports use the data-only [generic build record](docs/PORT_BUILD_RECORDS.md) for action
-  configuration and pairing; keep game-specific install/runtime checks in the port's route.
-  `-AllowedActions none` explicitly disables actions while conversation is being qualified.
-- `scripts/project.ps1` is a thin Windows wrapper over the existing scripts. Keep it free of
-  dependency installation, database resets and background services. `deploy` sends only a
-  bundle of the committed HEAD into the named distro and installs through DwemerDistro Core
-  (or a named manual install's `update.sh`); it never adopts or repoints an install. Other
-  server installs through it stay explicit opt-in for a named WSL checkout.
-- A port with a maintained route builds through it, never a one-off script (Elden Ring:
-  `ports/elden-ring/mod.ps1` `doctor`, then `build`, `assemble`, then `project.ps1 pair` into the
-  runtime). Run its doctor first; record build, runtime and pairing, and each in-game result,
-  in their own PROJECT.md rows. The game build it accepts lives in one file
-  (`ports/elden-ring/game-build.json`); change it only from a fresh read of the installed game,
-  never to make an unknown build pass. The user launches the game; never copy or delete saves.
-- `ports/<engine>/` holds evidence and capability gates. Do not mark a port implemented,
-  copy an engine SDK into the repository, or install SDK dependencies without the user's
-  explicit request and evidence from that engine.
+- One source repository per mod by default: server at root, client in `client/` or
+  `ports/<engine>/`. `project.ps1 new` creates an independent committed-source copy outside
+  every checkout/web root and commits nothing. A client/server split is an optional explicit
+  choice; record ownership and build/deploy/pairing first. There is no split-repo CLI switch.
+- Keep template identities (`example-server`, `example-ai-server`, `example_ai_mod`), protocol
+  and legacy routes compatible. New projects get their own manifest id/name/server_folder;
+  Core installs at `/var/www/html/<Name>Server`, database `custom_<id>`. Existing paths come
+  from Core's registry, never guesses. Migration from `custom-mods/<id>` is explicit.
+- Keep builds, paired configs and private data outside source and web roots. Source folders
+  in the deployed server require Core's web protection **before installation**. Verify 403
+  on every listener and keep patched-PHP preflight; never bypass an unsupported Core.
+- `project.ps1` stays a thin developer wrapper: no dependency installs, database resets or
+  services. Deploy committed HEAD only; never adopt/repoint another install. Preserve config
+  bytes, permissions and lock ownership. See [setup commands](docs/getting-started.md#scriptsprojectps1).
+- Use maintained port routes and [build records](docs/PORT_BUILD_RECORDS.md), not one-off
+  build scripts. Keep both action lists explicitly empty (`-AllowedActions none`) while
+  qualifying conversation. Build/SDK/hash pins change only from fresh evidence, never to
+  make an unknown version pass. Do not vendor engine SDKs or install dependencies silently.
+- Keep interaction in game: native recipient selection, free text, replies, status and
+  cancel; then a qualified in-process rendering route. External UI is a last resort with
+  its missing mechanism and tradeoff recorded before adoption. The shared `ChatInput`
+  lifecycle draws nothing and is not proof of native UI.
+- Set up once, then load/connect through the game's native mod support or qualified loader.
+  Follow [automatic load and connect](docs/ENGINE_PLANNING.md#automatic-load-and-connect)
+  and [installed startup acceptance](docs/ENGINE_PLANNING.md#installed-startup-acceptance).
+  No per-session terminal, attach, provider arming or project-written launcher. Required
+  hidden helpers belong to one game instance, start/stop through the mod or documented
+  loader hook, and clean up on restart/quit/crash. No default startup task/service/watcher;
+  never start/install the server from the game. Missing transport/server must leave play
+  responsive. Test outages on this project's route only, without changing shared services.
+  Audit installed entry/artifact hashes and helper ownership, not just design notes.
+- Use the qualified offline loader profile for a modded game that requires it. Never route
+  through protected online play or disable/bypass anti-cheat. Elden Ring's reference route
+  is `ports/elden-ring/mod.ps1 doctor`, `build`, `assemble`, then private pairing.
 
 ## Keep it simple
 
