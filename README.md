@@ -75,6 +75,7 @@ routes. 19000 is DwemerDistro's shared loopback port for custom PHP mods
 | [CONNECTORS.md](CONNECTORS.md) | Copyable LLM, voice, NPC selection, profile and memory settings |
 | [PROTOCOL.md](PROTOCOL.md) | The request and reply contract (one copy, shared by server and client) |
 | [UI_GUIDE.md](UI_GUIDE.md) | Dashboard pages and adding your own |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Server code layers, owners, dependency direction and compatibility functions |
 | [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md) | Launcher install, `main`/`dev` branches, publishing your own copy |
 | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md), [WAVE_ACTION.md](WAVE_ACTION.md) | Renaming your copy; worked exercise for adding an action |
 | [AGENTS.md](AGENTS.md), [client/AGENTS.md](client/AGENTS.md) | Rules for coding agents |

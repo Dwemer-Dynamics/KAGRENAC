@@ -14,12 +14,17 @@ if (str_contains($text, 'wave')) {
 }
 ```
 
-`actions_prompt()` already offers every allowed name as a tag. In it, add a hint after the
-follow one, so the model knows when to use wave:
+`actions_prompt()` already offers every allowed name as a tag. In `lib/action_catalog.php`,
+add an entry to `ActionCatalog::KNOWN` after the follow one, so the model knows when to use
+wave. Its target is `null`: wave carries no `args`.
 
 ```php
-$hints .= in_array('[ACTION:wave]', $tags, true) ? ' Use [ACTION:wave] only when asked to wave.' : '';
+'wave' => ['when' => 'only when asked to wave', 'target' => null],
 ```
+
+That entry also lets the server side of `project.ps1 configure` (`scripts/configure_server.php`)
+accept `wave`; the Windows side still checks the client build, so the console client stays
+`follow_player` only.
 
 In your private `config/config.php`, change only the action allowlist:
 

@@ -36,6 +36,7 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__ . '/../lib/config_writer.php';
 require __DIR__ . '/../lib/app.php';
 require __DIR__ . '/../lib/llm.php';
+require_once __DIR__ . '/../lib/action_catalog.php';
 require __DIR__ . '/../lib/profiles.php';
 require __DIR__ . '/../lib/embeddings.php';
 require __DIR__ . '/../lib/memory.php';
@@ -103,9 +104,9 @@ if (($tts === 'pockettts') !== ($voice !== null) || ($voice !== null && form_nam
 $actions = null;
 if ($options['--allowed-actions'] !== null) {
     $actions = $options['--allowed-actions'] === 'none' ? [] : explode(',', $options['--allowed-actions']);
-    // Only the actions the server knows: each has its prompt hint and target rule in lib/llm.php.
-    if (count(array_unique($actions)) !== count($actions) || array_diff($actions, NPC_TARGET_ACTIONS)) {
-        refuse('--allowed-actions must be different names from ' . implode(', ', NPC_TARGET_ACTIONS) . ', separated by commas.');
+    // Only the actions the server knows: each has its prompt hint and target rule in ActionCatalog.
+    if (count(array_unique($actions)) !== count($actions) || array_diff($actions, ActionCatalog::names())) {
+        refuse('--allowed-actions must be different names from ' . implode(', ', ActionCatalog::names()) . ', separated by commas.');
     }
 }
 $baseUrl = $options['--base-url'];
@@ -251,7 +252,7 @@ $printable = fn(mixed $value) => is_string($value) && preg_match('/^[\x21-\x7E]{
 say('OK', ($changed ? 'Saved' : ($readOnly ? 'Read (test only; nothing was written)' : 'Unchanged (the same settings were already saved; nothing was written)'))
     . ': llm.mode ' . $printable($llm['mode'] ?? 'mock') . ', llm.model ' . $printable($llm['model'] ?? '')
     . ', tts ' . (!empty($voiceSection['enabled']) ? 'on (' . $printable($voiceSection['provider'] ?? 'pockettts') . ', voice ' . $printable($voiceSection['voice'] ?? 'alba') . ')' : 'off')
-    . ', allowed_actions ' . (is_array($saved['allowed_actions'] ?? null) ? ($saved['allowed_actions'] ? implode(',', array_filter($saved['allowed_actions'], fn($n) => is_string($n) && preg_match('/^[A-Za-z0-9_]{1,40}$/D', $n))) : 'none') : 'default (follow_player)') . '.');
+    . ', allowed_actions ' . (is_array($saved['allowed_actions'] ?? null) ? ($saved['allowed_actions'] ? implode(',', array_filter($saved['allowed_actions'], fn($n) => is_string($n) && preg_match('/^[A-Za-z0-9_]{1,40}$/D', $n))) : 'none') : 'default (' . implode(',', ActionCatalog::DEFAULT_ALLOWED) . ')') . '.');
 echo 'RESULT config=' . ($changed ? 'saved' : 'unchanged') . ' test=' . ($test ? 'run' : 'skipped') . "\n";
 if (!$test) {
     exit(0);

@@ -111,8 +111,13 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
 - Plain PHP 8.2 with built-in extensions. Do not add Composer, frameworks, background
   workers, queues or embeddings unless the user asks.
 - One small file per endpoint at the top level; shared helpers in `lib/`. Library files
-  only define functions and constants, so requesting them over HTTP prints nothing.
-- Prefer clear, explicit code over abstractions.
+  only declare functions, constants and classes, so requesting them over HTTP prints nothing.
+- Prefer clear, explicit code over abstractions. Small focused `final` classes are allowed
+  for one domain concern (`ActionCatalog`, `DialogueHistory`, `SpeechService`); no god
+  classes, autoloader, container or base classes. Dependencies point down: endpoints,
+  then `lib/turn.php`, then services, then `lib/app.php` helpers. Services never read the
+  request, check tokens, start transactions, take locks or reply. Existing functions stay as
+  compatibility facades with unchanged behaviour. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Stable boundaries
 
@@ -121,8 +126,8 @@ minimal proposed fixes and generic versus engine-specific scope. Preserve the or
   misread needs a protocol bump in the server and the client together.
 - **Actions**: the model may only request actions with `[ACTION:name]` tags. The server
   returns only names in `allowed_actions`; the client checks its own allowlist and has one
-  explicit handler per action. To add an action, update the prompt in `lib/llm.php`, the
-  config allowlist, `PROTOCOL.md`, and the client handler together. Never execute model
+  explicit handler per action. To add an action, add its hint and target rule to
+  `ActionCatalog` (`lib/action_catalog.php`), the config allowlist, `PROTOCOL.md`, and the client handler together. Never execute model
   output as commands, SQL, paths or URLs. The prompt offers exactly the current
   `allowed_actions`; with none it tells the model it cannot act or claim an action. A tag is
   a request, not a result: `handled` in `result.php` means the handler ran, and an outcome is
