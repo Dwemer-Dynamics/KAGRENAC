@@ -16,7 +16,7 @@ no HerikaServer runtime code is included. [UI_GUIDE.md](UI_GUIDE.md#boundaries) 
 upstream sources.
 
 `ui/images/kagrenac.png` (navbar icon, favicon, launcher icon and banner) is the project's
-branding image, supplied for this project and used unchanged. No separate licence grant has
+branding image (the rounded 512 x 512 metaphysics icon), supplied for this project and used unchanged. The same file is in `client/assets/kagrenac.png`. No separate licence grant has
 been specified for it; if you make your own derived mod, replace it with your own artwork.
 
 `ui/images/question-mark.png` (the earlier icon, no longer referenced) is an original
