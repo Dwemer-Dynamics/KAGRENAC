@@ -186,6 +186,35 @@ authorized, the dashboard **Send test** with an empty list should not claim any 
 **Engine only:** each observation's source and freshness, each handler's effect and the
 observed result.
 
+## Readable awareness and actual wire data
+
+**Seam.** The adapter captures a snapshot on the game thread and serializes it through the
+port's real transport. A successful handcrafted HTTP request does not validate that path.
+
+- Include the selected NPC's actual identity/role, the player's observed state and a
+  readable location when the engine exposes them. Include relevant nearby entities,
+  inventory, mission/event choices or environmental facts only when read through a cited
+  mechanism. A numeric map/entity id alone is often not enough for useful roleplay; use
+  the game's own name lookup when qualified. Do not invent a friendly name from an id.
+- Give each field a source, units and freshness policy. Unread, hidden or stale values
+  stay unavailable; present observation does not imply knowledge of unseen quests or
+  future story. A stored bio must not override current observed state.
+- Select relevant facts within [protocol context limits](../../PROTOCOL.md). Do not silently
+  truncate away the question's subject. If the loop needs a richer schema, design and
+  validate that change explicitly rather than pretending the baseline reads everything.
+- Inspect the bytes produced by the **compiled adapter's serializer**, including nested
+  context. Some engine serializers omit fields without an error. Round-trip those bytes
+  through the server and compare the normalized context and retrieval snapshot. Verify
+  unknown fields, Unicode, size limits and scene/entity changes as appropriate.
+- Keep probes synthetic or private. Do not commit live conversations, player inventory,
+  save data, provider keys or captured request bodies containing personal information.
+
+**Check now:** source-to-field mapping, actual serialized bytes and a mock round trip;
+confirm the server received the expected context. These establish the transport, not that
+the engine readers work live.
+**Engine only:** compare observed location, selected NPC, player and relevant surroundings
+against the snapshot, then check a reply uses those facts without claiming unavailable ones.
+
 ## Game events
 
 **Seam.** `sendEvent()` with the four protocol types only
