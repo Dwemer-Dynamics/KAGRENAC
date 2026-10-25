@@ -43,8 +43,8 @@ review the actual changes, and fix findings. Keep keys out of chat and preserve 
 **Run Update Distro before your first deployment.** It fetches Core's current `main` and
 installs the helpers needed by guided setup: `setup-web --protect-project`,
 `setup-web --protect-root`, `update --expect-commit` and named `server_folder` support.
-The older **v1.0.8 tag/base image** lacks these capabilities; the version label alone is
-not a compatibility test. Check the installed helper after updating. Deploy refuses an
+The older **v1.0.8 tag** lacks these capabilities, and a base image can ship older helpers.
+The version label alone is not a compatibility test. Check the helper after updating. Deploy refuses an
 incompatible Core before installing source; do not bypass that guard. See
 [setup compatibility](docs/getting-started.md#before-you-start) for the checks and manual route.
 

@@ -55,8 +55,8 @@ HEAD through DwemerDistro Core
 New generated projects instead use `/var/www/html/<Name>Server`; resolve existing paths
 from Core's registry. Run **Update Distro**, then check
 [Core capabilities](docs/getting-started.md#before-you-start) before guided deployment.
-The older v1.0.8 tag/base image lacks the project/root protection switches and named-folder
-support. The installed helper's capabilities matter; do not bypass the checks.
+The older v1.0.8 tag lacks the project/root protection switches and named-folder support;
+base images can need this update too. Check the installed helper; do not bypass the guards.
 
 ## Before you install: web protection
 

@@ -14,7 +14,7 @@ Use the one DwemerDistro the user names. If several are installed, ask which one
 The launcher fetches Core's current `main` and installs its helpers; no launcher rebuild is
 needed for this compatibility update. Guided deployment needs `setup-web --protect-project`,
 `setup-web --protect-root`, `update --expect-commit` and `server_folder` support. The older
-v1.0.8 tag/base image lacks them, so check capabilities rather than the version label.
+v1.0.8 tag lacks them; a fresh base image can need this update too. Check capabilities rather than the version label.
 Inspect the installed `ddistro_custom_mod --help` and run `doctor` after updating.
 If the switches are still missing, inspect the failed updater step and stop deployment;
 do not weaken the preflight or patch shared tools silently. The [manual route](../SETUP.md)
