@@ -27,7 +27,7 @@ and troubleshooting by request ID, start with [START_HERE.md](START_HERE.md).
 
 | Where | What |
 |---|---|
-| Windows | DwemerDistro installed and started (it provides WSL, Apache with the shared custom mods port 19000, PostgreSQL, PHP 8.2). |
+| Windows | DwemerDistro installed and started (it provides WSL, Apache with the shared custom mods port 19000, PostgreSQL, PHP 8.2 at 8.2.35 or later: [patched PHP](#before-you-install-patched-php)). |
 | Windows | Visual Studio 2022 with "Desktop development with C++" (MSVC, CMake). |
 | Optional | An OpenAI-compatible LLM endpoint (cloud or local). Not needed for the mock. |
 | Optional | For voice, start with DwemerDistro PocketTTS (text-to-speech, audio.cpp, port 8086) and Parakeet (speech-to-text, port 8022); faster-whisper (port 9876) is an alternative. |
@@ -81,6 +81,32 @@ arbitrary paths by itself. The `grep` only shows the rules exist: after installi
 for HTTP 403 on every Apache port that serves `/var/www/html` as
 [START_HERE.md](START_HERE.md#deployment-and-exposure) describes, using your own folder in
 the URL.
+
+## Before you install: patched PHP
+
+`install.sh`, `update.sh` and `scripts\project.ps1 deploy` (which shows its reasons) first run the read-only
+`scripts/check-php-runtime-security.sh` and stop before changing anything unless the distro's PHP CLI and every PHP runtime Apache has
+enabled (`libapache2-mod-php8.2` on DwemerDistro, or a `phpX.Y-fpm`) are at or above the PHP2Shell
+(CVE-2026-109618/109619) patched floor of a supported branch: 8.2.35, 8.3.36, 8.4.27 or 8.5.12.
+Each must be the distro's packaged binary (`/usr/bin/phpX.Y` behind `/usr/bin/php` and `php` on
+`PATH`, `/usr/lib/apache2/modules/libphpX.Y.so`, `/usr/sbin/php-fpmX.Y`), match dpkg's checksums and
+embed a patched PHP version. Older releases, pre-releases, other branches, custom or unknown PHP
+paths, and an Apache, PHP-FPM or PHP process still using a replaced or unverifiable PHP binary or
+extension are refused. The check prints versions and paths only.
+
+These scripts never install packages or change the distro. If the check fails, update the shared
+distro's PHP packages: run **Update Distro** from the DwemerDistro launcher, or inside the distro
+run `sudo apt-get update` and then upgrade only the PHP packages of the branch the check names
+(8.2 here), keeping your existing configuration files:
+
+```bash
+sudo apt-get install --only-upgrade -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold $(dpkg-query -W -f='${binary:Package} ' 'php8.2*' libapache2-mod-php8.2)
+```
+
+Stop if apt proposes removing packages; a full distro upgrade is not needed. Then restart Apache
+(`sudo service apache2 restart`, and PHP-FPM if you use it) and any PHP workers so they load the
+patched PHP, and run the script again. A refused install or update leaves `config/config.php`, the
+database and your data unchanged.
 
 ## 1. Install the server (inside DwemerDistro)
 
@@ -558,6 +584,7 @@ rm -rf /var/www/html/custom-mods/KagrenacServer
 | `health.php` 403 or 404 | Run `sudo ddistro_custom_mod setup-web` and check its output. The folder must sit directly under `/var/www/html/custom-mods/` and the URL must include `/custom-mods/<folder>` and your `CUSTOM_MODS_PORT`. |
 | `500 server_not_configured` | `config/config.php` missing, unreadable by `www-data`, or token still `CHANGE_ME_TOKEN`. |
 | `503 database_unavailable` | PostgreSQL running? Database settings in `config/config.php`? |
+| `PHP security preflight failed` | The distro's PHP is unpatched or Apache still runs the old build; see [patched PHP](#before-you-install-patched-php). Nothing was changed. |
 | `503 not_migrated` | Run `sudo bash scripts/install.sh` again. |
 | `503 schema_mismatch` | This code's `sql/` folder and `SCHEMA_MIGRATIONS` in `lib/app.php` differ. Add the new file name to the list, in order. |
 | `503 schema_too_new` | The database came from newer code (or a newer copy shares its name). Update this checkout; never downgrade the database by hand. |
