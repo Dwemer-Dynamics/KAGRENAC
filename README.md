@@ -40,13 +40,13 @@ review the actual changes, and fix findings. Keep keys out of chat and preserve 
   dialogue, JEV for supported bounded decisions, and PocketTTS for requested voice.
   [Provider settings](CONNECTORS.md) give the exact model IDs and alternatives.
 
-**Guided deployment has a release dependency.** As checked on 24 October 2026, public
-DwemerDistro Core **v1.0.8** lacks `setup-web --protect-project`, `setup-web --protect-root`
-and named `server_folder` support. The guided route requires those plus
-`update --expect-commit`. It refuses an incompatible Core before installing source.
-Updating the distro helps only once a compatible Core is published; do not bypass the check.
-See [setup compatibility](docs/getting-started.md#before-you-start) for the agent's checks
-and the separate manual route.
+**Run Update Distro before your first deployment.** It fetches Core's current `main` and
+installs the helpers needed by guided setup: `setup-web --protect-project`,
+`setup-web --protect-root`, `update --expect-commit` and named `server_folder` support.
+The older **v1.0.8 tag/base image** lacks these capabilities; the version label alone is
+not a compatibility test. Check the installed helper after updating. Deploy refuses an
+incompatible Core before installing source; do not bypass that guard. See
+[setup compatibility](docs/getting-started.md#before-you-start) for the checks and manual route.
 
 ## What works today
 

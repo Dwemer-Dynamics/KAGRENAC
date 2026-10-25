@@ -10,14 +10,15 @@ You need Windows, Git, a coding agent and the selected game's mod tools. The C++
 and native C++ ports need Visual Studio C++ tools; do not require them for every script port.
 Use the one DwemerDistro the user names. If several are installed, ask which one.
 
-**Core compatibility:** public DwemerDistro Core v1.0.8, checked 24 October 2026, lacks the
-project/root web-protection switches and named server-folder support. Guided deployment
-needs `setup-web --protect-project`, `setup-web --protect-root`, `update --expect-commit`
-and `server_folder` support. Inspect the installed `ddistro_custom_mod --help` and run
-`doctor`; an unsupported Core is a deployment blocker. **Update Distro** helps only after
-a compatible release is available. Do not weaken the preflight or install an unreleased
-Core silently. The [manual route](../SETUP.md) is separate and still requires its own web
-protection and patched-PHP checks.
+**Core compatibility:** run **Update Distro**, including after a fresh base-image install.
+The launcher fetches Core's current `main` and installs its helpers; no launcher rebuild is
+needed for this compatibility update. Guided deployment needs `setup-web --protect-project`,
+`setup-web --protect-root`, `update --expect-commit` and `server_folder` support. The older
+v1.0.8 tag/base image lacks them, so check capabilities rather than the version label.
+Inspect the installed `ddistro_custom_mod --help` and run `doctor` after updating.
+If the switches are still missing, inspect the failed updater step and stop deployment;
+do not weaken the preflight or patch shared tools silently. The [manual route](../SETUP.md)
+is separate and still requires its own web-protection and patched-PHP checks.
 
 Doctor is diagnostic, not a readiness test. It does not start a stopped distro. A missing
 service you did not select, such as local port 1234 when using OpenRouter, blocks nothing.
