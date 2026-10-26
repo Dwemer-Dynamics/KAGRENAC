@@ -8,10 +8,12 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import unicodedata
 import zipfile
 
 MAX_FILES = 20000
 MAX_BYTES = 512 * 1024 * 1024
+MAX_AUTHOR = 80
 
 
 def run(*args, cwd=None):
@@ -72,7 +74,7 @@ def validate(manifest):
     if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 2:
         raise ValueError("Publishing needs dwemer-mod.json schema_version 2; existing v1 installs stay unchanged.")
     required = {"schema_version", "id", "name", "dashboard_path", "health_path", "requirements", "setup", "game", "distribution"}
-    optional = {"description", "project_url", "assets", "branches", "server_folder", "features", "testing"}
+    optional = {"description", "project_url", "assets", "branches", "server_folder", "features", "testing", "author"}
     if required - set(manifest) or set(manifest) - required - optional:
         raise ValueError("Manifest has missing or unsupported version 2 fields.")
     if not re.fullmatch(r"[a-z][a-z0-9-]{1,30}[a-z0-9]", manifest.get("id", "")):
@@ -83,6 +85,13 @@ def validate(manifest):
         value = manifest.get(key, "" if key == "description" else None)
         if not isinstance(value, str) or len(value) > maximum or (key == "name" and not value.strip()) or any(ord(c) < 32 for c in value):
             raise ValueError("Invalid manifest " + key)
+    if "author" in manifest:
+        # Optional author/team display name, matched by Core; without it the launcher shows the repository owner.
+        author = manifest["author"]
+        if not isinstance(author, str) or not author.strip() or len(author.strip()) > MAX_AUTHOR:
+            raise ValueError("author must be a name of at most 80 characters.")
+        if any(unicodedata.category(c) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for c in author):
+            raise ValueError("author contains control characters.")
     if manifest["requirements"] != {"php": "8.2", "postgresql": True} or manifest["requirements"].get("postgresql") is not True:
         raise ValueError("requirements must specify PHP 8.2 and PostgreSQL.")
     setup = manifest["setup"]

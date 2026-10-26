@@ -24,6 +24,21 @@ relative to the repository root, for a committed build/gameplay record. The laun
 links to that pinned source file; it need not be installed. Never label fixture checks
 as heard voice or live game acceptance. Feature descriptions do not qualify handlers.
 
+The launcher's mod cards show `name` as the title, `game.name` directly below it and
+optional top-level `author` as "By ...". `author` is a plain author or team name of at
+most 80 characters (trimmed, no control characters); it is display text, not a
+verification. Without it the launcher shows the repository owner. A version 1 manifest
+has no game, so none is shown. Installed servers refresh this text on their next update.
+
+```json
+"schema_version": 2,
+"name": "My Mod",
+"author": "My Mod Team",
+"game": { "id": "my-game", "name": "My Game", "executable": "Game.exe" }
+```
+
+The full `game` and `distribution` sections:
+
 ```json
 "game": {
   "id": "my-game",
