@@ -8,7 +8,15 @@ check the result in game. There is no form to complete first.
 
 You need Windows, Git, a coding agent and the selected game's mod tools. The C++ console
 and native C++ ports need Visual Studio C++ tools; do not require them for every script port.
-Use the one DwemerDistro the user names. If several are installed, ask which one.
+Use the one DwemerDistro the user names. If several are installed, ask which one. Never
+reinstall or replace an existing distro as a setup step.
+
+**No DwemerDistro yet?** The agent offers brief help and the
+[installation guide](https://dwemerdynamics.com/custom-mods/installation.html#InstallDistro)
+once. It downloads or runs an installer only when you ask. You can defer installation:
+gameplay planning, engine research and independent source/build work continue, with
+server setup recorded as pending in PROJECT.md. Deployment, pairing, provider tests and
+connected gameplay still need a compatible, running distro.
 
 **Core compatibility:** run **Update Distro**, including after a fresh base-image install.
 The launcher fetches Core's current `main` and installs its helpers; no launcher rebuild is

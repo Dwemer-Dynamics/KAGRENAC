@@ -24,6 +24,13 @@ Follow both when a change touches both.
    `project.ps1 configure`. A chosen provider, privately configured key and request to test
    authorize that test only. Recommend OpenRouter `google/gemma-4-31b-it` for dialogue,
    `typesafe/jev-1.13` for supported decisions and PocketTTS for requested voice.
+   Use the existing DwemerDistro the user names (ask if several); never reinstall or
+   replace it as setup. If none is installed, offer brief help and the
+   [installation guide](https://dwemerdynamics.com/custom-mods/installation.html#InstallDistro)
+   once; download or run an installer only when the user asks. If they defer, continue
+   planning, research and independent source/build work and record server setup as
+   pending in PROJECT.md; deploy, pairing, provider tests and connected play still need a
+   compatible running distro.
 5. Report source, build, fixture, provider, user-reported and in-game evidence separately.
    Server-ready, port-built and gameplay-verified are different results. A broad "it works"
    does not verify each action. Keep PROJECT.md current; detailed evidence belongs in
