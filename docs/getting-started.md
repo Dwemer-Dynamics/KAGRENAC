@@ -60,6 +60,7 @@ service you did not select, such as local port 1234 when using OpenRouter, block
 6. **Verify and expand.** Report server-ready, port-built and gameplay-verified separately.
    The user launches the game and checks the visible loop, heard voice and each requested
    action. Never infer those from a build or WAV. Add one feature at a time afterwards.
+   For NPC bios and world knowledge in bulk, follow [content authoring](CONTENT_AUTHORING.md).
 
 A blocked stage does not freeze independent work. Record the blocker, evidence and next
 probe in PROJECT.md; keep detailed engine notes in `ports/<engine>/PLAN.md` and generic

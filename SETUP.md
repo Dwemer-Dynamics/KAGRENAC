@@ -553,6 +553,9 @@ repeat; it never overwrites your edits):
 php scripts/seed_example.php
 ```
 
+To add many reviewed bios and facts from your own notes or licensed sources, see
+[content authoring](docs/CONTENT_AUTHORING.md) (`scripts/import_content.php`, insert-only).
+
 A **checkpoint** is a named copy of one session's conversation lines, inside this database.
 A **backup** (`backup.sh`) is a full dump of the whole database plus config. Restoring a
 checkpoint changes only that session's lines and memory notes (summary and diary), and deletes

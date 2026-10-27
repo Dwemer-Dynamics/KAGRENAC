@@ -20,7 +20,7 @@ template as an extra remote and merge reviewed updates on a working branch.
 | Navbar branding | Server `ui/tmpl/navbar.php` and `ui/tmpl/header.php`: title and icon; replace `ui/images/kagrenac.png` (also the manifest icon and banner, and the README logos) with your own image; keep existing source notices (including `ui/HERIKA-LICENSE`) |
 | Colors | Server `ui/css/chim-theme.css`: blue accent variables; search the scoped CSS for remaining blue literals |
 | Fictional page samples | Server `ui/examples/` (blank, form, table); unsaved previews. `ui/logs.php` (event log) and `ui/profiles.php` (saved profiles) are working pages, not samples |
-| NPC bios and knowledge | Dashboard **NPC bios** page (saved); sample rows in `scripts/seed_example.php`; retrieval limits in `lib/knowledge.php` |
+| NPC bios and knowledge | Dashboard **NPC bios** page (saved); sample rows in `scripts/seed_example.php`; bulk import of reviewed sources: [content authoring](docs/CONTENT_AUTHORING.md); retrieval limits in `lib/knowledge.php` |
 | Session checkpoints | `scripts/checkpoint.php`; match checkpoints to your game saves by the client's `session_id` (SETUP.md section 6) |
 | NPC/player/context | `client/src/console_game.h`: `readContext()`; use stable engine NPC IDs when porting |
 | Real game integration | `client/src/game_adapter.h` plus your implementation (record engine facts under `docs/engine-packs/`, port notes under `ports/<engine>/`); call it only on the game thread |
