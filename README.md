@@ -32,7 +32,9 @@ review the actual changes, and fix findings. Keep keys out of chat and preserve 
 
 - Windows with Git and a coding agent of your choice. No separate coding model is required.
 - [DwemerDistro](https://dwemerdynamics.com/custom-mods/installation.html#InstallDistro) for the local PHP 8.2 and
-  PostgreSQL server, with a **compatible Core** (see below).
+  PostgreSQL server, with a **compatible Core** (see below). If it is missing, your agent
+  can help you install it, but downloads nothing unless you ask; you can keep planning
+  meanwhile ([details](docs/getting-started.md#before-you-start)).
 - The game's own mod tools or a qualified loader for its exact build. C++ ports and the
   console example need Visual Studio C++ tools; script or managed ports use their own tools.
 - An LLM provider for real conversations. Recommended defaults are OpenRouter Gemma for
