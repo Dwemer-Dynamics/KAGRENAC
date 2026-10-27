@@ -39,8 +39,8 @@ See [web protection](SETUP.md#1-install-the-server-inside-dwemerdistro) and
 |---|---|
 | Typed turn, optional responding game event | [Turns and events](PROTOCOL.md); both use `lib/turn.php` |
 | History, bios and known facts | [Client examples](client/README.md#npc-bios-knowledge-and-checkpoints), [provider context](CONNECTORS.md) |
-| Cancellation, session changes, stale replies | [Cancellation](#10-cancellation-and-stale-replies) |
-| Action requests and outcome reports | [Actions](#9-actions-and-the-worked-extension) |
+| Cancellation, session changes, stale replies | [Cancellation](#cancellation-and-stale-replies) |
+| Action requests and outcome reports | [Actions](#actions-and-the-worked-extension) |
 | Optional TTS/STT | [Voice](CONNECTORS.md#voice), [client voice examples](client/README.md#voice-examples) |
 | Answering-NPC selection | [NPC selection](CONNECTORS.md#npc-selection-decision-optional); `decision.php` has no dialogue or actions |
 | Optional profiles, memory and vector search | [CONNECTORS.md](CONNECTORS.md); not prerequisites for a basic mod |
@@ -53,13 +53,17 @@ Follow [guided setup](docs/getting-started.md) for a mod, or the
 The detailed install, pairing, provider, backup and update commands live in [SETUP.md](SETUP.md).
 Do not make the player complete a console exercise before building their mod.
 
-### 7. Checkpoints versus backups
+<a id="7-checkpoints-versus-backups"></a>
+
+### Checkpoints versus backups
 
 A checkpoint restores one session's dialogue and memory notes. A database/config backup is
 for installation recovery. Neither replaces a game save. See
 [protocol checkpoints](PROTOCOL.md) and [backup and update](SETUP.md#6-back-up-and-update).
 
-### 9. Actions and the worked extension
+<a id="9-actions-and-the-worked-extension"></a>
+
+### Actions and the worked extension
 
 The server returns only allowlisted action names; the client also needs its own allowlist
 and a registered handler. Start with actions disabled until the port qualifies its handlers.
@@ -67,7 +71,9 @@ and a registered handler. Start with actions disabled until the port qualifies i
 Use [awareness and action gates](docs/feature-recipes/PORT_RECIPES.md#awareness-and-actions)
 for the port and [result reports](PROTOCOL.md#optional-post-resultphp) for observations.
 
-### 10. Cancellation and stale replies
+<a id="10-cancellation-and-stale-replies"></a>
+
+### Cancellation and stale replies
 
 Cancel on recipient unload, save/session change, replacement or shutdown. Apply a reply,
 voice or action only to the same live NPC instance and session. No automatic failed-turn

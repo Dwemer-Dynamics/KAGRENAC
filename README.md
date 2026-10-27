@@ -106,7 +106,7 @@ The repository root is the server; everything else sits beside it in one reposit
 | Start or resume a mod | [Guided setup](docs/getting-started.md), [PROJECT.md](PROJECT.md) |
 | Design the experience | [Gameplay design](docs/GAMEPLAY_DESIGN.md), [engine planning](docs/ENGINE_PLANNING.md) |
 | Find a reference or diagnose a request | [START_HERE.md](START_HERE.md) |
-| Install, pair, update or remove | [SETUP.md](SETUP.md), [launcher route](LAUNCHER_CUSTOM_MOD.md) |
+| Install, pair, update or remove | [SETUP.md](SETUP.md), [legacy launcher branch route](LAUNCHER_CUSTOM_MOD.md) |
 | Configure models and voice | [CONNECTORS.md](CONNECTORS.md) |
 | Use or extend the dashboard | [UI_GUIDE.md](UI_GUIDE.md) |
 | Implement the protocol | [PROTOCOL.md](PROTOCOL.md), [client guide](client/README.md), [architecture](docs/ARCHITECTURE.md) |
@@ -115,29 +115,3 @@ The repository root is the server; everything else sits beside it in one reposit
 | Rebrand your mod | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) |
 | Share a finished mod | [Community publishing](docs/PUBLISHING.md) |
 | Contribute or report a problem | [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) |
-
-### Sharing your mod
-
-[Community publishing](docs/PUBLISHING.md) covers one-repo client/server releases,
-include/exclude rules, artwork and automatic installation. Publish only after a concrete
-release has been reviewed and you have approved it.
-
-## Limits
-
-- This is an authoring template. A server install or successful build does not establish
-  live game support, visible UI, working actions or heard voice.
-- Use one PC or a trusted network. The dashboard has no login, the API token travels over
-  HTTP, and there is no rate limiting. [Exposure and private data](SECURITY.md) describes
-  the deployment boundary.
-- Builds, paired configs, credentials, backups and logs stay outside source and web roots.
-  Core's protection must deny config, Git and source folders on every Apache listener.
-- Keep existing installs compatible: the template id stays `example-server`. New projects
-  use named server roots; older `custom-mods/<id>` routes remain supported.
-
-## Licence
-
-Copyright (C) 2026 Dwemer Dynamics. GNU General Public License version 3 only
-(`GPL-3.0-only`): [LICENSE](LICENSE), [client/LICENSE](client/LICENSE).
-Retain [third-party notices](THIRD_PARTY_NOTICES.md) and
-[client notices](client/THIRD_PARTY_NOTICES.md). Replace the supplied branding with your
-own artwork when making your own mod; see [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md).

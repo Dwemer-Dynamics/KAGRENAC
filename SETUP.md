@@ -17,9 +17,11 @@ removal. The console steps are developer checks, not prerequisites for a game po
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). A project made from this template
   takes later template changes by hand.
 - This guide is a **manual install** into `/var/www/html/custom-mods/KagrenacServer`; the official
-  launcher and updater do not install, update or back up that copy. Alternatively, the
-  launcher can install the server under **Mods > Custom mods** in its own folder and
-  database; see [LAUNCHER_CUSTOM_MOD.md](LAUNCHER_CUSTOM_MOD.md). Section 2 builds the console;
+  launcher and updater do not install, update or back up that copy. Alternatively, Core's
+  `ddistro_custom_mod` helper can install the template server as a version 1 branch mod in
+  its own folder and database ([legacy launcher branch route](LAUNCHER_CUSTOM_MOD.md)). A
+  published version 2 mod is installed from the launcher's **Mods > Custom mods > Browse
+  mods** instead ([community publishing](docs/PUBLISHING.md)). Section 2 builds the console;
   real game ports use their own maintained build/install route.
 
 ## Requirements
@@ -44,13 +46,13 @@ clone that instead ([MAKE_IT_YOURS.md](MAKE_IT_YOURS.md)).
 | Copy | Where | Used for | Never |
 |---|---|---|---|
 | Windows development copy | Any folder you own on Windows, outside DwemerDistro | Editing, building the client (output in `%LOCALAPPDATA%`), `scripts\project.ps1` | Served by Apache |
-| WSL server copy | `/var/www/html/custom-mods/KagrenacServer` (manual) or `/custom-mods/example-server` (launcher) | Running the server: `install.sh`, `update.sh`, `smoke.sh`, pairing to a file outside the web root | Building the client, writing a client `config.json`, or holding build output |
+| WSL server copy | `/var/www/html/custom-mods/KagrenacServer` (manual) or `/custom-mods/example-server` (legacy branch route) | Running the server: `install.sh`, `update.sh`, `smoke.sh`, pairing to a file outside the web root | Building the client, writing a client `config.json`, or holding build output |
 
 The server copy is not synced from the Windows copy. From Windows,
 `scripts\project.ps1 deploy -WslDistro <name>` installs or updates it from your committed
 HEAD through DwemerDistro Core
 ([getting-started](docs/getting-started.md#deploy-and-pair)); a manual clone is updated with
-`update.sh`, and a launcher install with the launcher. This page describes the manual route.
+`update.sh`, and a legacy branch install with Core's `ddistro_custom_mod update`. This page describes the manual route.
 
 New generated projects instead use `/var/www/html/<Name>Server`; resolve existing paths
 from Core's registry. Run **Update Distro**, then check
@@ -214,8 +216,8 @@ The shared port serves each folder directly under `/var/www/html/custom-mods/` a
 Use a distinct folder and database when another KagrenacServer is already installed. Put
 the copy in its own folder directly under `/var/www/html/custom-mods/`, for example
 `my-project`; it is served at `/custom-mods/my-project`. Use letters, digits, `.`, `_` or `-`
-in the folder name so pairing can infer the address, and do not use an id the launcher
-installs, such as `example-server`. A folder with another name is **not** covered by Core's
+in the folder name so pairing can infer the address, and do not use an id a Core branch
+install uses, such as `example-server`. A folder with another name is **not** covered by Core's
 default web protection: before cloning, run
 `sudo ddistro_custom_mod setup-web --protect-project my-project` or add equivalent Apache
 rules ([Before you install](#before-you-install-web-protection)). The
@@ -330,7 +332,7 @@ sudo -u dwemer php scripts/pair_client.php --out /home/dwemer/example-client.jso
 
 The address is inferred for installs under `/var/www/html` (here
 `http://127.0.0.1:19000/custom-mods/KagrenacServer`; a copy in `/var/www/html/custom-mods/my-project` gets
-`.../custom-mods/my-project`; a launcher install gets `.../custom-mods/example-server`), on port 19000. If you changed `CUSTOM_MODS_PORT`, or the folder
+`.../custom-mods/my-project`; a legacy branch install gets `.../custom-mods/example-server`), on port 19000. If you changed `CUSTOM_MODS_PORT`, or the folder
 is anywhere else, add `--base-url http://127.0.0.1:<port>/<path>`. The shared port listens
 on loopback only. `--session-id` is optional.
 
