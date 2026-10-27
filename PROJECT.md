@@ -99,6 +99,7 @@ in the game-side rows; record it here when you use one.
 | Client build (`project.ps1 setup` and `check` default) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\client` |
 | Game-side builds (the port's build route; Elden Ring: `mod.ps1 build`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\<engine>\<part>` |
 | Game runtime folder (Elden Ring: `mod.ps1 assemble`) with the private `config.json` (`pair -OutFile`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\runtime` |
+| Content workspace ([content authoring](docs/CONTENT_AUTHORING.md): sources, review sheet, `import.json`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\projects\<id>\content` |
 | Deploy bundles and records (`project.ps1 deploy`) | `%LOCALAPPDATA%\DwemerDynamics\Kagrenac\deploy\<id>` |
 | Server copy and database in the DwemerDistro | `/var/www/html/<server_folder>` (`server_folder` in `dwemer-mod.json`; a copy without it: `/var/www/html/custom-mods/<id>`; Core's registry entry is what counts), database `custom_<id>` with `-` as `_` |
 

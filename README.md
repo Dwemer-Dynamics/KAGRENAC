@@ -93,7 +93,7 @@ The repository root is the server; everything else sits beside it in one reposit
 | `ui/` | Dashboard pages, styles and branding images |
 | `client/` | Shared C++ client library and console example; [client guide](client/README.md), [client rules](client/AGENTS.md) |
 | `ports/` | Game-specific source, build routes and evidence; [`ports/elden-ring/`](ports/elden-ring/README.md) is the reference |
-| `scripts/` | Setup, deployment, pairing, migrations, backup and smoke checks; start with `scripts\project.ps1` |
+| `scripts/` | Setup, deployment, pairing, migrations, backup, smoke checks and content import; start with `scripts\project.ps1` |
 | `docs/` | Authoring guides: [guided setup](docs/getting-started.md), gameplay design, engine planning, recipes, engine evidence and research |
 | `AGENTS.md`, `PROJECT.md` | Rules for your coding agent; your mod's one brief, plan, status and evidence record |
 | Other root `*.md` | References listed below (setup, providers, protocol, dashboard, security) |
@@ -111,6 +111,7 @@ The repository root is the server; everything else sits beside it in one reposit
 | Use or extend the dashboard | [UI_GUIDE.md](UI_GUIDE.md) |
 | Implement the protocol | [PROTOCOL.md](PROTOCOL.md), [client guide](client/README.md), [architecture](docs/ARCHITECTURE.md) |
 | Extend a port | [Agent playbook](docs/agent-playbook.md), [port recipes](docs/feature-recipes/PORT_RECIPES.md), [engine evidence record](docs/engine-packs/ENGINE_PACK.md) |
+| Add NPC bios and world knowledge in bulk | [Content authoring](docs/CONTENT_AUTHORING.md) |
 | Rebrand your mod | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) |
 | Share a finished mod | [Community publishing](docs/PUBLISHING.md) |
 | Contribute or report a problem | [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) |

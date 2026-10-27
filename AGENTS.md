@@ -150,6 +150,11 @@ Follow both when a change touches both.
   `sql/NNN_name.sql` that is safe to run twice (`IF NOT EXISTS`) and works on fresh installs
   and upgrades; append its name to `SCHEMA_MIGRATIONS` in `lib/app.php`. Never edit an applied migration. Use `db_query()` with parameters. Keep
   transactions database-only: no HTTP or LLM calls inside them.
+- **Authored content**: bulk bios and facts go through [content authoring](docs/CONTENT_AUTHORING.md):
+  workspace outside checkouts, explicit URLs only, offline by default, human review, then
+  `scripts/import_content.php` (CLI, insert-only, hash-checked). Use the adapter's real
+  `npc.id`; never write sourced or generated text to profiles, and reject progress-dependent
+  or spoiler facts (no gating exists).
 - **Config and secrets**: settings live in untracked `config/config.php`. Add new settings
   to `config/config.example.php` with a safe default. Optional features (LLM key, TTS, STT)
   must fail cleanly with a clear error and never pretend to succeed.
