@@ -1,17 +1,13 @@
 # KAGRENAC AI Mod Maker
 
-Building a mod to share? See [community publishing](docs/PUBLISHING.md) for one-repo
-client/server releases, include/exclude rules, artwork and automatic installation.
-
 <img src="ui/images/kagrenac.png" alt="KAGRENAC AI Mod Maker" width="128">
 
 Build an AI mod with your coding agent: choose a game, design a useful gameplay loop,
 prove the game's integration, then add dialogue, voice and supported actions.
 
-One repository contains **KagrenacServer**, the PHP server and dashboard at the root,
-and **KagrenacClient**, the shared Windows C++ client library and console example in
-`client/`. Each mod gets its own source repository, server, database and private pairing.
-The game-side integration is built for the game you choose.
+**New here? Start with the guide:**
+[KAGRENAC custom mods guide](https://dwemerdynamics.com/custom-mods/index.html) ·
+[Practical start: installation](https://dwemerdynamics.com/custom-mods/installation.html)
 
 ## Get started
 
@@ -35,23 +31,27 @@ review the actual changes, and fix findings. Keep keys out of chat and preserve 
 ## Requirements
 
 - Windows with Git and a coding agent of your choice. No separate coding model is required.
-- [DwemerDistro](https://github.com/Dwemer-Dynamics/DwemerDistro) for the local PHP 8.2 and
-  PostgreSQL server, with a **compatible Core**; check the limitation below before installing.
+- [DwemerDistro](https://dwemerdynamics.com/custom-mods/installation.html#InstallDistro) for the local PHP 8.2 and
+  PostgreSQL server, with a **compatible Core** (see below).
 - The game's own mod tools or a qualified loader for its exact build. C++ ports and the
   console example need Visual Studio C++ tools; script or managed ports use their own tools.
 - An LLM provider for real conversations. Recommended defaults are OpenRouter Gemma for
   dialogue, JEV for supported bounded decisions, and PocketTTS for requested voice.
   [Provider settings](CONNECTORS.md) give the exact model IDs and alternatives.
 
-**Run Update Distro before your first deployment.** It fetches Core's current `main` and
-installs the helpers needed by guided setup: `setup-web --protect-project`,
-`setup-web --protect-root`, `update --expect-commit` and named `server_folder` support.
-The older **v1.0.8 tag** lacks these capabilities, and a base image can ship older helpers.
-The version label alone is not a compatibility test. Check the helper after updating. Deploy refuses an
-incompatible Core before installing source; do not bypass that guard. See
-[setup compatibility](docs/getting-started.md#before-you-start) for the checks and manual route.
+**Run Update Distro before your first deployment**, including after a fresh base-image
+install. It fetches Core's current `main` with the helpers guided setup needs; the older
+**v1.0.8 tag** and some base images lack them. The version label alone is not a
+compatibility test: check the helper after updating. Deploy refuses an incompatible Core
+before installing source; do not bypass that guard. The required helper switches, checks
+and manual route are in [setup compatibility](docs/getting-started.md#before-you-start).
 
-## What works today
+## What is included, and what each game needs
+
+Every mod copied from this template starts from the same server source and shared client library,
+then gets its own source repository, server, database and private pairing. The
+game-side work (native input and UI, reading game state, playing voice, running actions,
+loading through the game's mod loader) is built and verified for the game you choose.
 
 | Component | Included | Evidence boundary |
 |---|---|---|
@@ -79,7 +79,25 @@ After one-time installation and pairing, the mod loads and connects through the 
 normal mod loader. The player starts DwemerDistro and the game; no per-session transport
 or provider-arming command. See [installed startup acceptance](docs/ENGINE_PLANNING.md#installed-startup-acceptance).
 
-## Documentation
+## Directory map
+
+The repository root is the server; everything else sits beside it in one repository.
+
+| Path | Purpose |
+|---|---|
+| `*.php` (root) | Server endpoints, one small file each (`turn.php`, `event.php`, `decision.php`, ...) |
+| `lib/`, `sql/` | Server services and helpers; numbered database migrations |
+| `config/` | `config.example.php`; your private `config/config.php` is untracked |
+| `ui/` | Dashboard pages, styles and branding images |
+| `client/` | Shared C++ client library and console example; [client guide](client/README.md), [client rules](client/AGENTS.md) |
+| `ports/` | Game-specific source, build routes and evidence; [`ports/elden-ring/`](ports/elden-ring/README.md) is the reference |
+| `scripts/` | Setup, deployment, pairing, migrations, backup and smoke checks; start with `scripts\project.ps1` |
+| `docs/` | Authoring guides: [guided setup](docs/getting-started.md), gameplay design, engine planning, recipes, engine evidence and research |
+| `AGENTS.md`, `PROJECT.md` | Rules for your coding agent; your mod's one brief, plan, status and evidence record |
+| Other root `*.md` | References listed below (setup, providers, protocol, dashboard, security) |
+| `dwemer-mod.json` | Server identity; generated projects get their own id and `<Name>Server` folder |
+
+## References
 
 | Need | Read |
 |---|---|
@@ -88,21 +106,18 @@ or provider-arming command. See [installed startup acceptance](docs/ENGINE_PLANN
 | Find a reference or diagnose a request | [START_HERE.md](START_HERE.md) |
 | Install, pair, update or remove | [SETUP.md](SETUP.md), [launcher route](LAUNCHER_CUSTOM_MOD.md) |
 | Configure models and voice | [CONNECTORS.md](CONNECTORS.md) |
+| Use or extend the dashboard | [UI_GUIDE.md](UI_GUIDE.md) |
 | Implement the protocol | [PROTOCOL.md](PROTOCOL.md), [client guide](client/README.md), [architecture](docs/ARCHITECTURE.md) |
 | Extend a port | [Agent playbook](docs/agent-playbook.md), [port recipes](docs/feature-recipes/PORT_RECIPES.md), [engine evidence record](docs/engine-packs/ENGINE_PACK.md) |
+| Rebrand your mod | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) |
+| Share a finished mod | [Community publishing](docs/PUBLISHING.md) |
 | Contribute or report a problem | [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) |
 
-## Directory map
+### Sharing your mod
 
-| Path | Purpose |
-|---|---|
-| `*.php`, `lib/`, `sql/`, `config/`, `ui/` | Server endpoints, services, migrations, private settings and dashboard |
-| `client/` | Shared C++ client core and console example; [client rules](client/AGENTS.md) |
-| `ports/` | Game-specific source, build routes and qualified capability records |
-| `scripts/` | Setup, deployment, pairing, migrations, backup and smoke checks |
-| `docs/` | Authoring guides and references |
-| `dwemer-mod.json` | Server identity; generated projects get their own id and `<Name>Server` folder |
-| `PROJECT.md` | One current project brief, plan, status and evidence record |
+[Community publishing](docs/PUBLISHING.md) covers one-repo client/server releases,
+include/exclude rules, artwork and automatic installation. Publish only after a concrete
+release has been reviewed and you have approved it.
 
 ## Limits
 
