@@ -1,28 +1,39 @@
-# Installing as a launcher custom mod
+# Legacy launcher branch route (manifest version 1)
 
-This page covers the compatible version 1 server-only branch route. For a published
-mod with a packaged native client and server, use [community publishing](docs/PUBLISHING.md).
+This is a developer reference for the template's `schema_version: 1` manifest: a
+server-only install that clones one Git branch into DwemerDistro. Players of a finished mod
+do not use it. A finished mod is shared as a version 2 release
+([community publishing](docs/PUBLISHING.md)); players open **Mods > Custom mods > Browse
+mods** in the launcher, select the mod and choose **Install server**. Once the server is
+installed, **Download mod release** fetches the game plugin, which is then installed by
+following the game's own loader or mod-manager instructions.
 
-This installs the template's PHP server, not a game plugin. To build your own mod, use
+This route installs the template's PHP server, not a game plugin. The template publishes no
+release, so it is not a version 2 mod that Browse mods can install; this page is its
+command-line, developer and manual compatibility route. To build your own mod, use
 [guided setup](docs/getting-started.md); generated projects default to a named server root.
 The legacy identity and paths below remain unchanged for existing template installs.
 Check [Core compatibility](docs/getting-started.md#before-you-start) before deployment.
 
-`dwemer-mod.json` lets the DwemerDistro launcher install KagrenacServer for you. In the
-launcher, open **Mods > Custom mods > Add custom mod** and paste:
+`dwemer-mod.json` lets DwemerDistro Core's `ddistro_custom_mod` helper install
+KagrenacServer from this repository. Inside the distro, preview the branch and its exact
+commit (this changes nothing), then install that commit. After reviewing the check output,
+replace the `COMMIT` value with the full commit id it shows:
 
-```text
-https://github.com/Dwemer-Dynamics/Kagrenac
+```bash
+ddistro_custom_mod check https://github.com/Dwemer-Dynamics/Kagrenac --json
+COMMIT='<full commit id shown by check>'
+sudo ddistro_custom_mod install https://github.com/Dwemer-Dynamics/Kagrenac --expect-commit "$COMMIT"
 ```
 
-The launcher previews the exact commit before installing. The full version 1 contract is
-documented in DwemerDistro Core's `CUSTOM_MODS.md`. The launcher manages this PHP server
-only; the KagrenacClient console client is built separately on Windows from your
-development copy ([client/README.md](client/README.md)), never inside the installed folder.
+The full version 1 contract is documented in DwemerDistro Core's `CUSTOM_MODS.md`. This
+route manages the PHP server only; the KagrenacClient console client is built separately on
+Windows from your development copy ([client/README.md](client/README.md)), never inside the
+installed folder.
 
 The launcher clones the whole repository, including the source-only `client/`, `docs/` and
 `ports/` folders. Update DwemerDistro Core first so its custom mod web protection is in
-place before you add or update this mod; it denies those folders and `.git/` at
+place before you install or update this mod; it denies those folders and `.git/` at
 `/custom-mods/example-server` ([SETUP.md, Before you install](SETUP.md#before-you-install-web-protection)).
 
 What the distro does with this manifest:
@@ -66,6 +77,9 @@ This repository offers two branches:
 | `main` (default) | The stable baseline. New installs use it. |
 | `dev` | Development work that has not reached `main` yet. It may change more often. |
 
+**Update** and **Switch** are the helper's `update` and `switch` operations; the launcher
+calls the same operations for an installed branch mod.
+
 - **Switch** moves an install to the other branch. The launcher first shows the exact
   commit it will install; it then backs up the config and database, keeps the private
   config, migrates and checks health. If the switch fails, the code goes back to the
@@ -95,7 +109,9 @@ database:
 
 ## Making your own launcher mod from this template
 
-A copy of this template is a different mod. Before publishing it:
+A copy of this template is a different mod. To share it with players, publish a version 2
+release ([community publishing](docs/PUBLISHING.md)). If you also offer a version 1 branch
+install, before publishing it:
 
 - Create your own public HTTPS repository and its branches (for example `main` and `dev`),
   and set `project_url` to that repository.
@@ -125,9 +141,9 @@ Rules every copy must follow:
 
 ## Icon and banner (optional)
 
-`assets` gives the launcher and the Dashboard pictures for the mod. KagrenacServer uses
-`ui/images/kagrenac.png` (128 x 121 PNG, about 31 KB) as both the icon and the banner. Your
-own mod can use any PNG or JPEG banner; about 2:1 is recommended.
+`assets` gives the launcher and the Dashboard pictures for the mod. KagrenacServer uses the
+square 512 x 512 PNG `ui/images/kagrenac.png` as both the icon and the banner. Your own mod
+can use any PNG or JPEG banner; about 2:1 is recommended.
 
 - Commit the image files and the `assets` entry together. Each path is relative to the
   repository root and must point to a tracked `.png`, `.jpg`, or `.jpeg` file. Links,
@@ -144,7 +160,7 @@ own mod can use any PNG or JPEG banner; about 2:1 is recommended.
 
 ## Local testing of unpublished changes (optional)
 
-The launcher accepts only public HTTPS URLs such as the one above. For an administrator
+Normal installs accept only public HTTPS URLs such as the one above. For an administrator
 test of changes not yet pushed, clone a Git bundle bare inside the distro and install from
 it:
 

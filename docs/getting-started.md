@@ -75,7 +75,7 @@ Default to **one source repository per mod**: server at the root, game client un
 split when independent maintenance is relevant or the user asks; record the choice and
 protocol/build/deploy ownership first. `new` has no two-repository switch.
 
-## Two copies of one repository
+## Where each copy lives
 
 | Copy | Job |
 |---|---|
@@ -101,6 +101,8 @@ They are setup/check tools, not the player's per-session launch steps.
 | `deploy` | Install/update committed HEAD through Core, preserving private config and data |
 | `configure` | Change the owned install's provider, voice or server action allowlist |
 | `pair` | Write a new private client config, without printing a token |
+| `package` | Package committed server source and an external client build as release ZIPs for review; see [community publishing](PUBLISHING.md#build-and-review) |
+| `publish` | After approval, publish a reviewed release to the exact authorized repository; see [community publishing](PUBLISHING.md#publish-after-approval) |
 
 ### New project
 

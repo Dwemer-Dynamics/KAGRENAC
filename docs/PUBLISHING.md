@@ -77,10 +77,12 @@ The full `game` and `distribution` sections:
 - Known private config/credential files, links and traversal paths are rejected.
   The author must also review the exact ZIP contents for private/custom runtime data.
   Excluding a file from a package does not make a public repository file private.
-- The initial client profile installs beneath a selected game directory and writes
-  a private Kagrenac JSON config there. Use it only for an engine adapter that actually
+- The initial client profile describes files beneath a selected game directory and a
+  private Kagrenac JSON config there. Use it only for an engine adapter that actually
   reads that format and loads through its native loader. Record that qualification in
-  PROJECT.md; the install profile is not evidence that a game adapter works.
+  PROJECT.md; the install profile is not evidence that a game adapter works. Do not rely
+  on the current launcher to place or pair these files: the mod's loader instructions
+  must cover them (see [How players install it](#how-players-install-it)).
 - Optional `steam_app_id` enables Steam library detection. Optional `loader_path` must
   exist before install; `loader` explains it. Optional `executable_sha256` enforces an
   exact supported executable. `version` is author-reported compatibility text.
@@ -123,12 +125,28 @@ it, then adds topic `kagrenac-mod` without replacing existing topics. Prefer imm
 GitHub releases. Do not republish a version with different bytes. Publishing the topic
 opts into the community catalog, not Dwemer endorsement or gameplay verification.
 
-The launcher downloads only these release assets, verifies hashes and pairs locally.
-It does not clone client source, docs or tests into Apache. Updates remove only files
-owned by the previous package; private configuration, data and unrelated files stay.
+Core installs the server only from the server ZIP, checks every file against its
+receipt and never clones client source, docs or tests into Apache. Updates remove only
+files owned by the previous package; private configuration, data and unrelated files stay.
 If a server update is interrupted, retry that release before selecting another version.
-The launcher tracks server/client completion separately. A mod-manager enable step and
-in-game acceptance can remain after installation.
+
+## How players install it
+
+The launcher's community browser lists every public, non-archived GitHub repository with
+the topic `kagrenac-mod`, even before it has a suitable release. **Install server** needs
+a published stable release with a valid KAGRENAC descriptor and packages; a draft or
+prerelease alone leaves the card without an installable release.
+
+1. In the launcher, open **Mods > Custom mods > Browse mods**, select the mod and choose
+   **Install server**. Core installs the release's server package and checks its health.
+2. Once the server is installed, **Download mod release** downloads the game plugin (the
+   client package).
+3. The player installs the plugin by following the game's own loader or mod-manager
+   instructions, using your `game.loader` and `game.enable_in_game` text and your mod's
+   documentation, including how its private config is paired.
+
+The current launcher does not install or pair game files automatically. A server install
+alone is not a working mod; in-game acceptance remains after these steps.
 
 A package install does not adopt an existing branch install with the same id. Keep the
 developer install separate when testing the player release. Existing branch installs
