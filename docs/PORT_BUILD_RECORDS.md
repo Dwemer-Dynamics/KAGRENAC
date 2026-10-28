@@ -2,8 +2,10 @@
 
 `project.ps1 configure -AllowedActions <names> -Build <folder>` and `pair` accept the following
 data-only contract for game ports. Nothing named by a record is executed. Records with any
-other schema, including older schema-1 records, are refused before WSL is used. This format
-does not change the server protocol.
+other schema, including older schema-1 records, are refused: by `pair` before WSL is used, and
+by `configure` before any server configuration changes (without `-WslServerPath`, configure
+first reads Core's registry through WSL, which can start the distro). This format does not
+change the server protocol.
 
 ## Build
 

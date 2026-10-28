@@ -107,7 +107,8 @@
 #   /var/www/html/<Name>Server it was installed in or moved to with 'ddistro_custom_mod
 #   migrate-root'), else the manifest's server_folder, else /var/www/html/custom-mods/<id>.
 #   -Build and runtime.json records must use schema 2 (docs/PORT_BUILD_RECORDS.md); any other
-#   record is refused before WSL is used. Other server defaults and existing pairing stay unchanged.
+#   record is refused (by pair before WSL is used; by configure before any server change, after
+#   its registry read when -WslServerPath is omitted). Other server defaults and existing pairing stay unchanged.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
     [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy", "package", "publish")]
@@ -424,7 +425,7 @@ function Show-NativeRoute([string]$name) {
     if ($workingId -ceq "example-server") {
         Say "INFO" "This is the template: make the mod its own project first (project.ps1 new -Engine $name), then run its route from that copy."
     } elseif (Test-Path -LiteralPath (Join-Path $repo "ports\$name\mod.ps1") -PathType Leaf) {
-        Say "INFO" "Next for the game side: powershell -ExecutionPolicy Bypass -File ports\$name\mod.ps1 doctor (options in ports/$name/README.md), then its build and assemble; assemble prints the 'project.ps1 pair' command that writes the runtime's private config.json."
+        Say "INFO" "Next for the game side: powershell -ExecutionPolicy Bypass -File ports\$name\mod.ps1 doctor (options in ports/$name/README.md), then its build and pairing route (docs/PORT_BUILD_RECORDS.md)."
     } else {
         Say "WARN" "ports/$name has no maintained route (mod.ps1); qualify its PLAN.md using docs/ENGINE_PLANNING.md, then implement its build and pairing route."
     }
