@@ -106,8 +106,8 @@
 #   own install: the folder in Core's registry entry for its id (custom-mods/<id>, or the
 #   /var/www/html/<Name>Server it was installed in or moved to with 'ddistro_custom_mod
 #   migrate-root'), else the manifest's server_folder, else /var/www/html/custom-mods/<id>.
-#   New port builds/runtimes may use schema 2 (docs/PORT_BUILD_RECORDS.md); legacy Elden Ring
-#   keeps its specialized checks. Other server defaults and existing pairing stay unchanged.
+#   -Build and runtime.json records must use schema 2 (docs/PORT_BUILD_RECORDS.md); any other
+#   record is refused before WSL is used. Other server defaults and existing pairing stay unchanged.
 param(
     [Parameter(Position = 0, Mandatory = $true)]
     [ValidateSet("new", "doctor", "setup", "check", "pair", "configure", "deploy", "package", "publish")]
@@ -400,7 +400,7 @@ function Invoke-ClientBuild {
 function Get-NativeEngine {
     if ($Engine) {
         if ($Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z' -or -not (Test-Path -LiteralPath (Join-Path $repo "ports\$Engine") -PathType Container)) {
-            throw "-Engine must be a folder name under ports/, such as elden-ring."
+            throw "-Engine must name an existing folder under ports/ (lowercase letters, digits and hyphens)."
         }
         return $Engine
     }
@@ -511,7 +511,7 @@ function Show-Doctor {
         Say "OK" ("Server at {0}: ok=true, service={1}, schema={2}, server_version={3}, protocol={4}" -f $url, $serviceId, (Get-Printable $h.schema), (Get-Printable $h.server_version), (Get-Printable $h.protocol))
         Say "INFO" "Health shows only that this server answers; it does not check the LLM, voice services or any game."
         $denied = 0
-        $probes = @(".git/HEAD", "client/CMakeLists.txt", "docs/getting-started.md", "ports/elden-ring/README.md")
+        $probes = @(".git/HEAD", "client/CMakeLists.txt", "docs/getting-started.md", "ports/README.md")
         foreach ($probe in $probes) {
             $status = (Get-HttpStatus "$url/$probe").Status
             if ($status -eq 403) { $denied++; Say "OK" "$url/$probe is denied (HTTP 403)." }
@@ -895,80 +895,12 @@ function Read-JsonRecord([string]$path) {
     return ConvertFrom-PairJson ([System.IO.File]::ReadAllBytes($path))
 }
 
-# What one Elden Ring build (ports\elden-ring\mod.ps1 build) supports, from its records checked
-# like assemble checks them and more: this project's id, the accepted game build, every recorded
-# file by SHA-256, a package.json that agrees with build.json on the game, control config,
-# attack_enabled, supported actions and package files, and a DLL carrying that control config's
-# hash. Returns @{ Actions; Attack; DllSha }: candidates, none qualified in game. Throws otherwise.
-function Get-BuildActions([string]$dir) {
-    # New ports use one data-only contract; the existing Elden Ring checks below stay intact.
-    $candidate = $dir.Replace('/', '\')
-    if ($candidate -cmatch '^[A-Za-z]:\\') {
-        $record = Read-JsonRecord (Join-Path $candidate 'build.json')
-        if ($record -and ($record.schema_version -eq 2 -or $record.kind -ceq 'kagrenac-port-build')) {
-            return Get-GenericPortBuild $candidate
-        }
-    }
-    $usage = "-Build must be the full local path of one build folder, <root>\elden-ring\builds\<yyyyMMdd-HHmmss>, made by ports\elden-ring\mod.ps1 build."
-    if ($dir -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z') { throw $usage }
-    $full = [System.IO.Path]::GetFullPath($dir).TrimEnd('\')
-    $builds = Split-Path -Parent $full
-    if ((Split-Path -Leaf $full) -cnotmatch '^\d{8}-\d{6}\z' -or (Split-Path -Leaf $builds) -cne "builds" -or
-        (Split-Path -Leaf (Split-Path -Parent $builds)) -cne "elden-ring" -or -not [System.IO.Directory]::Exists($full)) { throw $usage }
-    if (-not (Test-ProjectId $workingId) -or $workingId -ceq "example-server") {
-        throw "-Build needs this project's own id in dwemer-mod.json; the template has no builds (start one with project.ps1 new -Engine elden-ring)."
-    }
-    Assert-NoReparse $full
-    $game = Read-JsonRecord (Join-Path $repo "ports\elden-ring\game-build.json")
-    $gameSha = $(if ($game) { [string]$game.sha256 } else { "" })
-    if ($gameSha -cnotmatch '^[0-9a-f]{64}\z') { throw "ports/elden-ring/game-build.json is missing or has no valid sha256." }
-    $b = Read-JsonRecord (Join-Path $full "build.json")
-    $bad = "$full\build.json is not a usable build record of $workingId"
-    if (-not $b -or $b.schema_version -isnot [int] -or $b.schema_version -ne 1 -or [string]$b.id -cne $workingId) { throw "$bad (missing, malformed or another project's). Build again with ports\elden-ring\mod.ps1 build." }
-    if ([string]$b.game.sha256 -cne $gameSha) { throw "$bad`: it is for another game build than ports/elden-ring/game-build.json (stale). Build again." }
-    $configSha = [string]$b.control_config.sha256
-    if ($configSha -cnotmatch '^[0-9a-f]{64}\z' -or $b.attack_enabled -isnot [bool]) { throw "$bad`: it records no control config hash or attack_enabled. Build again." }
-    $actions = @(@("follow_player", "hold_position") + @(if ($b.attack_enabled) { "attack_hostile" }))
-    $recorded = @(if ($b.supported_actions -is [System.Management.Automation.PSCustomObject]) { $b.supported_actions.actions })
-    if (@($recorded | Where-Object { $_ -isnot [string] }).Count -or ($recorded -join ",") -cne ($actions -join ",")) {
-        throw "$bad`: its supported_actions are missing or do not match its attack_enabled $($b.attack_enabled.ToString().ToLowerInvariant()). Build again."
-    }
-    $dll = "natives/kagrenac_elden_ring.dll"
-    $props = @(if ($b.files -is [System.Management.Automation.PSCustomObject]) { $b.files.PSObject.Properties })
-    $names = @($props | ForEach-Object { $_.Name })
-    if ($names -cnotcontains $dll -or $names -cnotcontains "control/package.json") { throw "$bad`: it does not list $dll and control/package.json." }
-    $packaged = 0
-    foreach ($p in $props) {
-        if ($p.Name -cnotmatch '^(natives/kagrenac_elden_ring\.dll|control/package\.json|control/package/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*)\z' -or
-            $p.Name -match '(^|/)\.\.?(/|$)' -or $p.Value -isnot [string] -or $p.Value -cnotmatch '^[0-9a-f]{64}\z') { throw "$bad`: it lists an invalid file entry." }
-        if ($p.Name.StartsWith("control/package/", [System.StringComparison]::Ordinal)) { $packaged++ }
-        $f = Join-Path $full $p.Name.Replace("/", "\")
-        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "$f is missing since the build; build again." }
-        Assert-NoReparse $f
-        if ((Get-FileSha256Hex $f) -cne $p.Value) { throw "$f changed since the build (SHA-256 differs from build.json); build again." }
-    }
-    if ($packaged -eq 0) { throw "$bad`: it lists no control/package files." }
-    $pkg = Read-JsonRecord (Join-Path $full "control\package.json")
-    $outputs = @(if ($pkg -and $pkg.outputs -is [System.Management.Automation.PSCustomObject]) { $pkg.outputs.PSObject.Properties })
-    if (-not $pkg -or [string]$pkg.game_exe_sha256 -cne $gameSha -or [string]$pkg.control_config_sha256 -cne $configSha -or
-        $pkg.attack_enabled -isnot [bool] -or $pkg.attack_enabled -ne $b.attack_enabled -or (@($pkg.supported_actions) -join ",") -cne ($actions -join ",") -or
-        $outputs.Count -ne $packaged -or @($outputs | Where-Object { [string]$b.files.("control/package/" + $_.Name) -cne [string]$_.Value }).Count) {
-        throw "$full\control\package.json does not agree with build.json on the game, control config, attack_enabled, supported actions or package files; this build is not used."
-    }
-    # The identity the DLL logs at startup: built from exactly this control config.
-    $dllPath = Join-Path $full "natives\kagrenac_elden_ring.dll"
-    if (-not [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($dllPath)).Contains("control config sha256 $configSha")) {
-        throw "$dllPath does not carry the control config hash in build.json; this build is not used."
-    }
-    return @{ Actions = $actions; Attack = $b.attack_enabled; DllSha = [string]$b.files.$dll; Dir = $full }
-}
-
 # Throws unless every name in $actions is one the build supports; warns for the guarded attack.
 function Assert-BuildActions($record, [string[]]$actions, [string]$list) {
     $unsupported = @($actions | Where-Object { $record.Actions -cnotcontains $_ })
     if ($unsupported.Count) {
         throw ("Refusing $list $($unsupported -join ','): build $(Split-Path -Leaf $record.Dir) supports only $($record.Actions -join ', ')" +
-            $(if (-not $record.Attack) { " (attack_enabled false: attack is not in this build)" }) + ". Nothing was changed.")
+            ". Nothing was changed.")
     }
     Say "INFO" "Build $(Split-Path -Leaf $record.Dir) supports $($actions -join ', ') (its records and files checked; candidates, none qualified in game)."
     if ($actions -ccontains "attack_hostile") {
@@ -976,25 +908,18 @@ function Assert-BuildActions($record, [string[]]$actions, [string]$list) {
     }
 }
 
-# The build an assembled runtime came from: runtime.json beside $configPath (mod.ps1 assemble),
-# checked against this project and the DLL actually in that runtime. $null when there is none.
+# The build an assembled runtime came from: the schema-2 runtime.json beside $configPath
+# (docs/PORT_BUILD_RECORDS.md), checked against this project, its build and every staged
+# artifact. $null when there is none; any other record is refused.
 function Get-RuntimeBuild([string]$configPath) {
     $folder = Split-Path -Parent $configPath
     $record = Join-Path $folder "runtime.json"
     if ([int](New-Object System.IO.FileInfo $record).Attributes -eq -1) { return $null }
     $r = Read-JsonRecord $record
-    if ($r -and $r.schema_version -eq 2) { return Get-GenericPortRuntime $folder $r }
-    $dll = "natives/kagrenac_elden_ring.dll"
-    if (-not $r -or $r.schema_version -isnot [int] -or $r.schema_version -ne 1 -or [string]$r.id -cne $workingId -or
-        [string]$r.build -cnotmatch '^\d{8}-\d{6}\z' -or [string]$r.build_dir -cnotmatch '^[A-Za-z]:\\' -or (Split-Path -Leaf ([string]$r.build_dir)) -cne [string]$r.build -or
-        $r.files -isnot [System.Management.Automation.PSCustomObject] -or [string]$r.files.$dll -cnotmatch '^[0-9a-f]{64}\z') {
-        throw "$record is not an assembled runtime of $workingId (malformed or another project's), so its build is unknown. Nothing was changed; pass -Build, or assemble again."
+    if (-not $r -or $r.schema_version -isnot [int] -or $r.schema_version -ne 2) {
+        throw "$record is not a schema-2 port runtime record (docs/PORT_BUILD_RECORDS.md); malformed and older records are not supported. Nothing was changed; pass -Build, or stage the runtime again with this project's port route."
     }
-    $runtimeDll = Join-Path $folder "natives\kagrenac_elden_ring.dll"
-    if (-not (Test-Path -LiteralPath $runtimeDll -PathType Leaf) -or (Get-FileSha256Hex $runtimeDll) -cne [string]$r.files.$dll) {
-        throw "$runtimeDll is missing or changed since it was assembled. Nothing was changed; assemble again."
-    }
-    return @{ Dir = [string]$r.build_dir; DllSha = [string]$r.files.$dll }
+    return Get-GenericPortRuntime $folder $r
 }
 
 # The client actions pair may write: with -Build or an assembled runtime.json beside -OutFile,
@@ -1004,9 +929,9 @@ function Assert-PairActions([string[]]$actions, [string]$outPath) {
     $requested = @(if ($AllowedActions.Count -gt 0) { $actions } else { "follow_player" })
     $runtime = Get-RuntimeBuild $outPath
     if ($Build -or $runtime) {
-        $record = Get-BuildActions $(if ($Build) { $Build } else { $runtime.Dir })
+        $record = Get-GenericPortBuild $(if ($Build) { $Build } else { $runtime.Dir })
         if ($runtime -and ($record.DllSha -cne $runtime.DllSha -or [System.IO.Path]::GetFullPath($runtime.Dir).TrimEnd('\') -ne $record.Dir)) {
-            throw "The runtime beside $outPath was not assembled from $($record.Dir) (its DLL differs). Nothing was changed; pass the build it was assembled from, or assemble again."
+            throw "The runtime beside $outPath was not assembled from $($record.Dir) (its entrypoint differs). Nothing was changed; pass the build it was assembled from, or assemble again."
         }
         Assert-BuildActions $record $requested "-AllowedActions"
     } elseif ($NpcId -or $NpcName) {
@@ -1056,7 +981,7 @@ function Invoke-Configure {
             $unsupported = @($actions | Where-Object { $_ -cne "follow_player" })
             if ($unsupported.Count) { throw "Refusing -AllowedActions $($unsupported -join ','): the console client handles only follow_player (client/src/main.cpp). Nothing was changed." }
         } elseif ($Build) {
-            Assert-BuildActions (Get-BuildActions $Build) $actions "-AllowedActions"
+            Assert-BuildActions (Get-GenericPortBuild $Build) $actions "-AllowedActions"
         }
     } elseif ($Build -or $ConsoleClient) {
         throw "-Build and -ConsoleClient only go with -AllowedActions."
@@ -1511,7 +1436,7 @@ function Invoke-New {
     if ($Name -cnotmatch '^[^\x00-\x1f\x7f"\\|<>`]{1,64}\z' -or $Name.Trim() -cne $Name) { throw "-Name must be 1-64 characters without control characters, quotes, backslashes, backticks, '|', '<' or '>', and no space at either end." }
     foreach ($field in @(@("Game", $Game), @("Feature", $Feature), @("Voice", $Voice), @("LlmProvider", $LlmProvider))) { Test-BriefText $field[0] $field[1] }
     if ($WslDistro -and $WslDistro -cnotmatch '^[A-Za-z0-9._-]{1,64}\z') { throw "-WslDistro must be made of A-Z a-z 0-9 . _ -" }
-    if ($Engine -and $Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z') { throw "-Engine must be a folder name under ports/, such as elden-ring." }
+    if ($Engine -and $Engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z') { throw "-Engine must be a port folder name for ports/: 1-40 lowercase letters, digits and hyphens, such as my-engine." }
     # The direct /var/www/html folder Core installs this mod in; Core still refuses one that exists.
     $folderName = $(if ($ServerFolder) { $ServerFolder } else { ConvertTo-ServerFolder $Name })
     if (-not (Test-ServerFolder $folderName)) {
