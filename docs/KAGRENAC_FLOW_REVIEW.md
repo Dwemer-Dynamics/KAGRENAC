@@ -2,7 +2,7 @@
 
 The Noita pilot started from published KAGRENAC main `ae95691` in a fresh Codex
 agent. The normal `new -Engine noita`, native build records and v2 packaging
-worked. Source: [Kagrenac-Pilot](https://github.com/Dwemer-Dynamics/Kagrenac-Pilot).
+worked. The temporary publishing-test repository is no longer needed.
 
 ## Findings
 
