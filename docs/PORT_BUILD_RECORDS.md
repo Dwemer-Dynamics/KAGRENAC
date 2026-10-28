@@ -1,9 +1,11 @@
 # Build records for a new game port
 
 `project.ps1 configure -AllowedActions <names> -Build <folder>` and `pair` accept the following
-data-only contract for new ports. Nothing named by a record is executed. Existing Elden Ring
-schema-1 records keep their stricter DLL, control-config and package checks; do not convert
-them to bypass those checks. This format does not change the server protocol.
+data-only contract for game ports. Nothing named by a record is executed. Records with any
+other schema, including older schema-1 records, are refused: by `pair` before WSL is used, and
+by `configure` before any server configuration changes (without `-WslServerPath`, configure
+first reads Core's registry through WSL, which can start the distro). This format does not
+change the server protocol.
 
 ## Build
 

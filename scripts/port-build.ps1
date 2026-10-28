@@ -1,5 +1,5 @@
-# Generic port records for project.ps1. These are data, never scripts to execute. Legacy
-# Elden Ring records still use their stricter DLL/control-package checks in project.ps1.
+# Port build and runtime records for project.ps1 (schema 2, docs/PORT_BUILD_RECORDS.md).
+# These are data, never scripts to execute; any other record is refused.
 
 # Resolves a record's relative artifact without allowing aliases, links or path traversal.
 function Get-PortArtifact([string]$root, [string]$relative) {
@@ -25,9 +25,9 @@ function Get-GenericPortBuild([string]$dir) {
     $b = Read-JsonRecord (Join-Path $full 'build.json')
     if (-not (Test-ProjectId $workingId) -or $workingId -ceq 'example-server' -or -not $b -or
         $b.schema_version -isnot [int] -or $b.schema_version -ne 2 -or $b.kind -cne 'kagrenac-port-build' -or $b.id -cne $workingId -or
-        $b.engine -isnot [string] -or $b.engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z' -or $b.engine -ceq 'elden-ring' -or
+        $b.engine -isnot [string] -or $b.engine -cnotmatch '^[a-z0-9][a-z0-9-]{0,39}\z' -or
         $b.build -isnot [string] -or $b.build -cnotmatch '^\d{8}-\d{6}\z' -or (Split-Path -Leaf $full) -cne $b.build) {
-        throw "Not a generic port build of this project (schema 2, id, engine and build folder must match). Elden Ring uses its existing route."
+        throw "Not a generic port build of this project (schema 2, id, engine and build folder must match); older or malformed records are not supported."
     }
     $pin = Join-Path $repo "ports\$($b.engine)\game-build.json"
     $game = Read-JsonRecord $pin
@@ -62,8 +62,7 @@ function Get-GenericPortBuild([string]$dir) {
             throw 'An action handler must belong to supported_actions and name a recorded artifact.'
         }
     }
-    return @{ Actions = @($b.supported_actions); Attack = (@($b.supported_actions) -ccontains 'attack_hostile')
-        DllSha = [string]$b.files.($b.entrypoint); Dir = $full; Engine = $b.engine; Record = $b }
+    return @{ Actions = @($b.supported_actions); DllSha = [string]$b.files.($b.entrypoint); Dir = $full; Engine = $b.engine; Record = $b }
 }
 
 # Verifies every staged runtime artifact against its own build. No path or command from

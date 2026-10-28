@@ -60,7 +60,7 @@ loading through the game's mod loader) is built and verified for the game you ch
 | Server | Turns, game events, NPC bios and knowledge, history, checkpoints, optional memory, dashboard and provider connectors | Mock-mode checks are repeatable; real providers need their own test |
 | Shared C++ client | Async turns, cancellation, action handlers, text before voice, engine-free text-composer lifecycle | Builds for x64 and x86; the console simulates a game |
 | Voice | PocketTTS and supported alternatives; optional transcription | Off by default. The console saves WAVs; each game port must implement playback and requested microphone input |
-| Engine ports | An Elden Ring reference and a process for qualifying other engines | The shipped reference builds and passes fixtures; no live-game verification is claimed for this template |
+| Engine ports | A process for planning and qualifying a game integration, plus a data-only build-record contract | No game port ships with this template; each mod builds and verifies its own |
 | Install and pairing | Committed-source deploy, named server roots and private client config | Requires compatible Core; installing the server alone does not install a game plugin |
 
 The model can request allowlisted actions. Both server and client validate them; the game
@@ -92,7 +92,7 @@ The repository root is the server; everything else sits beside it in one reposit
 | `config/` | `config.example.php`; your private `config/config.php` is untracked |
 | `ui/` | Dashboard pages, styles and branding images |
 | `client/` | Shared C++ client library and console example; [client guide](client/README.md), [client rules](client/AGENTS.md) |
-| `ports/` | Game-specific source, build routes and evidence; [`ports/elden-ring/`](ports/elden-ring/README.md) is the reference |
+| `ports/` | Your mod's game-specific source, build route and evidence in `ports/<engine>/`; see [ports/README.md](ports/README.md) |
 | `scripts/` | Setup, deployment, pairing, migrations, backup, smoke checks and content import; start with `scripts\project.ps1` |
 | `docs/` | Authoring guides: [guided setup](docs/getting-started.md), gameplay design, engine planning, recipes, engine evidence and research |
 | `AGENTS.md`, `PROJECT.md` | Rules for your coding agent; your mod's one brief, plan, status and evidence record |

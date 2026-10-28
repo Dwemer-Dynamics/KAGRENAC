@@ -151,7 +151,7 @@ The finished player flow has two parts:
 **Normal launch.** The game's own entry (its executable, or the Steam or store **Play**
 button), or, when the engine needs one, the documented play entry of an established loader
 or mod manager that is cited for this exact build and meets the game's offline requirements
-(for example a me3 profile launched offline for Elden Ring). Setting that entry up once is
+(for example a loader profile launched offline). Setting that entry up once is
 setup. Not a normal launch: a one-off script, a wrapper or launcher this project wrote,
 attaching or injecting into a running game, or a helper the player starts each session.
 Never launch a modded game through an anti-cheat-protected or online path to get a "normal"
@@ -168,11 +168,11 @@ commands remain developer and setup tools.
   [survey](#1-survey-the-installation)) and shown by its own load probe. Never invent an entry
   point, export, offset or API. If no qualified route loads the mod on a normal launch, that
   is the missing mechanism: name it, give its next bounded probe and keep stage 6b open. A
-  working console client or a manually started helper does not pass this gate. A reference
-  route keeps working as documented: the Elden Ring route's offline me3 launch is its
-  established loader entry, not a gap to close by moving to Steam. If that entry is still a
-  long printed command, record a shorter entry through me3's own documented features as an
-  open flow-review item, without claiming one exists.
+  working console client or a manually started helper does not pass this gate. A qualified
+  offline loader entry is the established route, not a gap to close by moving to a protected
+  online launch. If that entry is still a long printed command, record a shorter entry
+  through the loader's own documented features as an open flow-review item, without
+  claiming one exists.
 - **Hidden helper (only when required).** Use one only when the engine cannot carry HTTP or
   audio in process. The game mod starts it when it loads and stops it on quit; when the
   engine's scripts cannot start processes, the qualified loader's documented sidecar or
@@ -264,8 +264,7 @@ step. Do not repeat paid tests just to refresh a handoff.
 
 Tell the user how to start the game through its normal launch
 ([automatic load and connect](#automatic-load-and-connect)), including an established
-loader's offline entry when the engine needs one (for Elden Ring, the printed me3 offline
-launch), and what in-game status shows the mod loaded and connected; the actual mod-menu
+loader's offline entry when the engine needs one, and what in-game status shows the mod loaded and connected; the actual mod-menu
 switches and warnings; where the NPC appears; input/send/cancel keys; and one test per action.
 Other per-session terminal commands and helper start/stop belong only in a developer section,
 or in a fallback the user approved. For a game

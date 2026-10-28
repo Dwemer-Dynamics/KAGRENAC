@@ -79,8 +79,8 @@ Follow both when a change touches both.
   responsive. Test outages on this project's route only, without changing shared services.
   Audit installed entry/artifact hashes and helper ownership, not just design notes.
 - Use the qualified offline loader profile for a modded game that requires it. Never route
-  through protected online play or disable/bypass anti-cheat. Elden Ring's reference route
-  is `ports/elden-ring/mod.ps1 doctor`, `build`, `assemble`, then private pairing.
+  through protected online play or disable/bypass anti-cheat. Each port documents its own
+  doctor, build and runtime staging route in `ports/<engine>/`, then private pairing.
 
 ## Keep it simple
 
