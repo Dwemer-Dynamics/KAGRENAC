@@ -1426,7 +1426,7 @@ function Show-CardIdentity {
     if (-not ($manifest -is [System.Management.Automation.PSCustomObject])) { Fail "Card identity: dwemer-mod.json is not readable JSON."; return }
     if ([string]$manifest.id -ceq "example-server") { Say "SKIP" "Card identity: this is the template, whose KAGRENAC card is intended."; return }
     $description = [string]$manifest.description
-    if (-not $description.Trim()) { Say "WARN" "Card: dwemer-mod.json has no description, so the Dashboard card shows only the name. Add one line from the conversation." }
+    if (-not $description.Trim()) { Say "WARN" "Card: dwemer-mod.json has no description. Add one line about what the mod does for its launcher listing." }
     elseif ($description -cmatch ', an AI mod made with KAGRENAC AI Mod Maker\.\z') { Say "WARN" "Card: the description is still the generic one from 'new'. Replace it with one line on what the mod does, claiming nothing beyond the evidence." }
     else { Say "OK" "Card description set ($($description.Length) characters)." }
     if ($manifest.PSObject.Properties.Name -contains "author") { Say "OK" "Card author credit: $(Get-Printable $manifest.author)" }
