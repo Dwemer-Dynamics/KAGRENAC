@@ -123,6 +123,9 @@ Only committed HEAD is copied; uncommitted template work is reported and exclude
 nothing. An existing engine reference is a starting plan, not proof. An unknown engine
 gets a short PLAN.md starter without invented capabilities. `-InteractionMode` only records
 planning text. Optional brief fields include `-LlmProvider`, `-Voice` and `-ServerFolder`.
+Optional [card identity](#card-identity-and-local-preview) fields are `-Description`,
+`-Author`, `-Icon` and `-Banner`; without artwork the copy names none rather than reusing
+the KAGRENAC image.
 
 Review and commit the copy before deployment. Every later command runs in that copy:
 
@@ -133,6 +136,36 @@ git commit -m "Start My Mod from KAGRENAC"
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 doctor -WslDistro <distro>
 powershell -ExecutionPolicy Bypass -File scripts\project.ps1 deploy -WslDistro <distro>
 ```
+
+### Card identity and local preview
+
+The launcher and the Dwemer Dashboard show each installed mod as a card: `name`, then
+`description`, the optional `author` credit and, for a version 2 manifest, `game.name`, over
+the optional `assets` icon and banner. This is a light step taken from the conversation, not
+a form; artwork is never required.
+
+- **Description:** one line (at most 300 characters) on what the player does, written from the
+  brief. Claim nothing the evidence does not show; `new` leaves a generic line until then.
+- **Author:** only a name or team the user gives. Never guess one.
+- **Artwork:** only files the user supplies or picks and may use, with where each came from
+  in PROJECT.md (and any attribution beside the images). Pass them to `new` as `-Icon` and
+  `-Banner`, or later commit them under `ui/images/` and name them in `assets`. PNG or JPEG
+  whose content matches the name, at most 4 MiB and 16-4096 pixels per side. The Dashboard
+  shows the banner whole in a 16:9 area, so a landscape picture between 16:9 and 2:1 fills it
+  best; keep text away from the edges. The icon should be square. Without a banner the
+  Dashboard shows the icon as an emblem, and without either a monogram of the name. Third-party
+  art kept for a local install only must be removed before the project is shared.
+
+`project.ps1 check` and `doctor` review the card: an `assets` path Core would refuse is a
+FAIL; a generic description, the inherited KAGRENAC image, or a file outside the Dashboard's
+limits is a WARN.
+
+Preview it through the normal route, not a separate tool. Commit the change, then
+`project.ps1 deploy -WslDistro <distro>` installs or updates that commit, and Core records
+the name, description, author, game and artwork from it. Open the Dwemer Dashboard home page
+and the launcher's Mods page to check the card at desktop and narrow widths. The same commit
+deploys only once, so a branding fix needs a new commit. A card being shown means the install
+finished; it is not a health check.
 
 ### Deploy and pair
 

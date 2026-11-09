@@ -18,6 +18,12 @@ permission.
 | Voice (none, or PocketTTS replies; speech input only if asked: Parakeet push-to-talk into the editable draft) | |
 | LLM provider (name only) | |
 | DwemerDistro (the one WSL distro name) | |
+| Dashboard card: description, author credit, icon and banner with their source and licence (from the conversation; none is fine) | |
+
+The card row is not a form: the agent writes a one-line description of what the mod does from
+the conversation, adds an author credit only if the user gives one, and names artwork only when
+the user supplies or chooses files they may use (record where each came from). Without artwork
+the Dwemer Dashboard shows a neutral monogram. [Card identity](docs/PUBLISHING.md#card-identity).
 
 ## Gameplay design
 

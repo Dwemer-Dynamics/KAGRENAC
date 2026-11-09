@@ -37,6 +37,20 @@ has no game, so none is shown. Installed servers refresh this text on their next
 "game": { "id": "my-game", "name": "My Game", "executable": "Game.exe" }
 ```
 
+## Card identity
+
+The launcher and the Dwemer Dashboard build each card from the installed manifest: `name`,
+`description`, optional `author`, `game.name` (version 2 only) and the optional `assets` icon
+and banner. Settle these from the conversation as
+[getting started](getting-started.md#card-identity-and-local-preview) describes, and review
+them on the local cards before publishing:
+
+- Publish only artwork you have the right to distribute, and keep its source and any required
+  attribution beside it (for example `ui/images/ART_SOURCES.md`). Store, launcher or game
+  artwork copied from a local cache is never publishable through this route.
+- `game.version` is the author-reported compatible game build, not the server's version.
+- A card shown on the Dashboard means the install finished; it is not live health.
+
 The full `game` and `distribution` sections:
 
 ```json
