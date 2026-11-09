@@ -22,8 +22,11 @@ permission.
 
 The card row is not a form: the agent writes a one-line description of what the mod does from
 the conversation, adds an author credit only if the user gives one, and names artwork only when
-the user supplies or chooses files they may use (record where each came from). Without artwork
-the Dwemer Dashboard shows a neutral monogram. [Card identity](docs/PUBLISHING.md#card-identity).
+the user supplies or chooses files they may use (record where each came from). Recommended
+artwork is a 1280 x 720 (16:9) banner and a 512 x 512 PNG icon, fitted and padded rather than
+stretched or cropped through a title. Without artwork the Dwemer Dashboard shows a neutral
+monogram. The Dashboard card shows the name and installed server version; description and author
+are launcher metadata. [Card identity](docs/PUBLISHING.md#card-identity).
 
 ## Gameplay design
 

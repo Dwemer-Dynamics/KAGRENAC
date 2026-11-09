@@ -39,15 +39,21 @@ has no game, so none is shown. Installed servers refresh this text on their next
 
 ## Card identity
 
-The launcher and the Dwemer Dashboard build each card from the installed manifest: `name`,
-`description`, optional `author`, `game.name` (version 2 only) and the optional `assets` icon
-and banner. Settle these from the conversation as
-[getting started](getting-started.md#card-identity-and-local-preview) describes, and review
-them on the local cards before publishing:
+The launcher and the Dwemer Dashboard build each card from the installed project. The Dashboard
+card shows the `name` title, the installed server version (`SERVER_VERSION` in
+`lib/version.php`) and the optional `assets` icon and banner. `description`, optional `author`
+and `game.name` (version 2 only) remain manifest and launcher metadata. Settle these from the
+conversation as [getting started](getting-started.md#card-identity-and-local-preview)
+describes, and review them on the local cards before publishing:
 
+- Recommended artwork: a 1280 x 720 (16:9) PNG or JPEG banner of at most 4 MiB and a
+  512 x 512 PNG icon, transparent background preferred. Preserve proportions: fit and pad
+  rather than crop away a title, never stretch, and keep text clear of the edges. The Dashboard still
+  accepts PNG or JPEG of 16-4096 pixels per side.
 - Publish only artwork you have the right to distribute, and keep its source and any required
-  attribution beside it (for example `ui/images/ART_SOURCES.md`). Store, launcher or game
-  artwork copied from a local cache is never publishable through this route.
+  attribution beside it (for example `ui/images/ART_SOURCES.md`), with the original's
+  dimensions and hash kept apart from any resized copy. Store, launcher or game artwork copied
+  from a local cache is never publishable through this route.
 - `game.version` is the author-reported compatible game build, not the server's version.
 - A card shown on the Dashboard means the install finished; it is not live health.
 
