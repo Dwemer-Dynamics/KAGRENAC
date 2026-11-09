@@ -22,6 +22,14 @@
 #           changes this checkout; review and commit the copy before its first deploy.
 #           -InteractionMode only prefills the primary mode in PROJECT.md's Gameplay design
 #           (planning text: it enables no feature, action, provider call or config).
+#           Card identity, all optional and taken from the conversation (never invented):
+#           [-Description <one line, 300 characters>] [-Author <credit the user gave, 80 characters>]
+#           [-Icon <full path to a square PNG/JPEG>] [-Banner <full path to a landscape PNG/JPEG>].
+#           Each image must be a plain local file whose content matches its .png/.jpg/.jpeg name,
+#           at most 4 MiB and 16-4096 pixels per side; it is copied unchanged to
+#           ui/images/card-icon.<ext> or ui/images/card-banner.<ext> and named in assets. Without
+#           them the copy names no artwork (the Dashboard shows a monogram) instead of inheriting
+#           the KAGRENAC image, which stays only as the in-app navbar icon.
 #   doctor  Report tools, WSL distros and their state, client build, client config (no secrets)
 #           and server health (ok and service identity only). On a healthy server, probe .git/
 #           and the source folders: only HTTP 403 counts as protected; 200 is exposed and any
@@ -40,7 +48,10 @@
 #           scripts/install.sh in that WSL checkout (manual install folders only).
 #   check   PHP lint of the server files and shell syntax with local tools, then the client
 #           build. With -RunSmoke -WslDistro <name> -WslServerPath <path>, also run
-#           scripts/smoke.sh there.
+#           scripts/smoke.sh there. check and doctor also review the card identity in
+#           dwemer-mod.json: a missing or invalid assets file is a FAIL (Core refuses a missing
+#           one); the generic description, inherited KAGRENAC artwork and the Dashboard's size and
+#           type limits are WARN only. Artwork is never required.
 #   pair    -WslDistro <name> [-WslServerPath <existing checkout>] -OutFile <full Windows path>
 #           [-ServerUrl <base URL>] [-SessionId <id>] [-AllowedActions <name,...>]
 #           [-NpcId <id>] [-NpcName <name>] [-VoiceEnabled]
@@ -128,6 +139,10 @@ param(
     [string]$Engine = "",
     [string]$InteractionMode = "",
     [string]$ServerFolder = "",
+    [string]$Description = "",
+    [string]$Author = "",
+    [string]$Icon = "",
+    [string]$Banner = "",
     [string]$ServerUrl = "",
     [string]$WslDistro = "",
     [string]$WslServerPath = "",
@@ -436,6 +451,7 @@ function Show-Doctor {
     foreach ($path in @("dwemer-mod.json", "PROTOCOL.md", "client\CMakeLists.txt", "client\scripts\build.ps1")) {
         if (-not (Test-Path -LiteralPath (Join-Path $repo $path))) { Fail "Missing $path; is this a KAGRENAC AI Mod Maker checkout?" }
     }
+    Show-CardIdentity
     foreach ($tool in @("git", "php", "cmake")) {
         $found = Get-Command $tool -ErrorAction SilentlyContinue
         if ($found) { Say "OK" "$tool found: $($found.Source)" } else { Say "INFO" "$tool not on PATH" }
@@ -1340,6 +1356,108 @@ function Invoke-Deploy {
     $script:done.Add("Deploy of $id at $head to $WslDistro ($mode, $($r['action']), config $($r['config'])); record $recordPath")
 }
 
+# The type and pixel size from a PNG or JPEG header, or $null. Nothing else is decoded.
+function Get-ImageInfo([byte[]]$bytes) {
+    if ($bytes.Length -ge 24 -and $bytes[0] -eq 0x89 -and [System.Text.Encoding]::ASCII.GetString($bytes, 1, 3) -ceq "PNG" -and
+        [System.Text.Encoding]::ASCII.GetString($bytes, 12, 4) -ceq "IHDR") {
+        return @{ Type = "png"; Width = [long]$bytes[16] * 16777216 + $bytes[17] * 65536 + $bytes[18] * 256 + $bytes[19]
+            Height = [long]$bytes[20] * 16777216 + $bytes[21] * 65536 + $bytes[22] * 256 + $bytes[23] }
+    }
+    if ($bytes.Length -lt 4 -or $bytes[0] -ne 0xFF -or $bytes[1] -ne 0xD8) { return $null }
+    $i = 2
+    while ($i + 9 -lt $bytes.Length) {
+        if ($bytes[$i] -ne 0xFF) { return $null }
+        $marker = $bytes[$i + 1]
+        if ($marker -eq 0xFF) { $i++; continue }
+        if ($marker -eq 0x01 -or ($marker -ge 0xD0 -and $marker -le 0xD7)) { $i += 2; continue }
+        # Start of frame (not DHT C4, JPG C8 or DAC CC) holds the size.
+        if ($marker -ge 0xC0 -and $marker -le 0xCF -and @(0xC4, 0xC8, 0xCC) -notcontains $marker) {
+            return @{ Type = "jpeg"; Height = $bytes[$i + 5] * 256 + $bytes[$i + 6]; Width = $bytes[$i + 7] * 256 + $bytes[$i + 8] }
+        }
+        if ($marker -eq 0xD9 -or $marker -eq 0xDA) { return $null }
+        $i += 2 + $bytes[$i + 2] * 256 + $bytes[$i + 3]
+    }
+    return $null
+}
+
+# Why the Dwemer Dashboard would not show this card image (it then shows its fallback), or "" when it would:
+# a .png/.jpg/.jpeg whose content matches the name, at most 4 MiB and 16-4096 pixels per side.
+function Get-ArtworkProblem([System.IO.FileInfo]$file) {
+    $ext = $file.Extension.ToLowerInvariant()
+    if (@(".png", ".jpg", ".jpeg") -notcontains $ext) { return "is not a .png, .jpg or .jpeg file" }
+    if ($file.Length -le 0 -or $file.Length -gt 4MB) { return "is $($file.Length) bytes (at most 4 MiB)" }
+    $info = Get-ImageInfo ([System.IO.File]::ReadAllBytes($file.FullName))
+    if (-not $info -or $info.Type -cne $(if ($ext -eq ".png") { "png" } else { "jpeg" })) { return "does not hold the $ext image its name says" }
+    if ($info.Width -lt 16 -or $info.Height -lt 16 -or $info.Width -gt 4096 -or $info.Height -gt 4096) { return "is $($info.Width) x $($info.Height) pixels (16-4096 per side)" }
+    return ""
+}
+
+# Card text for dwemer-mod.json (and a mention in PROJECT.md): one line from the conversation, at most $max
+# characters, with nothing Core rejects and no '|', URL or anything shaped like a key. A rejected value is never printed.
+function Test-CardText([string]$label, [string]$value, [int]$max) {
+    if (-not $value) { return }
+    if ($value.Length -gt $max -or $value.Trim() -cne $value -or $value -match '[|\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]' -or $value -match '://' -or
+        $value -match '\b(sk|pk|rk|or)-[A-Za-z0-9_-]{12,}' -or $value -match '[A-Za-z0-9+/_=-]{32,}') {
+        throw "-$label must be one line of at most $max characters, without '|', control or format characters, URLs, anything that looks like a key, or a space at either end (value not shown)."
+    }
+}
+
+# A card image given to new: a plain file on a local path reached without links, which the Dashboard can show.
+function Resolve-CardImage([string]$label, [string]$path) {
+    $path = $path.Replace('/', '\')
+    if ($path -cnotmatch '^[A-Za-z]:\\[^\x00-\x1f"*/:<>?|]+\z' -or $path -match '~\d' -or [System.IO.Path]::GetFullPath($path) -cne $path) {
+        throw "-$label must be a full local path such as C:\art\banner.png (drive letter, no '.', '..', '~1' alias, stream or network path)."
+    }
+    $file = New-Object System.IO.FileInfo $path
+    if (-not $file.Exists -or ($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw "-$label $path is not an existing plain file." }
+    for ($dir = $file.Directory; $dir; $dir = $dir.Parent) {
+        if ($dir.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "-$label is reached through the link or junction $($dir.FullName); use the real folder." }
+    }
+    $problem = Get-ArtworkProblem $file
+    if ($problem) { throw "-$label $path $problem. Nothing was created; pick or export another file (it is never converted)." }
+    return $file
+}
+
+# check and doctor: the card identity in this checkout's dwemer-mod.json. Only an assets entry Core would
+# refuse (bad path, missing file or link) fails; the rest is advice, and artwork is never required.
+function Show-CardIdentity {
+    $manifest = $null
+    try { $manifest = Get-Content -Raw -LiteralPath (Join-Path $repo "dwemer-mod.json") | ConvertFrom-Json } catch { }
+    if (-not ($manifest -is [System.Management.Automation.PSCustomObject])) { Fail "Card identity: dwemer-mod.json is not readable JSON."; return }
+    if ([string]$manifest.id -ceq "example-server") { Say "SKIP" "Card identity: this is the template, whose KAGRENAC card is intended."; return }
+    $description = [string]$manifest.description
+    if (-not $description.Trim()) { Say "WARN" "Card: dwemer-mod.json has no description. Add one line about what the mod does for its launcher listing." }
+    elseif ($description -cmatch ', an AI mod made with KAGRENAC AI Mod Maker\.\z') { Say "WARN" "Card: the description is still the generic one from 'new'. Replace it with one line on what the mod does, claiming nothing beyond the evidence." }
+    else { Say "OK" "Card description set ($($description.Length) characters)." }
+    if ($manifest.PSObject.Properties.Name -contains "author") { Say "OK" "Card author credit: $(Get-Printable $manifest.author)" }
+    else { Say "INFO" "Card: no author credit (optional; only a name the user gives)." }
+    $names = @(if ($manifest.assets -is [System.Management.Automation.PSCustomObject]) { $manifest.assets.PSObject.Properties.Name })
+    if ($names.Count -eq 0) { Say "INFO" "Card: no icon or banner, so the Dashboard shows a monogram. Optional: docs/PUBLISHING.md, Card identity."; return }
+    foreach ($key in $names) {
+        $path = [string]$manifest.assets.$key
+        if (@("icon", "banner") -cnotcontains $key -or $path -cnotmatch '^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*\z') {
+            Fail "Card: assets.$key is not an icon or banner with a relative path Core accepts."; continue
+        }
+        $linked = $false
+        $current = $repo
+        foreach ($segment in $path.Split('/')) {
+            $current = Join-Path $current $segment
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+            if ($item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { $linked = $true }
+        }
+        $file = New-Object System.IO.FileInfo $current
+        if ($linked -or -not $file.Exists) { Fail "Card: assets.$key $path is missing or reached through a link; Core refuses a manifest whose asset is not a committed plain file."; continue }
+        if (Get-Command git -ErrorAction SilentlyContinue) {
+            $null = Invoke-Native { & git -C $repo ls-files --error-unmatch -- $path 2>$null }
+            if ($LASTEXITCODE -ne 0) { Say "WARN" "Card: $path is not committed yet; deploy and packages use only committed files." }
+        }
+        $problem = Get-ArtworkProblem $file
+        if ($problem) { Say "WARN" "Card: assets.$key $path $problem, so the Dashboard shows its fallback instead." }
+        elseif ($path -ceq "ui/images/kagrenac.png") { Say "WARN" "Card: assets.$key is the inherited KAGRENAC image. Use the mod's own artwork, or remove the key for a neutral monogram." }
+        else { Say "OK" "Card ${key}: $path" }
+    }
+}
+
 # Text recorded in a new project's PROJECT.md: one line of at most 200 characters with no table
 # separator, URL or anything shaped like a key. A rejected value is never printed.
 function Test-BriefText([string]$label, [string]$value) {
@@ -1446,6 +1564,11 @@ function Invoke-New {
     if ($InteractionMode -and @("manual", "ambient", "companion", "operator") -cnotcontains $InteractionMode) {
         throw "-InteractionMode must be manual, ambient, companion or operator (the primary mode; the agent records any mix in PROJECT.md)."
     }
+    Test-CardText "Description" $Description 300
+    Test-CardText "Author" $Author 80
+    $art = [ordered]@{}
+    if ($Icon) { $art["icon"] = Resolve-CardImage "Icon" $Icon }
+    if ($Banner) { $art["banner"] = Resolve-CardImage "Banner" $Banner }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "git is not on PATH." }
     $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
     if (-not (Test-Path -LiteralPath $tarExe -PathType Leaf)) { throw "$tarExe (part of Windows 10 and later) is missing; new uses it to unpack the copy." }
@@ -1511,8 +1634,22 @@ function Invoke-New {
         $text = [System.IO.File]::ReadAllText($manifestPath, $utf8)
         $text = Set-Once $text '"id": "example-server"' "`"id`": `"$Id`"" "dwemer-mod.json"
         $text = Set-Once $text "`"name`": `"$($template.name)`"" "`"name`": `"$Name`"" "dwemer-mod.json"
-        $text = Set-Once $text "`"description`": `"$($template.description)`"" "`"description`": `"$Name, an AI mod made with KAGRENAC AI Mod Maker.`"" "dwemer-mod.json"
+        # Without -Description a generic line marks the description as still to be written (check warns about it).
+        $cardDescription = $(if ($Description) { $Description } else { "$Name, an AI mod made with KAGRENAC AI Mod Maker." })
+        $text = Set-Once $text "`"description`": `"$($template.description)`"" "`"description`": $(ConvertTo-Json -InputObject $cardDescription)" "dwemer-mod.json"
         $eol = $(if ($text.Contains("`r`n")) { "`r`n" } else { "`n" })
+        if ($Author) { $text = Set-Once $text "`"name`": `"$Name`",$eol" "`"name`": `"$Name`",$eol  `"author`": $(ConvertTo-Json -InputObject $Author),$eol" "dwemer-mod.json" }
+        # The template's KAGRENAC card art is not this mod's: only images given here are named, else none (a neutral monogram).
+        $assetsText = ",$eol  `"assets`": {$eol    `"icon`": `"ui/images/kagrenac.png`",$eol    `"banner`": `"ui/images/kagrenac.png`"$eol  }"
+        $artPaths = [ordered]@{}
+        foreach ($key in $art.Keys) { $artPaths[$key] = "ui/images/card-$key" + $art[$key].Extension.ToLowerInvariant() }
+        $text = Set-Once $text $assetsText $(if ($artPaths.Count -eq 0) { "" } else {
+            ",$eol  `"assets`": {$eol" + (@($artPaths.Keys | ForEach-Object { "    `"$_`": `"$($artPaths[$_])`"" }) -join ",$eol") + "$eol  }" }) "dwemer-mod.json"
+        foreach ($key in $art.Keys) {
+            $target = Join-Path $dest $artPaths[$key].Replace('/', '\')
+            [System.IO.File]::Copy($art[$key].FullName, $target, $false)
+            if ((Get-FileSha256Hex $target) -cne (Get-FileSha256Hex $art[$key].FullName)) { throw "The copy of the $key image did not match its source." }
+        }
         $text = Set-Once $text "`"id`": `"$Id`",$eol" "`"id`": `"$Id`",$eol  `"server_folder`": `"$folderName`",$eol" "dwemer-mod.json"
         # The template's own page is not this mod's; project_url is optional and added once the mod has one.
         $text = Set-Once $text "  `"project_url`": `"$($template.project_url)`",$eol" "" "dwemer-mod.json"
@@ -1520,6 +1657,11 @@ function Invoke-New {
         $saved = [System.IO.File]::ReadAllText($manifestPath, $utf8) | ConvertFrom-Json
         if ([string]$saved.id -cne $Id -or [string]$saved.name -cne $Name -or [string]$saved.server_folder -cne $folderName -or $null -ne $saved.project_url) {
             throw "dwemer-mod.json did not read back with id $Id, name $Name, server_folder $folderName and no project_url."
+        }
+        $savedAssets = @(if ($saved.assets -is [System.Management.Automation.PSCustomObject]) { $saved.assets.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" } })
+        if ([string]$saved.description -cne $cardDescription -or [string]$saved.author -cne $Author -or
+            ($savedAssets -join ";") -cne (@($artPaths.Keys | ForEach-Object { "$_=$($artPaths[$_])" }) -join ";")) {
+            throw "dwemer-mod.json did not read back with the card description, author and artwork given."
         }
 
         $projectPath = Join-Path $dest "PROJECT.md"
@@ -1532,6 +1674,12 @@ function Invoke-New {
             "Voice (none, or PocketTTS replies; speech input only if asked: Parakeet push-to-talk into the editable draft)" = $Voice
             "LLM provider (name only)" = $LlmProvider
             "DwemerDistro (the one WSL distro name)" = $WslDistro
+            "Dashboard card: description, author credit, icon and banner with their source and licence (from the conversation; none is fine)" = $(
+                if ($Description -or $Author -or $art.Count -gt 0) {
+                    @($(if ($Description) { "description set" } else { "description still generic" }),
+                      $(if ($Author) { "author $Author" } else { "no author credit" }),
+                      $(if ($art.Count -gt 0) { "artwork " + (@($artPaths.Values) -join ", ") + "; source and licence: not recorded yet" } else { "no artwork (monogram)" })) -join "; "
+                } else { "" })
         }
         foreach ($question in $brief.Keys) {
             if ($brief[$question]) { $text = Set-Once $text "| $question | |" "| $question | $($brief[$question]) |" "PROJECT.md" }
@@ -1600,6 +1748,9 @@ function Invoke-New {
     $script:manual.Add("Agent: fill the Gameplay design rows in the copy's PROJECT.md from the conversation (docs/GAMEPLAY_DESIGN.md) before engine-port code; server and provider setup does not wait for it")
     $script:manual.Add("Work from the copy from now on, for example: powershell -ExecutionPolicy Bypass -File $(ConvertTo-PsLiteral "$dest\scripts\project.ps1") deploy -WslDistro <name>")
     $script:manual.Add("Add project_url (an https URL) to the copy's dwemer-mod.json once the mod has its own public repository; it is optional and left out until then")
+    if (-not $Description -or $art.Count -eq 0) {
+        $script:manual.Add("Agent: settle the Dashboard card from the conversation (docs/getting-started.md, Card identity): a one-line description, an author only if the user gives one, and optional icon/banner files the user has the right to use; 'check' reviews them")
+    }
 }
 
 # A project with its own id builds the client into its own folder; the template keeps the shared one.
@@ -1674,6 +1825,7 @@ switch ($Command) {
     }
     "check" {
         Invoke-StaticChecks
+        Show-CardIdentity
         if ($SkipBuild) { Say "SKIP" "Client build (-SkipBuild)." } else { Invoke-ClientBuild }
         if ($RunSmoke) {
             Require-WslTarget

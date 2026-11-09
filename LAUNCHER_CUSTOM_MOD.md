@@ -142,20 +142,30 @@ Rules every copy must follow:
 ## Icon and banner (optional)
 
 `assets` gives the launcher and the Dashboard pictures for the mod. KagrenacServer uses the
-square 512 x 512 PNG `ui/images/kagrenac.png` as both the icon and the banner. Your own mod
-can use any PNG or JPEG banner; about 2:1 is recommended.
+square 512 x 512 PNG `ui/images/kagrenac.png` as both the icon and the banner. A project made
+with `project.ps1 new` starts with no `assets` (a neutral card) unless `-Icon` or `-Banner` is
+given; `kagrenac.png` stays only as its in-app navbar icon. For your own mod, the recommended
+sizes are a 1280 x 720 (16:9) PNG or JPEG banner of at most 4 MiB and a 512 x 512 PNG icon,
+transparent background preferred. Preserve proportions: fit and pad with a matching colour
+rather than crop away a title, never stretch, and keep text clear of the edges. Record the
+art's source and attribution beside it. The Dashboard card shows the banner (or icon), the
+`name` title and the installed `SERVER_VERSION` from `lib/version.php`; `description` and
+`author` are launcher metadata. See
+[card identity](docs/getting-started.md#card-identity-and-local-preview).
 
 - Commit the image files and the `assets` entry together. Each path is relative to the
   repository root and must point to a tracked `.png`, `.jpg`, or `.jpeg` file. Links,
   `..`, hidden folders, and web addresses are rejected.
 - Use a square icon; it is shown at 26 x 26. The launcher shows the banner whole in its
-  picture area, so a wide picture of about 2:1 fills it best. Keep each file under 4 MB.
+  picture area; a 16:9 banner shows whole there too. Keep each file under 4 MB.
 - Pictures come from the installed version. After you change them, users see the new
   ones only once they choose **Update**.
 - Either key, or `assets` itself, may be left out. Without a banner the launcher uses, for
   a `github.com` repository, its GitHub preview picture or else the owner's avatar, then a
   plain placeholder; without an icon it shows the name only. The launcher skips any picture
-  over 4 MB.
+  over 4 MB. The Dashboard shows the banner whole (never cropped), else the icon as an
+  emblem, else a monogram of the name; it skips a file over 4 MiB, outside 16-4096 pixels per
+  side, or whose content does not match its extension.
   Older installs and manifests without `assets` keep working.
 
 ## Local testing of unpublished changes (optional)
