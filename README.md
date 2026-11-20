@@ -110,6 +110,7 @@ The repository root is the server; everything else sits beside it in one reposit
 | Configure models and voice | [CONNECTORS.md](CONNECTORS.md) |
 | Use or extend the dashboard | [UI_GUIDE.md](UI_GUIDE.md) |
 | Implement the protocol | [PROTOCOL.md](PROTOCOL.md), [client guide](client/README.md), [architecture](docs/ARCHITECTURE.md) |
+| See the planned version 2 architecture (not implemented) | [Migration plan](docs/MIGRATION_PLAN.md), [target architecture](docs/ARCHITECTURE_V2.md), [game adapter boundary](docs/GAME_ADAPTER.md), [protocol 2 draft](docs/design/PROTOCOL_V2.md) |
 | Extend a port | [Agent playbook](docs/agent-playbook.md), [port recipes](docs/feature-recipes/PORT_RECIPES.md), [engine evidence record](docs/engine-packs/ENGINE_PACK.md) |
 | Add NPC bios and world knowledge in bulk | [Content authoring](docs/CONTENT_AUTHORING.md) |
 | Rebrand your mod | [MAKE_IT_YOURS.md](MAKE_IT_YOURS.md) |

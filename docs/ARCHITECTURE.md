@@ -4,6 +4,10 @@ How the server code is divided, who owns what and which way dependencies point, 
 short note on the client at the end. The contract with the game is
 [PROTOCOL.md](../PROTOCOL.md); this page is only about the code.
 
+Status (2026-11-20): describes the code as built. A layered, asynchronous version 2 is
+planned in [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) and [MIGRATION_PLAN.md](MIGRATION_PLAN.md);
+until a phase there is done, this page and its rules apply.
+
 ## Layers
 
 | Layer | Files | Owns | Never |
