@@ -101,6 +101,9 @@ Follow both when a change touches both.
   `ActionCatalog`, which any layer may read. Services never read the
   request, check tokens, start transactions, take locks or reply. Existing functions stay as
   compatibility facades with unchanged behaviour. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- A version 2 architecture is planned ([docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md)). It is
+  not implemented: do not build toward it in a mod or add its layers, queues, sockets or
+  workers until a migration phase is approved and marked done. These rules apply until then.
 
 ## Stable boundaries
 
